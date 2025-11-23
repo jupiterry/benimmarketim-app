@@ -29,10 +29,10 @@ workflows:
           # Gerçek yayın için: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
           flutter build ios --release --no-codesign
     artifacts:
-      - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
-      - *.dSYM.zip
+      - "build/ios/ipa/*.ipa"
+      - "/tmp/xcodebuild_logs/*.log"
+      - "*.dSYM.zip"
     publishing:
       email:
         recipients:
-          - user_email@example.com # Burayı kendi mailinizle değiştirebilirsiniz
+          - benimmarketimmm@gmail.com # Burayı kendi mailinizle değiştirebilirsiniz
