@@ -1,6 +1,6 @@
 workflows:
-  ios-app-store:
-    name: iOS App Store Release
+  ios-test-build:
+    name: iOS Test Build (Unsigned)
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
@@ -8,25 +8,12 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Set up keychain to be used for codesigning using Codemagic CLI 'keychain' command
-        script: |
-          keychain initialize
-      - name: Fetch signing files
-        script: |
-          # Hesabınız onaylandığında ve API Key eklendiğinde bu adım çalışacak
-          # app-store-connect fetch-signing-files "io.benimmarketim.app" --type IOS_APP_STORE --create
-          echo "Hesap onayı bekleniyor, imzalama atlanıyor..."
-      - name: Set up signing certificate
-        script: |
-          # keychain add-certificates
-          echo "Sertifika ekleme atlanıyor..."
       - name: Install pods
         script: |
           find . -name "Podfile" -exec dir dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'
-      - name: Flutter build ipa
+      - name: Flutter build ipa (Unsigned)
         script: |
-          # Sertifika olmadığı için --no-codesign ile build alıyoruz (Test amaçlı)
-          # Gerçek yayın için: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+          # Hesap onayi gelene kadar imzasiz build aliyoruz
           flutter build ios --release --no-codesign
     artifacts:
       - "build/ios/ipa/*.ipa"
@@ -35,4 +22,4 @@ workflows:
     publishing:
       email:
         recipients:
-          - benimmarketimmm@gmail.com # Burayı kendi mailinizle değiştirebilirsiniz
+          - benimmarketimmm@gmail.com
