@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "737585998492",
+    "project_id": "benimmarketimapp",
+    "storage_bucket": "benimmarketimapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737585998492:android:007adf88229ac720e29b59",
+        "android_client_info": {
+          "package_name": "com.jupi.benimapp.benimmarketim_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAxsuJ1kF1huOPlykpgOhcGoNUUm_0KOjo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,7 @@
+- MVVM Mimamirsi olacak
+- State management için provider kullanılacak
+- Navigation için go_router kullanılacak
+- APİ İçin dio kullanılacak
+- Temiz bir kod yapısı olacak
+- Tasarım modern olmalı ve kullanıcı dostu olmalı
+- SQFLite kullanılacak
