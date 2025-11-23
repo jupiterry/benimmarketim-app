@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 2.0.4+13
 
 environment:
-  sdk: ^3.9.2
+  sdk: ^3.0.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -56,9 +56,9 @@ dependencies:
   
   # Real-time features
   web_socket_channel: ^2.4.0
-  flutter_local_notifications: ^17.0.0
-  firebase_messaging: ^14.7.19
-  firebase_remote_config: ^4.3.17
+  flutter_local_notifications: ^17.0.0 # Major update skipped to avoid breaking changes without testing
+  firebase_messaging: ^16.0.4
+  firebase_remote_config: ^6.1.2
   permission_handler: ^11.3.0
   url_launcher: ^6.2.5
   
@@ -74,7 +74,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   crypto: ^3.0.7
   shimmer: ^3.0.0
-  firebase_crashlytics: ^3.5.7
+  firebase_crashlytics: ^5.0.5
   file_picker: ^8.0.7
   image_picker: ^1.0.8
   
