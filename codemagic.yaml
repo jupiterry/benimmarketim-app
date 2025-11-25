@@ -1,4 +1,5 @@
 workflows:
+  # Test için imzasız build (mevcut)
   ios-test-build:
     name: iOS Test Build (Unsigned)
     max_build_duration: 120
@@ -10,7 +11,7 @@ workflows:
     scripts:
       - name: Install pods
         script: |
-          find . -name "Podfile" -exec dir dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'
+          find . -name "Podfile" -exec dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'
       - name: Flutter build ipa (Unsigned)
         script: |
           # Hesap onayi gelene kadar imzasiz build aliyoruz
@@ -23,3 +24,56 @@ workflows:
       email:
         recipients:
           - benimmarketimmm@gmail.com
+
+  # App Store'a yükleme için imzalı build
+  ios-release:
+    name: iOS Release (App Store)
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: codemagic # App Store Connect integration adı
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - app_store_credentials # Codemagic'te oluşturmanız gereken environment group
+      vars:
+        BUNDLE_ID: "com.jupi.benimapp.benimmarketimApp" # iOS projesindeki Bundle ID
+        APP_STORE_APPLE_ID: 6755705908 # App Store Connect'teki App ID (değiştirilecek)
+    scripts:
+      - name: Set up code signing settings
+        script: |
+          keychain initialize
+      - name: Fetch signing files
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Use profiles
+        script: |
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Install pods
+        script: |
+          find . -name "Podfile" -exec dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'
+      - name: Flutter build ipa (Signed)
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=$HOME/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - benimmarketimmm@gmail.com
+      app_store_connect:
+        auth: integration
+        
+        # İLK ÖNCE TESTFLIGHT'A YÜKLEYİN (önerilir)
+        submit_to_testflight: true
+        
+        # App Store'a otomatik gönderme (isteğe bağlı)
+        # submit_to_app_store: true
