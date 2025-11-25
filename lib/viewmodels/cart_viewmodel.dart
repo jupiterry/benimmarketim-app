@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 import '../models/cart_item.dart';
 import '../services/database_service.dart';
 import '../models/product.dart';
+import '../services/firebase_analytics_service.dart';
 
 class CartViewModel extends ChangeNotifier {
   final List<CartItem> _cartItems = [];
   final DatabaseService _databaseService = DatabaseService();
+  final FirebaseAnalyticsService _analyticsService = FirebaseAnalyticsService();
 
   CartViewModel() {
     _loadCart();
@@ -45,6 +47,16 @@ class CartViewModel extends ChangeNotifier {
       _cartItems.add(newItem);
       _databaseService.addToCart(newItem);
     }
+
+    // Analytics: Add to cart event
+    _analyticsService.logAddToCart(
+      itemId: product.id,
+      itemName: product.name,
+      itemCategory: product.category,
+      price: product.actualPrice,
+      quantity: 1,
+    );
+
     notifyListeners();
   }
 
@@ -66,6 +78,13 @@ class CartViewModel extends ChangeNotifier {
         // Ürünü tamamen çıkar
         _cartItems.removeAt(existingItemIndex);
         _databaseService.removeFromCart(product.id);
+
+        // Analytics: Remove from cart event
+        _analyticsService.logRemoveFromCart(
+          itemId: product.id,
+          itemName: product.name,
+          quantity: 1,
+        );
       }
     }
     notifyListeners();

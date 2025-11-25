@@ -16,6 +16,17 @@ class HomePageViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  // Tab State
+  int _currentTabIndex = 0;
+  int get currentTabIndex => _currentTabIndex;
+
+  void setTabIndex(int index) {
+    if (_currentTabIndex != index) {
+      _currentTabIndex = index;
+      notifyListeners();
+    }
+  }
+
   // Constructor'da yükleme yapma, UI'dan tetiklenecek
 
   // Ana sayfa ürünlerini yükle (Rastgele 50)
@@ -36,9 +47,8 @@ class HomePageViewModel extends ChangeNotifier {
 
       if (allProducts.isNotEmpty) {
         // Gizli ürünleri filtrele (isHidden: false olanları al)
-        final visibleProducts = allProducts
-            .where((product) => !product.isHidden)
-            .toList();
+        final visibleProducts =
+            allProducts.where((product) => !product.isHidden).toList();
 
         // Listeyi karıştır
         visibleProducts.shuffle();

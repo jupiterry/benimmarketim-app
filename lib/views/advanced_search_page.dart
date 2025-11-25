@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../services/theme_service.dart';
 import '../models/search_result.dart';
 import '../views/widgets/product_card.dart';
 import 'package:go_router/go_router.dart';
@@ -61,8 +62,21 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
         sort: _sortBy,
       );
 
+      var products = result.products;
+
+      // Client-side sorting guarantee
+      if (_sortBy == 'price_low') {
+        products.sort((a, b) => a.actualPrice.compareTo(b.actualPrice));
+      } else if (_sortBy == 'price_high') {
+        products.sort((a, b) => b.actualPrice.compareTo(a.actualPrice));
+      } else if (_sortBy == 'name_asc') {
+        products.sort((a, b) => a.name.compareTo(b.name));
+      } else if (_sortBy == 'name_desc') {
+        products.sort((a, b) => b.name.compareTo(a.name));
+      }
+
       setState(() {
-        _searchResults = result.products;
+        _searchResults = products;
         _isLoading = false;
       });
     } catch (e) {
@@ -84,80 +98,124 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          'Gelişmiş Arama',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
+      body: CustomScrollView(
+        slivers: [
+          _buildSliverAppBar(),
+          SliverToBoxAdapter(
+            child: Column(
+              children: [
+                _buildSearchBar(),
+                _buildFilters(),
+              ],
+            ),
           ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: _buildSearchBar(),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Filtreler
-          _buildFilters(),
-
-          // Arama sonuçları
-          Expanded(child: _buildSearchResults()),
+          _buildSliverResults(),
         ],
       ),
     );
   }
 
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Container(
-        height: 50,
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      expandedHeight: 60.0,
+      floating: true,
+      snap: true,
+      pinned: false,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: Container(
         decoration: BoxDecoration(
-          color: Colors.grey[100],
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF00C639),
+              const Color(0xFF009E2D),
+            ],
+          ),
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(20),
+          ),
+        ),
+      ),
+      leading: Container(
+        margin: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: TextField(
-          controller: _searchController,
-          onChanged: (value) {
-            if (value.length >= 2) {
-              _performSearch(value);
-            }
-          },
-          onSubmitted: (value) {
+        child: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => context.pop(),
+        ),
+      ),
+      title: Text(
+        'Gelişmiş Arama',
+        style: GoogleFonts.poppins(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
+      centerTitle: true,
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      height: 55,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) {
+          if (value.length >= 2) {
             _performSearch(value);
-          },
-          decoration: InputDecoration(
-            hintText: 'Ürün ara...',
-            hintStyle: GoogleFonts.poppins(
-              color: Colors.grey[500],
-              fontSize: 16,
-            ),
-            prefixIcon: Icon(Icons.search, color: Colors.grey[500], size: 24),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: Icon(Icons.clear, color: Colors.grey[500]),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() {
-                        _searchResults.clear();
-                      });
-                    },
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
+          }
+        },
+        onSubmitted: (value) {
+          _performSearch(value);
+        },
+        style: GoogleFonts.poppins(
+          fontSize: 15,
+          color: Colors.black87,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Ne aramıştınız?',
+          hintStyle: GoogleFonts.poppins(
+            color: Colors.grey[400],
+            fontSize: 15,
+          ),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: AppColors.successGreen,
+            size: 26,
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear, color: Colors.grey[400]),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchResults.clear();
+                    });
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
           ),
         ),
       ),
@@ -166,48 +224,67 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
 
   Widget _buildFilters() {
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Kategori filtresi
+          // Kategori Filtresi
           Row(
             children: [
+              Icon(Icons.category_outlined,
+                  size: 20, color: AppColors.successGreen),
+              const SizedBox(width: 8),
               Text(
-                'Kategori:',
+                'Kategori',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _selectedCategory.isEmpty ? null : _selectedCategory,
                     hint: Text(
-                      'Tüm Kategoriler',
+                      'Tümü',
                       style: GoogleFonts.poppins(
-                        fontSize: 14,
+                        fontSize: 13,
                         color: Colors.grey[600],
                       ),
                     ),
+                    icon: Icon(Icons.keyboard_arrow_down,
+                        color: Colors.grey[600], size: 20),
                     items: [
                       DropdownMenuItem<String>(
                         value: '',
-                        child: Text(
-                          'Tüm Kategoriler',
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
+                        child: Text('Tümü',
+                            style: GoogleFonts.poppins(fontSize: 13)),
                       ),
                       ..._suggestions.map(
                         (category) => DropdownMenuItem<String>(
                           value: category,
-                          child: Text(
-                            category,
-                            style: GoogleFonts.poppins(fontSize: 14),
-                          ),
+                          child: Text(category,
+                              style: GoogleFonts.poppins(fontSize: 13)),
                         ),
                       ),
                     ],
@@ -225,21 +302,52 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
 
-          // Fiyat aralığı
-          Row(
+          // Fiyat Aralığı
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Fiyat:',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
+              Row(
+                children: [
+                  Icon(Icons.attach_money,
+                      size: 20, color: AppColors.successGreen),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Fiyat Aralığı',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '₺${_minPrice.toInt()} - ₺${_maxPrice.toInt()}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.successGreen,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              const SizedBox(height: 8),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: AppColors.successGreen,
+                  inactiveTrackColor: AppColors.successGreen.withOpacity(0.2),
+                  thumbColor: Colors.white,
+                  overlayColor: AppColors.successGreen.withOpacity(0.1),
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 12),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 20),
+                  valueIndicatorTextStyle: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 child: RangeSlider(
                   values: RangeValues(_minPrice, _maxPrice),
                   min: 0,
@@ -265,59 +373,59 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // Sıralama
           Row(
             children: [
+              Icon(Icons.sort, size: 20, color: AppColors.successGreen),
+              const SizedBox(width: 8),
               Text(
-                'Sıralama:',
+                'Sıralama',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _sortBy,
+                    icon: Icon(Icons.keyboard_arrow_down,
+                        color: Colors.grey[600], size: 20),
                     items: [
                       DropdownMenuItem(
                         value: 'createdAt',
-                        child: Text(
-                          'En Yeni',
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
+                        child: Text('En Yeni',
+                            style: GoogleFonts.poppins(fontSize: 13)),
                       ),
                       DropdownMenuItem(
-                        value: 'price_asc',
-                        child: Text(
-                          'Fiyat (Düşük)',
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
+                        value: 'price_low',
+                        child: Text('Fiyat (Düşük)',
+                            style: GoogleFonts.poppins(fontSize: 13)),
                       ),
                       DropdownMenuItem(
-                        value: 'price_desc',
-                        child: Text(
-                          'Fiyat (Yüksek)',
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
+                        value: 'price_high',
+                        child: Text('Fiyat (Yüksek)',
+                            style: GoogleFonts.poppins(fontSize: 13)),
                       ),
                       DropdownMenuItem(
                         value: 'name_asc',
-                        child: Text(
-                          'İsim (A-Z)',
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
+                        child: Text('İsim (A-Z)',
+                            style: GoogleFonts.poppins(fontSize: 13)),
                       ),
                       DropdownMenuItem(
                         value: 'name_desc',
-                        child: Text(
-                          'İsim (Z-A)',
-                          style: GoogleFonts.poppins(fontSize: 14),
-                        ),
+                        child: Text('İsim (Z-A)',
+                            style: GoogleFonts.poppins(fontSize: 13)),
                       ),
                     ],
                     onChanged: (value) {
@@ -338,101 +446,109 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     );
   }
 
-  Widget _buildSearchResults() {
+  Widget _buildSliverResults() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return SliverFillRemaining(
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.successGreen),
+        ),
+      );
     }
 
     if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'Arama sonucu bulunamadı',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.search_off_rounded,
+                    size: 48, color: Colors.grey[400]),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Farklı anahtar kelimeler deneyin',
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'Sonuç Bulunamadı',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Farklı anahtar kelimelerle tekrar deneyin',
+                style:
+                    GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     if (_searchResults.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'Ürün arayın',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.successGreen.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.manage_search_rounded,
+                    size: 48, color: AppColors.successGreen),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Arama yapmak için yukarıdaki kutuya yazın',
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                'Gelişmiş Arama',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Detaylı filtreleme ile aradığınızı bulun',
+                style:
+                    GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return Column(
-      children: [
-        // Sonuç sayısı
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          color: Colors.white,
-          child: Text(
-            '${_searchResults.length} ürün bulundu',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
-            ),
-          ),
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.75,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
         ),
-
-        // Ürün listesi
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.75,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: _searchResults.length,
-            itemBuilder: (context, index) {
-              final product = _searchResults[index];
-              return ProductCard(
-                product: product,
-                onTap: () {
-                  context.push('/product-detail', extra: product);
-                },
-              );
-            },
-          ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final product = _searchResults[index];
+            return ProductCard(
+              product: product,
+              onTap: () {
+                context.push('/product', extra: product);
+              },
+            );
+          },
+          childCount: _searchResults.length,
         ),
-      ],
+      ),
     );
   }
 }

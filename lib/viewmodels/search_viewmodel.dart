@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../models/category.dart' as models;
 import '../services/api_service.dart';
+import '../services/firebase_analytics_service.dart';
 
 class SearchViewModel extends ChangeNotifier {
   List<Product> _allProducts = [];
   List<Product> _filteredProducts = [];
   List<models.Category> _categories = [];
+  final FirebaseAnalyticsService _analyticsService = FirebaseAnalyticsService();
 
   String _searchQuery = '';
   String _selectedCategory = '';
@@ -65,9 +67,11 @@ class SearchViewModel extends ChangeNotifier {
       );
 
       // Gizli ürünleri filtrele
-      _filteredProducts = searchResult.products
-          .where((product) => !product.isHidden)
-          .toList();
+      _filteredProducts =
+          searchResult.products.where((product) => !product.isHidden).toList();
+
+      // Analytics: Search event
+      _analyticsService.logSearch(searchTerm: query);
     } catch (e) {
       _filteredProducts = [];
     }
@@ -119,11 +123,11 @@ class SearchViewModel extends ChangeNotifier {
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((product) {
         return product.name.toLowerCase().contains(
-              _searchQuery.toLowerCase(),
-            ) ||
+                  _searchQuery.toLowerCase(),
+                ) ||
             product.description.toLowerCase().contains(
-              _searchQuery.toLowerCase(),
-            );
+                  _searchQuery.toLowerCase(),
+                );
       }).toList();
     }
 

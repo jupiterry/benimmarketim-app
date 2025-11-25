@@ -3,9 +3,11 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/token_manager.dart';
 import '../services/network_service.dart';
+import '../services/firebase_analytics_service.dart';
 
 class AuthViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
+  final FirebaseAnalyticsService _analyticsService = FirebaseAnalyticsService();
 
   User? _user;
   bool _isLoading = false;
@@ -51,6 +53,10 @@ class AuthViewModel extends ChangeNotifier {
 
       print('Giriş başarılı - 10 günlük otomatik giriş aktif');
 
+      // Analytics: Login event
+      await _analyticsService.logLogin(method: 'email');
+      await _analyticsService.setUserId(_user?.id);
+
       notifyListeners();
       return true;
     } catch (e) {
@@ -93,6 +99,10 @@ class AuthViewModel extends ChangeNotifier {
 
       print('Telefon ile kayıt yapıldı - 10 günlük otomatik giriş aktif');
 
+      // Analytics: Sign up event
+      await _analyticsService.logSignUp(method: 'email');
+      await _analyticsService.setUserId(_user?.id);
+
       notifyListeners();
       return true;
     } catch (e) {
@@ -115,6 +125,10 @@ class AuthViewModel extends ChangeNotifier {
     _user = null;
     _isLoggedIn = false;
     await TokenManager.clearAllTokens();
+
+    // Analytics: Clear user ID on logout
+    await _analyticsService.setUserId(null);
+
     notifyListeners();
   }
 

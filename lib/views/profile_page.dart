@@ -85,7 +85,6 @@ class _ProfilePageState extends State<ProfilePage> {
                           title: 'Fotokopi Geçmişi',
                           onTap: () => context.push('/photocopy-history'),
                         ),
-
                         const SizedBox(height: 24),
                         const SizedBox(height: 24),
                         _buildSectionHeader('Sistem Ayarları'),
@@ -130,7 +129,6 @@ class _ProfilePageState extends State<ProfilePage> {
                             );
                           },
                         ),
-
                         const SizedBox(height: 30),
                         _buildLogoutButton(context, authViewModel),
                         const SizedBox(height: 20),
@@ -352,120 +350,131 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildNotLoggedInView(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.person_outline,
-                size: 60,
-                color: Colors.grey[400],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Giriş Yapın',
-              style: GoogleFonts.poppins(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Siparişlerinizi takip etmek ve size özel fırsatlardan yararlanmak için giriş yapın.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 15,
-                color: Colors.grey[500],
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () => context.push('/login'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.successGreen,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 40,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                'Giriş Yap',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(height: 30),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Sistem Ayarları',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[500],
-                  letterSpacing: 1,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            FutureBuilder<Map<String, dynamic>>(
-              future: _settingsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Text(
-                    'Ayarlar yüklenemedi',
-                    style: GoogleFonts.poppins(color: Colors.red),
-                  );
-                }
-                final settings = snapshot.data ?? {};
-                final minAmount = settings['minimumOrderAmount'] ?? 0;
-                final startHour = settings['orderStartHour'] ?? 0;
-                final startMinute = settings['orderStartMinute'] ?? 0;
-                final endHour = settings['orderEndHour'] ?? 0;
-                final endMinute = settings['orderEndMinute'] ?? 0;
-
-                return Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(30),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildInfoTile(
-                      icon: Icons.monetization_on_outlined,
-                      title: 'Minimum Sipariş Tutarı',
-                      value: '₺$minAmount',
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.person_outline,
+                        size: 60,
+                        color: Colors.grey[400],
+                      ),
                     ),
-                    _buildInfoTile(
-                      icon: Icons.access_time,
-                      title: 'Sipariş Saatleri',
-                      value:
-                          '${startHour.toString().padLeft(2, '0')}:${startMinute.toString().padLeft(2, '0')} - ${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}',
+                    const SizedBox(height: 24),
+                    Text(
+                      'Giriş Yapın',
+                      style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Siparişlerinizi takip etmek ve size özel fırsatlardan yararlanmak için giriş yapın.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        color: Colors.grey[500],
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    ElevatedButton(
+                      onPressed: () => context.push('/login'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.successGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 40,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Giriş Yap',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Sistem Ayarları',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[500],
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FutureBuilder<Map<String, dynamic>>(
+                      future: _settingsFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        if (snapshot.hasError) {
+                          return Text(
+                            'Ayarlar yüklenemedi',
+                            style: GoogleFonts.poppins(color: Colors.red),
+                          );
+                        }
+                        final settings = snapshot.data ?? {};
+                        final minAmount = settings['minimumOrderAmount'] ?? 0;
+                        final startHour = settings['orderStartHour'] ?? 0;
+                        final startMinute = settings['orderStartMinute'] ?? 0;
+                        final endHour = settings['orderEndHour'] ?? 0;
+                        final endMinute = settings['orderEndMinute'] ?? 0;
+
+                        return Column(
+                          children: [
+                            _buildInfoTile(
+                              icon: Icons.monetization_on_outlined,
+                              title: 'Minimum Sipariş Tutarı',
+                              value: '₺$minAmount',
+                            ),
+                            _buildInfoTile(
+                              icon: Icons.access_time,
+                              title: 'Sipariş Saatleri',
+                              value:
+                                  '${startHour.toString().padLeft(2, '0')}:${startMinute.toString().padLeft(2, '0')} - ${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}',
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
-                );
-              },
+                ),
+              ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

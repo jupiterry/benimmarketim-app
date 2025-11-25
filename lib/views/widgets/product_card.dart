@@ -31,8 +31,7 @@ class ProductCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap:
-              onTap ??
+          onTap: onTap ??
               () {
                 context.push('/product-detail', extra: product);
               },
@@ -95,8 +94,8 @@ class ProductCard extends StatelessWidget {
                           final isFav = viewModel.isFavorite(product.id);
                           return GestureDetector(
                             onTap: () {
-                              final authViewModel = context
-                                  .read<AuthViewModel>();
+                              final authViewModel =
+                                  context.read<AuthViewModel>();
                               if (!authViewModel.isLoggedIn) {
                                 showDialog(
                                   context: context,
@@ -159,9 +158,8 @@ class ProductCard extends StatelessWidget {
                                     ? Icons.favorite
                                     : Icons.favorite_border_rounded,
                                 size: 18,
-                                color: isFav
-                                    ? Colors.red[400]
-                                    : Colors.grey[400],
+                                color:
+                                    isFav ? Colors.red[400] : Colors.grey[400],
                               ),
                             ),
                           );
@@ -299,8 +297,8 @@ class ProductCard extends StatelessWidget {
                                   ? null
                                   : () {
                                       context.read<CartViewModel>().addToCart(
-                                        product,
-                                      );
+                                            product,
+                                          );
                                       ScaffoldMessenger.of(
                                         context,
                                       ).showSnackBar(

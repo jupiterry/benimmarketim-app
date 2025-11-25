@@ -14,12 +14,22 @@ import 'viewmodels/flash_sale_viewmodel.dart';
 import 'viewmodels/banner_viewmodel.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
+import 'services/version_check_service.dart';
+import 'services/firebase_analytics_service.dart';
+import 'services/firebase_performance_service.dart';
 import 'router/app_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  await Firebase.initializeApp();
   await TokenManager.init();
+
+  // Initialize Firebase Analytics and Performance
+  await FirebaseAnalyticsService().initialize();
+  await FirebasePerformanceService().initialize();
 
   runApp(const MyApp());
 }
@@ -32,7 +42,6 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
-
         ChangeNotifierProvider(create: (_) => HomePageViewModel()),
         ChangeNotifierProvider(create: (_) => CategoryProductsViewModel()),
         ChangeNotifierProvider(create: (_) => CartViewModel()),
@@ -46,29 +55,73 @@ class MyApp extends StatelessWidget {
       child: Consumer<AuthViewModel>(
         builder: (context, authViewModel, child) {
           // Auth durumunu kontrol et
-          WidgetsBinding.instance.addPostFrameCallback((_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
             authViewModel.checkAuthStatus();
+
+            // Versiyon kontrolü
+            try {
+              final versionService = VersionCheckService();
+              final needsUpdate = await versionService.checkVersion();
+
+              if (needsUpdate == true && context.mounted) {
+                showDialog(
+                  context: context,
+                  barrierDismissible: false, // Kullanıcı kapatamaz
+                  builder: (BuildContext context) {
+                    // Geri tuşunu da engellemek için WillPopScope (veya PopScope)
+                    return PopScope(
+                      canPop: false,
+                      child: AlertDialog(
+                        title: const Text('Güncelleme Gerekli'),
+                        content: const Text(
+                          'Uygulamanın yeni bir sürümü mevcut. Devam etmek için lütfen güncelleyin.',
+                        ),
+                        actions: <Widget>[
+                          FilledButton(
+                            child: const Text('Güncelle'),
+                            onPressed: () async {
+                              final url = versionService.getStoreUrl();
+                              final uri = Uri.parse(url);
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              }
+            } catch (e) {
+              debugPrint('Version check failed in main: $e');
+            }
           });
 
-          return GestureDetector(
-            onTap: () {
-              // Herhangi bir yere tıklandığında klavyeyi ve snackbar'ı kapat
-              FocusManager.instance.primaryFocus?.unfocus();
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          return MaterialApp.router(
+            title: 'Benim Marketim',
+            debugShowCheckedModeBanner: false,
+            theme: AppThemes.lightTheme,
+            routerConfig: AppRouter.router,
+            locale: const Locale('tr', 'TR'),
+            supportedLocales: const [Locale('tr', 'TR'), Locale('en', 'US')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            builder: (context, child) {
+              return GestureDetector(
+                onTap: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                },
+                child: child!,
+              );
             },
-            child: MaterialApp.router(
-              title: 'Benim Marketim',
-              debugShowCheckedModeBanner: false,
-              theme: AppThemes.lightTheme,
-              routerConfig: AppRouter.router,
-              locale: const Locale('tr', 'TR'),
-              supportedLocales: const [Locale('tr', 'TR'), Locale('en', 'US')],
-              localizationsDelegates: const [
-                GlobalMaterialLocalizations.delegate,
-                GlobalWidgetsLocalizations.delegate,
-                GlobalCupertinoLocalizations.delegate,
-              ],
-            ),
           );
         },
       ),

@@ -313,8 +313,32 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.9.3+5"
-  firebase_core:
+  firebase_analytics:
+    dependency: "direct main"
+    description:
+      name: firebase_analytics
+      sha256: bfb80d92eee10a6585ebd5a7e60de5caf0f2c06329e5676c0578130aea1bfe85
+      url: "https://pub.dev"
+    source: hosted
+    version: "12.0.4"
+  firebase_analytics_platform_interface:
     dependency: transitive
+    description:
+      name: firebase_analytics_platform_interface
+      sha256: "3b803077907def997044774f6c022d8e9204e9c0f5e205e3572d887c93dafd72"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.0.4"
+  firebase_analytics_web:
+    dependency: transitive
+    description:
+      name: firebase_analytics_web
+      sha256: "0dbd96dbe77b51185319000c0078477fdcffb4abb0018c362dd9afb9845c1e06"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.1"
+  firebase_core:
+    dependency: "direct main"
     description:
       name: firebase_core
       sha256: "1f2dfd9f535d81f8b06d7a50ecda6eac1e6922191ed42e09ca2c84bd2288927c"
@@ -377,6 +401,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.0"
+  firebase_performance:
+    dependency: "direct main"
+    description:
+      name: firebase_performance
+      sha256: "437ab1b317db59ac220553345f60042d6585b561e1a4ea75f2f59f7573ca9bcd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.11.1+2"
+  firebase_performance_platform_interface:
+    dependency: transitive
+    description:
+      name: firebase_performance_platform_interface
+      sha256: "0e84f5a885f0c9ac8e6796ce2ff61488632beb99645b9429560e694bde2a4352"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.6+2"
+  firebase_performance_web:
+    dependency: transitive
+    description:
+      name: firebase_performance_web
+      sha256: d13aa3546858107dec8b92b2eb2de56e53c940a1a5a0bb2451a6eadb65486450
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.8"
   firebase_remote_config:
     dependency: "direct main"
     description:

@@ -40,47 +40,35 @@ class _HomePageState extends State<HomePage>
   int _previousIndex = 0;
   late TabController _tabController;
   final PageController _bannerController = PageController();
-  final ScrollController _scrollController = ScrollController();
-  List<Product>? _shuffledProducts; // Karıştırılmış ürünleri sakla
+  List<Product>? _shuffledProducts;
 
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialTabIndex;
     _tabController = TabController(length: 2, vsync: this);
-    // Tab değişikliğini dinle
-    _tabController.addListener(_onTabChanged);
-    // Scroll listener ekle
 
-    // Shuffle'ı sıfırla - uygulama her açıldığında yeni shuffle
+    // ViewModel'deki tab index'i dinle
+    final viewModel = context.read<HomePageViewModel>();
+    if (viewModel.currentTabIndex != _selectedIndex) {
+      viewModel.setTabIndex(_selectedIndex);
+    }
+
+    _tabController.addListener(_onTabChanged);
+
     _shuffledProducts = null;
-    // Kategorileri, ürünleri ve banner'ları yükle
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authViewModel = context.read<AuthViewModel>();
-      // Eğer giriş yapılmışsa ama user bilgisi yoksa yükle
       if (authViewModel.isLoggedIn && authViewModel.user == null) {
         authViewModel.updateProfile();
       }
       context.read<CategoryViewModel>().loadCategories();
-      // Ana sayfada her zaman tüm ürünleri yükle (kategori filtresi olmadan)
-      // Ana sayfada her zaman tüm ürünleri yükle (kategori filtresi olmadan)
       context.read<HomePageViewModel>().loadHomeProducts();
       context.read<BannerViewModel>().loadBanners();
 
-      // Eğer openOrders true ise Siparişler sayfasına git
       if (widget.openOrders) {
-        // Biraz gecikme ekle ki sayfa tam yüklensin
         Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted) {
-            // OrdersPage import edilmemiş olabilir, kontrol etmem lazım.
-            // Ancak HomePage'de import '../views/profile_page.dart'; var, OrdersPage orada kullanılıyor.
-            // Burada OrdersPage'i import etmem gerekebilir.
-            // Şimdilik Navigator.pushNamed kullanalım veya OrdersPage'i import edelim.
-            // ProfilePage import edilmiş, ama OrdersPage import edilmemiş olabilir.
-            // En iyisi route name kullanmak ama route tanımlı mı?
-            // main.dart'a bakmadım.
-            // Güvenli yol: import 'orders_page.dart'; eklemek.
-            // Güvenli yol: import 'orders_page.dart'; eklemek.
             context.push('/orders');
           }
         });
@@ -88,8 +76,19 @@ class _HomePageState extends State<HomePage>
     });
   }
 
+  @override
+  void didUpdateWidget(HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTabIndex != oldWidget.initialTabIndex) {
+      // Bu kısım artık ViewModel üzerinden yönetilecek ama yedek olarak kalsın
+      context.read<HomePageViewModel>().setTabIndex(widget.initialTabIndex);
+    }
+  }
+
   void _onTabChanged() {
-    // Tab değişikliğinde gereksiz reload kaldırıldı
+    if (_tabController.indexIsChanging) {
+      context.read<HomePageViewModel>().setTabIndex(_tabController.index);
+    }
   }
 
   @override
@@ -97,22 +96,34 @@ class _HomePageState extends State<HomePage>
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _bannerController.dispose();
-
-    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: _getCurrentPage(),
-      bottomNavigationBar: _buildBottomNavigation(),
+    return Consumer<HomePageViewModel>(
+      builder: (context, viewModel, child) {
+        // ViewModel değiştiğinde tab'ı güncelle
+        if (_tabController.index != viewModel.currentTabIndex) {
+          _tabController.animateTo(viewModel.currentTabIndex);
+          _selectedIndex = viewModel.currentTabIndex;
+        }
+
+        return Scaffold(
+          backgroundColor: Colors.grey[50],
+          extendBody: true,
+          body: _getCurrentPage(),
+          bottomNavigationBar: _buildBottomNavigation(),
+        );
+      },
     );
   }
 
   Widget _getCurrentPage() {
     Widget page;
+    // _selectedIndex yerine ViewModel'i kullanabiliriz ama animasyon için local state tutmak daha iyi olabilir
+    // Ancak build içinde senkronize ediyoruz.
+
     switch (_selectedIndex) {
       case 0:
         page = _buildHomeTab();
@@ -127,23 +138,21 @@ class _HomePageState extends State<HomePage>
         page = _buildHomeTab();
     }
 
-    // Animasyon yönünü belirle
     final bool isMovingRight = _selectedIndex > _previousIndex;
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       transitionBuilder: (Widget child, Animation<double> animation) {
         return SlideTransition(
-          position:
-              Tween<Offset>(
-                begin: Offset(isMovingRight ? 1.0 : -1.0, 0.0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOutCubic,
-                ),
-              ),
+          position: Tween<Offset>(
+            begin: Offset(isMovingRight ? 1.0 : -1.0, 0.0),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeInOutCubic,
+            ),
+          ),
           child: FadeTransition(opacity: animation, child: child),
         );
       },
@@ -152,170 +161,463 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildHomeTab() {
-    return Column(
-      children: [
-        // Custom Header with Search
-        _buildModernHeader(),
-
-        // Tab Bar
-        Container(
-          color: Colors.white,
-          child: TabBar(
-            controller: _tabController,
-            indicatorColor: AppColors.successGreen,
-            indicatorWeight: 3,
-            labelColor: AppColors.successGreen,
-            unselectedLabelColor: Colors.grey[600],
-            labelStyle: GoogleFonts.poppins(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+    return NestedScrollView(
+      headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+        return <Widget>[
+          _buildSliverAppBar(),
+          SliverOverlapAbsorber(
+            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+            sliver: SliverPersistentHeader(
+              delegate: _SliverTabBarDelegate(
+                TabBar(
+                  controller: _tabController,
+                  indicatorColor: Colors.transparent,
+                  dividerColor: Colors.transparent,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.grey[600],
+                  indicator: BoxDecoration(
+                    color: AppColors.successGreen,
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 0),
+                  labelStyle: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  tabs: const [
+                    Tab(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('Ana Sayfa'),
+                      ),
+                    ),
+                    Tab(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('Kategoriler'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pinned: false,
             ),
-            unselectedLabelStyle: GoogleFonts.poppins(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            tabs: const [
-              Tab(text: 'Ana Sayfa'),
-              Tab(text: 'Kategoriler'),
-            ],
           ),
-        ),
-
-        // Content
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [_buildHomeContent(), _buildCategoriesContent()],
-          ),
-        ),
-      ],
+        ];
+      },
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildHomeContent(),
+          _buildCategoriesContent(),
+        ],
+      ),
     );
   }
 
-  Widget _buildModernHeader() {
-    return Consumer<AuthViewModel>(
-      builder: (context, authViewModel, child) {
-        if (authViewModel.isLoggedIn && authViewModel.user == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            authViewModel.updateProfile();
-          });
-        }
-
-        String userName = 'Kullanıcı';
-        if (authViewModel.isLoggedIn && authViewModel.user != null) {
-          final name = authViewModel.user!.name;
-          userName = name.isNotEmpty ? name : 'Kullanıcı';
-        }
-
-        return Container(
-          padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 24,
-            right: 24,
-            bottom: 24,
-          ),
-          decoration: const BoxDecoration(
-            color: AppColors.successGreen,
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x3300C639),
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Row: Greeting & Notification
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      expandedHeight: 180.0,
+      collapsedHeight: 90.0,
+      toolbarHeight: 90.0,
+      floating: false,
+      snap: false,
+      pinned: true,
+      backgroundColor: Colors
+          .grey[50], // Sayfa rengiyle aynı olmalı ki "hanging" efekti çalışsın
+      elevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        expandedTitleScale: 1.0,
+        titlePadding: const EdgeInsets.only(left: 24, right: 24, bottom: 15),
+        centerTitle: true,
+        title: GestureDetector(
+          onTap: () => context.push('/search'),
+          child: Container(
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.search_rounded,
+                  color: AppColors.successGreen,
+                  size: 28,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Merhaba, $userName',
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Alışverişe başlayalım',
+                        'Ne aramıştınız?',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
-                          color: Colors.white.withOpacity(0.9),
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox.shrink(),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // Search Bar
-              GestureDetector(
-                onTap: () {
-                  context.push('/search');
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search_rounded,
-                        color: AppColors.successGreen,
-                        size: 26,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          'Ürün, kategori veya marka ara...',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.tune_rounded,
-                          color: Colors.grey[600],
-                          size: 20,
+                      Text(
+                        'Ürün, kategori veya marka...',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[400],
                         ),
                       ),
                     ],
                   ),
                 ),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.successGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: AppColors.successGreen,
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        background: Align(
+          alignment: Alignment.topCenter,
+          child: Consumer<AuthViewModel>(
+            builder: (context, authViewModel, child) {
+              String userName = 'Kullanıcı';
+              String userInitials = 'K';
+              if (authViewModel.isLoggedIn && authViewModel.user != null) {
+                final name = authViewModel.user!.name;
+                userName = name.isNotEmpty ? name : 'Kullanıcı';
+                if (userName.isNotEmpty) {
+                  userInitials = userName
+                      .trim()
+                      .split(' ')
+                      .map((e) => e[0])
+                      .take(2)
+                      .join()
+                      .toUpperCase();
+                }
+              }
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Yeşil Arka Plan
+                  Container(
+                    height: 150,
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top + 10,
+                      left: 24,
+                      right: 24,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFF00C639),
+                          const Color(0xFF009E2D),
+                        ],
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(36),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00C639).withOpacity(0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            // Avatar
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  userInitials,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            // İsim ve Selamlama
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Merhaba,',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    userName,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Bildirim İkonu
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.notifications_outlined,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Dekoratif Daireler
+                  Positioned(
+                    top: -60,
+                    left: -60,
+                    child: Container(
+                      width: 200,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.05),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 40,
+                    right: -40,
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.05),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeContent() {
+    return Builder(
+      builder: (BuildContext context) {
+        return CustomScrollView(
+          key: const PageStorageKey<String>('home'),
+          slivers: [
+            SliverOverlapInjector(
+              handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: _buildBannerSlider(),
               ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                child: Text(
+                  'Ürünler',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ),
+            _buildProductSliverGrid(),
+            const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildProductSliverGrid() {
+    return Consumer<HomePageViewModel>(
+      builder: (context, productViewModel, child) {
+        if (productViewModel.isLoading) {
+          return SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.85,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => const SkeletonProductCard(),
+                childCount: 4,
+              ),
+            ),
+          );
+        }
+
+        final targetCategories = ['atistirma', 'icecekler', 'yiyecekler'];
+        final filteredProducts = productViewModel.products.where((product) {
+          final category = product.category.toLowerCase().trim();
+          return targetCategories.contains(category);
+        }).toList();
+
+        if (filteredProducts.isNotEmpty) {
+          if (_shuffledProducts == null) {
+            final shuffled = List<Product>.from(filteredProducts);
+            shuffled.shuffle();
+            _shuffledProducts = shuffled;
+          } else {
+            final shuffledIds = _shuffledProducts!.map((p) => p.id).toSet();
+            final filteredIds = filteredProducts.map((p) => p.id).toSet();
+            if (shuffledIds.length != filteredIds.length ||
+                !shuffledIds.every((id) => filteredIds.contains(id))) {
+              final shuffled = List<Product>.from(filteredProducts);
+              shuffled.shuffle();
+              _shuffledProducts = shuffled;
+            }
+          }
+        } else {
+          _shuffledProducts = null;
+        }
+
+        final products =
+            (_shuffledProducts != null && _shuffledProducts!.isNotEmpty)
+                ? _shuffledProducts!.take(20).toList()
+                : filteredProducts.take(20).toList();
+
+        if (products.isEmpty) {
+          return SliverToBoxAdapter(
+            child: SizedBox(
+              height: 400,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.inventory_2_outlined,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Ürün bulunamadı',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.85,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final product = products[index];
+                return _buildProductGridCard(product);
+              },
+              childCount: products.length,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCategoriesContent() {
+    return Builder(
+      builder: (BuildContext context) {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white,
+                AppColors.successGreenLighter.withOpacity(0.3),
+              ],
+            ),
+          ),
+          child: CustomScrollView(
+            key: const PageStorageKey<String>('categories'),
+            slivers: [
+              SliverOverlapInjector(
+                handle:
+                    NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+              ),
+              _buildCategorySliverGrid(),
+              const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
             ],
           ),
         );
@@ -323,32 +625,189 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildHomeContent() {
-    return RefreshIndicator(
-      onRefresh: () async {
-        await context.read<HomePageViewModel>().refreshProducts();
-        await context.read<BannerViewModel>().loadBanners();
+  Widget _buildCategorySliverGrid() {
+    return Consumer<CategoryViewModel>(
+      builder: (context, categoryViewModel, child) {
+        if (categoryViewModel.isLoading) {
+          return SliverFillRemaining(
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(AppColors.successGreen),
+              ),
+            ),
+          );
+        }
+
+        if (categoryViewModel.categories.isEmpty) {
+          return SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.category_outlined,
+                    size: 80,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Kategori bulunamadı',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SliverPadding(
+          padding: const EdgeInsets.all(20),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 1.1,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final category = categoryViewModel.categories[index];
+                return _buildCategoryCard(context, category, index);
+              },
+              childCount: categoryViewModel.categories.length,
+            ),
+          ),
+        );
       },
-      color: AppColors.successGreen,
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
+    );
+  }
+
+  Widget _buildCategoryCard(BuildContext context, dynamic category, int index) {
+    // Modern pastel renk paleti
+    final List<Color> colors = [
+      const Color(0xFFE3F2FD), // Blue
+      const Color(0xFFF3E5F5), // Purple
+      const Color(0xFFE8F5E9), // Green
+      const Color(0xFFFFF3E0), // Orange
+      const Color(0xFFFFEBEE), // Red
+      const Color(0xFFE0F7FA), // Cyan
+      const Color(0xFFFFF8E1), // Amber
+      const Color(0xFFFCE4EC), // Pink
+    ];
+
+    final List<Color> iconColors = [
+      const Color(0xFF1565C0),
+      const Color(0xFF7B1FA2),
+      const Color(0xFF2E7D32),
+      const Color(0xFFEF6C00),
+      const Color(0xFFC62828),
+      const Color(0xFF00838F),
+      const Color(0xFFFF8F00),
+      const Color(0xFFAD1457),
+    ];
+
+    final colorIndex = index % colors.length;
+    final bgColor = colors[colorIndex];
+    final iconColor = iconColors[colorIndex];
+
+    return GestureDetector(
+      onTap: () {
+        context.push('/category-products', extra: category);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Banner Slider
-            _buildBannerSlider(),
-
-            const SizedBox(height: 24),
-
-            // Ürünler Bölümü
-            _buildNewProductsSection(),
-
-            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+              child: Icon(
+                _getCategoryIcon(category.name),
+                color: iconColor,
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                category.name,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                  height: 1.2,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  IconData _getCategoryIcon(String categoryName) {
+    switch (categoryName.toLowerCase()) {
+      case 'benim kahvem':
+        return Icons.coffee_rounded;
+      case 'yiyecekler':
+        return Icons.restaurant_rounded;
+      case 'kahvaltılık ürünler':
+        return Icons.egg_alt_rounded;
+      case 'temel gıda':
+        return Icons.kitchen_rounded;
+      case 'meyve & sebze':
+        return Icons.apple_rounded;
+      case 'süt & süt ürünleri':
+        return Icons.water_drop_rounded;
+      case 'beş para etmeyen ürünler':
+        return Icons.money_off_rounded;
+      case 'toz içecekler':
+        return Icons.local_cafe_rounded;
+      case 'cips & çerez':
+        return Icons.cookie_rounded;
+      case 'çay ve şekerler':
+        return Icons.emoji_food_beverage_rounded;
+      case 'atıştırmalıklar':
+        return Icons.fastfood_rounded;
+      case 'temizlik & hijyen':
+        return Icons.cleaning_services_rounded;
+      case 'kişisel bakım':
+        return Icons.face_rounded;
+      case 'makarna ve kuru bakliyat':
+        return Icons.grain_rounded;
+      case 'şarküteri & et ürünleri':
+        return Icons.kebab_dining_rounded;
+      case 'buz gibi içecekler':
+        return Icons.ac_unit_rounded;
+      case 'dondurulmuş gıdalar':
+        return Icons.ac_unit_rounded;
+      case 'baharatlar':
+        return Icons.spa_rounded;
+      case 'golf dondurmalar':
+        return Icons.icecream_rounded;
+      default:
+        return Icons.category_rounded;
+    }
   }
 
   Widget _buildBannerSlider() {
@@ -486,141 +945,6 @@ class _HomePageState extends State<HomePage>
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildNewProductsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              Text(
-                'Ürünler',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Consumer<HomePageViewModel>(
-          builder: (context, productViewModel, child) {
-            if (productViewModel.isLoading) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.85,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                  ),
-                  itemCount: 4, // 4 tane skeleton göster
-                  itemBuilder: (context, index) => const SkeletonProductCard(),
-                ),
-              );
-            }
-
-            // Belirtilen kategorilerden ürünleri filtrele
-            final targetCategories = ['atistirma', 'icecekler', 'yiyecekler'];
-            final filteredProducts = productViewModel.products.where((product) {
-              // Kategori adını normalize et (küçük harf, boşlukları temizle)
-              final category = product.category.toLowerCase().trim();
-              return targetCategories.contains(category);
-            }).toList();
-
-            // Ürünleri sadece ilk yüklemede karıştır (state'te sakla)
-            // Uygulama her açıldığında yeni shuffle yapılır
-            // Sadece filteredProducts değiştiğinde ve _shuffledProducts null olduğunda shuffle yap
-            if (filteredProducts.isNotEmpty) {
-              // Eğer _shuffledProducts null ise veya ürün listesi tamamen değiştiyse yeniden shuffle yap
-              if (_shuffledProducts == null) {
-                final shuffled = List<Product>.from(filteredProducts);
-                shuffled.shuffle();
-                _shuffledProducts = shuffled;
-              } else {
-                // Mevcut shuffled products'ın ID'lerini al
-                final shuffledIds = _shuffledProducts!.map((p) => p.id).toSet();
-                final filteredIds = filteredProducts.map((p) => p.id).toSet();
-
-                // Eğer filtered products ile shuffled products farklıysa yeniden shuffle yap
-                if (shuffledIds.length != filteredIds.length ||
-                    !shuffledIds.every((id) => filteredIds.contains(id))) {
-                  final shuffled = List<Product>.from(filteredProducts);
-                  shuffled.shuffle();
-                  _shuffledProducts = shuffled;
-                }
-              }
-            } else {
-              // Eğer filtered products boşsa, shuffled products'ı da temizle
-              _shuffledProducts = null;
-            }
-
-            // Karıştırılmış ürünleri kullan veya yoksa normal listeyi kullan
-            final products =
-                (_shuffledProducts != null && _shuffledProducts!.isNotEmpty)
-                ? _shuffledProducts!
-                      .take(20)
-                      .toList() // 30'dan 20'ye düşürüldü
-                : filteredProducts.take(20).toList();
-
-            if (products.isEmpty) {
-              return SizedBox(
-                height: 400,
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.inventory_2_outlined,
-                        size: 48,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Ürün bulunamadı',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                cacheExtent: 500, // Performans için cache optimizasyonu
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio:
-                      0.85, // Overflow'u önlemek için daha da artırıldı
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                ),
-                itemCount: products.length,
-                itemBuilder: (context, index) {
-                  final product = products[index];
-                  return _buildProductGridCard(product);
-                },
-              ),
-            );
-          },
-        ),
-      ],
     );
   }
 
@@ -847,44 +1171,77 @@ class _HomePageState extends State<HomePage>
                             ),
                             // Sepete Ekle Butonu
                             GestureDetector(
-                              onTap: () {
-                                cartViewModel.addToCart(product);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '${product.name} sepete eklendi',
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    backgroundColor: AppColors.successGreen,
-                                    duration: const Duration(seconds: 1),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    margin: const EdgeInsets.all(16),
-                                  ),
-                                );
-                              },
+                              onTap: product.isOutOfStock
+                                  ? () {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Üzgünüz, bu ürün stokta yok.',
+                                            style: GoogleFonts.poppins(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          backgroundColor: Colors.red,
+                                          duration: const Duration(seconds: 1),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          margin: const EdgeInsets.all(16),
+                                        ),
+                                      );
+                                    }
+                                  : () {
+                                      cartViewModel.addToCart(product);
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '${product.name} sepete eklendi',
+                                            style: GoogleFonts.poppins(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          backgroundColor:
+                                              AppColors.successGreen,
+                                          duration: const Duration(seconds: 1),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          margin: const EdgeInsets.all(16),
+                                        ),
+                                      );
+                                    },
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: AppColors.successGreen,
+                                  color: product.isOutOfStock
+                                      ? Colors.grey[300]
+                                      : AppColors.successGreen,
                                   borderRadius: BorderRadius.circular(10),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.successGreen.withOpacity(
-                                        0.3,
-                                      ),
+                                      color: product.isOutOfStock
+                                          ? Colors.transparent
+                                          : AppColors.successGreen.withOpacity(
+                                              0.3,
+                                            ),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
                                   ],
                                 ),
-                                child: const Icon(
-                                  Icons.add_shopping_cart,
-                                  color: Colors.white,
+                                child: Icon(
+                                  product.isOutOfStock
+                                      ? Icons.remove_shopping_cart_outlined
+                                      : Icons.add_shopping_cart,
+                                  color: product.isOutOfStock
+                                      ? Colors.grey[500]
+                                      : Colors.white,
                                   size: 18,
                                 ),
                               ),
@@ -903,115 +1260,155 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildCategoriesContent() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white,
-            AppColors.successGreenLighter.withOpacity(0.3),
-          ],
-        ),
-      ),
-      child: const CategoryGrid(),
-    );
-  }
-
   Widget _buildBottomNavigation() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+      margin: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(25),
-          topRight: Radius.circular(25),
-        ),
+        borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, -5),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavItem(
-            Icons.home_outlined,
-            Icons.home,
-            'Ana Sayfa',
-            0,
-            _selectedIndex == 0,
-          ),
-          _buildNavItem(
-            Icons.shopping_cart_outlined,
-            Icons.shopping_cart,
-            'Sepet',
-            1,
-            _selectedIndex == 1,
-          ),
-          _buildNavItem(
-            Icons.person_outline,
-            Icons.person,
-            'Hesap',
-            2,
-            _selectedIndex == 2,
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildNavItem(
+              Icons.home_rounded,
+              'Ana Sayfa',
+              0,
+              _selectedIndex == 0,
+            ),
+            _buildNavItem(
+              Icons.shopping_cart_rounded,
+              'Sepet',
+              1,
+              _selectedIndex == 1,
+            ),
+            _buildNavItem(
+              Icons.person_rounded,
+              'Hesap',
+              2,
+              _selectedIndex == 2,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildNavItem(
-    IconData outlineIcon,
-    IconData filledIcon,
+    IconData icon,
     String label,
     int index,
     bool isSelected,
   ) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _previousIndex = _selectedIndex;
-          _selectedIndex = index;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.successGreenLight : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isSelected ? AppColors.successGreen : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _previousIndex = _selectedIndex;
+            _selectedIndex = index;
+          });
+        },
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutBack,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.successGreen.withOpacity(0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: EdgeInsets.all(isSelected ? 8 : 0),
+                decoration: BoxDecoration(
+                  color:
+                      isSelected ? AppColors.successGreen : Colors.transparent,
+                  shape: BoxShape.circle,
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.successGreen.withOpacity(0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Icon(
+                  icon,
+                  color: isSelected ? Colors.white : Colors.grey[400],
+                  size: isSelected ? 24 : 26,
+                ),
               ),
-              child: Icon(
-                isSelected ? filledIcon : outlineIcon,
-                color: isSelected ? Colors.white : Colors.grey[600],
-                size: 24,
+              const SizedBox(height: 4),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: isSelected ? AppColors.successGreen : Colors.grey[400],
+                  height: 1.2,
+                ),
+                child: Text(label),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? AppColors.successGreen : Colors.grey[600],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+}
+
+class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar _tabBar;
+
+  _SliverTabBarDelegate(this._tabBar);
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height + 20;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height + 20;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: Colors.grey[50],
+      child: Container(
+        margin: const EdgeInsets.only(top: 10, left: 24, right: 24, bottom: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: _tabBar,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SliverTabBarDelegate oldDelegate) {
+    return false;
   }
 }

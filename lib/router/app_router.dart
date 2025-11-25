@@ -12,18 +12,29 @@ import '../views/orders_page.dart';
 import '../views/order_page.dart';
 import '../views/settings_page.dart';
 import '../views/favorites_page.dart';
-import '../views/search_page.dart';
+import '../views/advanced_search_page.dart';
 import '../views/feedback_page.dart';
 import '../views/photocopy_upload_page.dart';
 import '../views/photocopy_history_page.dart';
 import '../models/product.dart';
 import '../models/category.dart';
+import '../views/onboarding_page.dart';
+import '../services/firebase_analytics_service.dart';
 
 class AppRouter {
+  static final _analyticsService = FirebaseAnalyticsService();
+
   static final router = GoRouter(
     initialLocation: '/',
+    observers: [
+      if (_analyticsService.observer != null) _analyticsService.observer!,
+    ],
     routes: [
       GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingPage(),
+      ),
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
       GoRoute(
         path: '/register',
@@ -96,7 +107,9 @@ class AppRouter {
         path: '/favorites',
         builder: (context, state) => const FavoritesPage(),
       ),
-      GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
+      GoRoute(
+          path: '/search',
+          builder: (context, state) => const AdvancedSearchPage()),
       GoRoute(
         path: '/feedback',
         builder: (context, state) => const FeedbackPage(),

@@ -8,6 +8,7 @@ import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../services/api_service.dart';
 import '../services/theme_service.dart';
+import '../services/firebase_analytics_service.dart';
 import 'package:go_router/go_router.dart';
 
 class ProductDetailPage extends StatefulWidget {
@@ -27,6 +28,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   void initState() {
     super.initState();
     _loadSimilarProducts();
+
+    // Analytics: View item event
+    FirebaseAnalyticsService().logViewItem(
+      itemId: widget.product.id,
+      itemName: widget.product.name,
+      itemCategory: widget.product.category,
+      price: widget.product.actualPrice,
+    );
   }
 
   Future<void> _loadSimilarProducts() async {
@@ -221,7 +230,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           color: Colors.green[700],
                         ),
                       ),
-
                       if (widget.product.isDiscounted) ...[
                         const SizedBox(width: 12),
                         Text(
@@ -291,9 +299,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           color: Colors.black87,
                         ),
                       ),
-
                       const SizedBox(width: 16),
-
                       Container(
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey[300]!),
@@ -436,93 +442,169 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   itemCount: _similarProducts.length,
                   itemBuilder: (context, index) {
                     final product = _similarProducts[index];
-                    return Container(
-                      width: 160,
-                      margin: const EdgeInsets.all(4),
-                      child: GestureDetector(
-                        onTap: () {
-                          // Ürün detayına git (replace yerine push ki geri gelebilsin)
-                          context.push('/product', extra: product);
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: ClipRRect(
-                                  borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(12),
+                    return Consumer<CartViewModel>(
+                      builder: (context, cartViewModel, child) {
+                        return Container(
+                          width: 160,
+                          margin: const EdgeInsets.all(4),
+                          child: GestureDetector(
+                            onTap: () {
+                              // Ürün detayına git (replace yerine push ki geri gelebilsin)
+                              context.push('/product', extra: product);
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
                                   ),
-                                  child: product.image.isNotEmpty
-                                      ? Image.network(
-                                          product.image,
-                                          fit: BoxFit.contain,
-                                          width: double.infinity,
-                                          errorBuilder:
-                                              (context, error, stackTrace) =>
-                                                  Container(
+                                ],
+                              ),
+                              child: Stack(
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                            top: Radius.circular(12),
+                                          ),
+                                          child: product.image.isNotEmpty
+                                              ? Image.network(
+                                                  product.image,
+                                                  fit: BoxFit.contain,
+                                                  width: double.infinity,
+                                                  errorBuilder: (context, error,
+                                                          stackTrace) =>
+                                                      Container(
                                                     color: Colors.grey[100],
                                                     child: const Icon(
                                                       Icons.image_not_supported,
                                                       color: Colors.grey,
                                                     ),
                                                   ),
-                                        )
-                                      : Container(
-                                          color: Colors.grey[100],
-                                          child: const Icon(
-                                            Icons.image_not_supported,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        product.name,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
+                                                )
+                                              : Container(
+                                                  color: Colors.grey[100],
+                                                  child: const Icon(
+                                                    Icons.image_not_supported,
+                                                    color: Colors.grey,
+                                                  ),
+                                                ),
                                         ),
                                       ),
-                                      const Spacer(),
-                                      Text(
-                                        '₺${product.actualPrice.toStringAsFixed(2)}',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.green[700],
+                                      Expanded(
+                                        flex: 2,
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                product.name,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              Text(
+                                                '₺${product.actualPrice.toStringAsFixed(2)}',
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.green[700],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
+                                  // Sepete Ekle Butonu
+                                  Positioned(
+                                    bottom: 8,
+                                    right: 8,
+                                    child: GestureDetector(
+                                      onTap: product.isOutOfStock
+                                          ? null
+                                          : () {
+                                              cartViewModel.addToCart(product);
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    '${product.name} sepete eklendi',
+                                                    style: GoogleFonts.poppins(
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                  backgroundColor:
+                                                      AppColors.successGreen,
+                                                  duration: const Duration(
+                                                      seconds: 1),
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                  ),
+                                                  margin:
+                                                      const EdgeInsets.all(16),
+                                                ),
+                                              );
+                                            },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: product.isOutOfStock
+                                              ? Colors.grey[300]
+                                              : AppColors.successGreen,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: product.isOutOfStock
+                                                  ? Colors.transparent
+                                                  : AppColors.successGreen
+                                                      .withOpacity(0.3),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Icon(
+                                          product.isOutOfStock
+                                              ? Icons
+                                                  .remove_shopping_cart_outlined
+                                              : Icons.add_shopping_cart,
+                                          color: product.isOutOfStock
+                                              ? Colors.grey[500]
+                                              : Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     );
                   },
                 ),

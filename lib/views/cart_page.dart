@@ -8,7 +8,6 @@ import '../viewmodels/auth_viewmodel.dart';
 import '../services/theme_service.dart';
 import '../models/cart_item.dart';
 import 'package:go_router/go_router.dart';
-import 'widgets/animated_shopping_button.dart';
 
 class CartPage extends StatelessWidget {
   const CartPage({super.key});
@@ -97,48 +96,121 @@ class CartPage extends StatelessWidget {
 
   Widget _buildEmptyCart(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 150,
-            height: 150,
-            decoration: BoxDecoration(
-              color: Colors.green[50],
-              shape: BoxShape.circle,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeOutBack,
+        builder: (context, value, child) {
+          return Transform.scale(
+            scale: value,
+            child: Opacity(
+              opacity: value.clamp(0.0, 1.0),
+              child: child,
             ),
-            child: Icon(
-              Icons.shopping_cart_outlined,
-              size: 80,
-              color: Colors.green[200],
+          );
+        },
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Modern Illustration
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 200,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: AppColors.successGreen.withOpacity(0.05),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: AppColors.successGreen.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(30),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.successGreen.withOpacity(0.2),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.shopping_basket_rounded,
+                    size: 80,
+                    color: AppColors.successGreen,
+                  ),
+                ),
+                Positioned(
+                  right: 40,
+                  top: 40,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[100],
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.star_rounded,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 40,
+                  bottom: 40,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[100],
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.favorite_rounded,
+                      color: Colors.blue,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Sepetiniz Boş',
-            style: GoogleFonts.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
+            const SizedBox(height: 32),
+            Text(
+              'Sepetiniz Boş',
+              style: GoogleFonts.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Henüz sepetinize ürün eklemediniz.\nAlışverişe başlamak için ürünleri inceleyin.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(
-              fontSize: 15,
-              color: Colors.grey[500],
-              height: 1.5,
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                'Henüz sepetinize ürün eklemediniz.\nİhtiyaçlarınızı hemen keşfetmeye başlayın!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey[500],
+                  height: 1.5,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 32),
-          AnimatedShoppingButton(
-            onPressed: () {
-              context.go('/home');
-            },
-          ),
-        ],
+            const SizedBox(height: 40),
+            // Button removed as requested
+          ],
+        ),
       ),
     );
   }

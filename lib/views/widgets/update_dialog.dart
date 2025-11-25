@@ -100,30 +100,25 @@ class UpdateDialog extends StatelessWidget {
     );
   }
 
-  /// Play Store'u aç
+  /// Mağazayı aç
   Future<void> _launchPlayStore(BuildContext context) async {
     final versionService = VersionCheckService();
-    final playStoreUrl = versionService.getPlayStoreUrl();
-    final webPlayStoreUrl = versionService.getWebPlayStoreUrl();
+    final storeUrl = versionService.getStoreUrl();
+
+    if (storeUrl.isEmpty) return;
 
     try {
-      final Uri uri = Uri.parse(playStoreUrl);
+      final Uri uri = Uri.parse(storeUrl);
 
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        // market:// açılmazsa web URL'ini dene
-        final Uri webUri = Uri.parse(webPlayStoreUrl);
-        if (await canLaunchUrl(webUri)) {
-          await launchUrl(webUri, mode: LaunchMode.externalApplication);
-        } else {
-          if (context.mounted) {
-            _showError(context);
-          }
+        if (context.mounted) {
+          _showError(context);
         }
       }
     } catch (e) {
-      print('Play Store açılırken hata: $e');
+      debugPrint('Mağaza açılırken hata: $e');
       if (context.mounted) {
         _showError(context);
       }

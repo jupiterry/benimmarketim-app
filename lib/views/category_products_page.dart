@@ -25,8 +25,8 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CategoryProductsViewModel>().loadCategoryProducts(
-        widget.category.id,
-      );
+            widget.category.id,
+          );
     });
     _searchController.addListener(() {
       setState(() {

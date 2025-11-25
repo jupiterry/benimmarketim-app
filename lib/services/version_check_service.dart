@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter/foundation.dart';
 
 /// Firebase Remote Config kullanarak uygulama versiyonunu kontrol eden servis
 class VersionCheckService {
@@ -11,7 +12,8 @@ class VersionCheckService {
 
   // Sabitler
   static const String appPackageName = 'com.jupi.benimapp.benimmarketim';
-  static const String minVersionKey = 'android_min_version_code';
+  static const String androidMinVersionKey = 'android_min_version_code';
+  static const String iosMinVersionKey = 'ios_min_version_code';
 
   FirebaseRemoteConfig? _remoteConfig;
   bool _isInitialized = false;
@@ -27,20 +29,20 @@ class VersionCheckService {
       await _remoteConfig!.setConfigSettings(
         RemoteConfigSettings(
           fetchTimeout: const Duration(seconds: 10),
-          minimumFetchInterval: const Duration(hours: 1), // Canlıda 1 saat
+          minimumFetchInterval: Duration.zero, // Test için anlık fetch
         ),
       );
 
       // Default değerler
       await _remoteConfig!.setDefaults({
-        minVersionKey: 10, // Mevcut minimum versiyon
+        androidMinVersionKey: 1,
+        iosMinVersionKey: 1,
       });
 
       _isInitialized = true;
-      print('VersionCheckService initialized');
+      debugPrint('VersionCheckService initialized');
     } catch (e) {
-      print('VersionCheckService initialization error: $e');
-      // Hata olsa bile uygulama çalışmaya devam etsin
+      debugPrint('VersionCheckService initialization error: $e');
     }
   }
 
@@ -48,56 +50,53 @@ class VersionCheckService {
   /// Returns: true = güncelleme gerekli, false = güncel, null = kontrol yapılamadı
   Future<bool?> checkVersion() async {
     try {
-      // Firebase'i başlat
       if (!_isInitialized) {
         await initialize();
       }
 
       if (_remoteConfig == null) {
-        print('Remote Config not initialized');
         return null;
       }
 
       // Mevcut uygulama versiyonunu al
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentBuildNumber = int.parse(packageInfo.buildNumber);
-      print('Current build number: $currentBuildNumber');
+      final currentBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
+      debugPrint('Current build number: $currentBuildNumber');
 
       // Firebase'den değerleri çek ve aktif et
       await _remoteConfig!.fetchAndActivate();
 
-      // Minimum gerekli versiyonu al
-      final minRequiredVersion = _remoteConfig!.getInt(minVersionKey);
-      print('Minimum required version: $minRequiredVersion');
+      // Platforma göre minimum gerekli versiyonu al
+      String configKey =
+          Platform.isIOS ? iosMinVersionKey : androidMinVersionKey;
+      final minRequiredVersion = _remoteConfig!.getInt(configKey);
+
+      debugPrint('Minimum required version ($configKey): $minRequiredVersion');
 
       // Karşılaştır
       if (currentBuildNumber < minRequiredVersion) {
-        print('Update required: $currentBuildNumber < $minRequiredVersion');
+        debugPrint(
+            'Update required: $currentBuildNumber < $minRequiredVersion');
         return true; // Güncelleme gerekli
       } else {
-        print('App is up to date');
+        debugPrint('App is up to date');
         return false; // Güncel
       }
     } catch (e) {
-      print('Version check error: $e');
-      // Hata durumunda kullanıcıyı engelleme
+      debugPrint('Version check error: $e');
       return null;
     }
   }
 
-  /// Play Store URL'ini al
-  String getPlayStoreUrl() {
+  /// Mağaza URL'ini al
+  String getStoreUrl() {
     if (Platform.isAndroid) {
-      return 'market://details?id=$appPackageName';
+      return 'https://play.google.com/store/apps/details?id=$appPackageName';
     } else if (Platform.isIOS) {
-      // iOS için App Store ID'si gerekirse buraya eklenebilir
-      return 'https://apps.apple.com/app/id0000000000';
+      // App Store ID'nizi buraya ekleyin
+      // Örnek: https://apps.apple.com/app/id123456789
+      return 'https://apps.apple.com/app/id6738341165';
     }
-    return 'https://play.google.com/store/apps/details?id=$appPackageName';
-  }
-
-  /// Web Play Store URL'ini al (market:// açılmazsa)
-  String getWebPlayStoreUrl() {
-    return 'https://play.google.com/store/apps/details?id=$appPackageName';
+    return '';
   }
 }
