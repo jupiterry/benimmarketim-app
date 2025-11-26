@@ -41,21 +41,16 @@ workflows:
       vars:
         BUNDLE_ID: "com.jupi.benimapp.benimmarketimApp" # iOS projesindeki Bundle ID
         APP_STORE_APPLE_ID: 6755705908 # App Store Connect'teki App ID (değiştirilecek)
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.jupi.benimapp.benimmarketimApp
     scripts:
       - name: Set up code signing settings
         script: |
           keychain initialize
-      - name: Debug - List Certs & Profiles
-        script: |
-          echo "--- Certificates ---"
-          app-store-connect certificates list
-          echo "--- Profiles ---"
-          app-store-connect profiles list
       - name: Fetch signing files
         script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
+          echo "Using manually uploaded certificates and profiles"
       - name: Use profiles
         script: |
           keychain add-certificates
