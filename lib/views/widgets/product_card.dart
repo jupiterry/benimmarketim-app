@@ -59,6 +59,7 @@ class ProductCard extends StatelessWidget {
                               child: Image.network(
                                 product.image,
                                 fit: BoxFit.contain,
+                                cacheWidth: 300, // Optimize memory usage
                                 errorBuilder: (context, error, stackTrace) {
                                   return Container(
                                     color: Colors.grey[100],

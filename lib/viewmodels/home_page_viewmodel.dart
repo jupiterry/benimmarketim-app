@@ -42,8 +42,14 @@ class HomePageViewModel extends ChangeNotifier {
     _error = null;
 
     try {
-      // Tüm ürünleri çek
-      final allProducts = await _apiService.getProducts();
+      // Ürünleri ve öne çıkanları paralel yükle
+      final results = await Future.wait([
+        _apiService.getProducts(),
+        _apiService.getFeaturedProducts(),
+      ]);
+
+      final allProducts = results[0] as List<Product>;
+      _featuredProducts = results[1] as List<Product>;
 
       if (allProducts.isNotEmpty) {
         // Gizli ürünleri filtrele (isHidden: false olanları al)
@@ -62,9 +68,6 @@ class HomePageViewModel extends ChangeNotifier {
         _products = [];
       }
 
-      // Öne çıkanları da yükle
-      await _loadFeaturedProducts();
-
       notifyListeners();
     } catch (e) {
       print('HomePageViewModel: Error loading products: $e');
@@ -72,17 +75,6 @@ class HomePageViewModel extends ChangeNotifier {
       notifyListeners();
     } finally {
       _setLoading(false);
-    }
-  }
-
-  // Öne çıkan ürünleri yükle
-  Future<void> _loadFeaturedProducts() async {
-    try {
-      _featuredProducts = await _apiService.getFeaturedProducts();
-    } catch (e) {
-      print('HomePageViewModel: Error loading featured products: $e');
-      // Hata durumunda mevcut ürünlerden seç
-      _featuredProducts = _products.where((p) => p.isFeatured).take(4).toList();
     }
   }
 

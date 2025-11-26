@@ -109,42 +109,75 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Logo ve Başlık
-                  Center(
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: AppColors.successGreen.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.shopping_bag_outlined,
-                            color: AppColors.successGreen,
-                            size: 48,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Tekrar Hoş Geldiniz!',
-                          style: GoogleFonts.poppins(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black87,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Hesabınıza giriş yaparak alışverişe devam edin',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: Colors.grey[600],
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Geri Butonu (Sadece navige edildiyse göster)
+                      if (context.canPop())
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          child: IconButton(
+                            onPressed: () => context.pop(),
+                            icon: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                size: 20,
+                                color: Colors.black87,
+                              ),
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      Center(
+                        child: Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: AppColors.successGreen.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.shopping_bag_outlined,
+                                color: AppColors.successGreen,
+                                size: 48,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              'Tekrar Hoş Geldiniz!',
+                              style: GoogleFonts.poppins(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Hesabınıza giriş yaparak alışverişe devam edin',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 48),
