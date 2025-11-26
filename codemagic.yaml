@@ -31,7 +31,7 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: CodeMagic # App Store Connect integration adı
+      app_store_connect: CodeMagic2 # App Store Connect integration adı
     environment:
       flutter: stable
       xcode: latest
@@ -45,9 +45,12 @@ workflows:
       - name: Set up code signing settings
         script: |
           keychain initialize
-      - name: List certificates (Debug)
+      - name: Debug - List Certs & Profiles
         script: |
-          app-store-connect list-certificates
+          echo "--- Certificates ---"
+          app-store-connect certificates list
+          echo "--- Profiles ---"
+          app-store-connect profiles list
       - name: Fetch signing files
         script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
