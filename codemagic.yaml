@@ -55,6 +55,9 @@ workflows:
         script: |
           keychain add-certificates
           xcode-project use-profiles
+      - name: Get Flutter dependencies
+        script: |
+          flutter pub get
       - name: Install pods
         script: |
           find . -name "Podfile" -exec dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'
