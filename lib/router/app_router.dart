@@ -27,8 +27,11 @@ class AppRouter {
   static final router = GoRouter(
     initialLocation: '/',
     observers: [
+      // Analytics observer null kontrolü ile güvenli ekleme
       if (_analyticsService.observer != null) _analyticsService.observer!,
     ],
+    // Hata durumunda fallback route
+    errorBuilder: (context, state) => const SplashScreen(),
     routes: [
       GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
       GoRoute(

@@ -63,8 +63,19 @@ class VersionCheckService {
       final currentBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
       debugPrint('Current build number: $currentBuildNumber');
 
-      // Firebase'den değerleri çek ve aktif et
-      await _remoteConfig!.fetchAndActivate();
+      // Firebase'den değerleri çek ve aktif et - timeout ile
+      try {
+        await _remoteConfig!.fetchAndActivate().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('Version check timeout - using defaults');
+            return false; // Timeout durumunda default değerleri kullan
+          },
+        );
+      } catch (e) {
+        debugPrint('Version check fetch error: $e - using defaults');
+        // Hata durumunda default değerleri kullan, uygulama çalışmaya devam etsin
+      }
 
       // Platforma göre minimum gerekli versiyonu al
       String configKey =
