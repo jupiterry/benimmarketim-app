@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.jupi.benimapp.benimmarketimApp</string>
+	<string>com.jupi.benimmarketim</string>
 	<key>PROJECT_ID</key>
 	<string>benimmarketim-ios</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:421684397774:ios:b790d1636d420f0646329f</string>
+	<string>1:421684397774:ios:393a0b61a1a2b9e146329f</string>
 </dict>
 </plist>

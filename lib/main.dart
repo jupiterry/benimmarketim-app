@@ -25,7 +25,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Hata yakalama ile güvenli başlatma
   try {
     // Firebase initialization - hata olsa bile devam et
@@ -160,15 +160,13 @@ class MyApp extends StatelessWidget {
             try {
               final versionService = VersionCheckService();
               // Timeout ekle - 15 saniye içinde tamamlanmazsa atla
-              final needsUpdate = await versionService
-                  .checkVersion()
-                  .timeout(
-                    const Duration(seconds: 15),
-                    onTimeout: () {
-                      debugPrint('⚠️ Version check timeout - skipping');
-                      return null; // Timeout durumunda null döndür, güncelleme gösterme
-                    },
-                  );
+              final needsUpdate = await versionService.checkVersion().timeout(
+                const Duration(seconds: 15),
+                onTimeout: () {
+                  debugPrint('⚠️ Version check timeout - skipping');
+                  return null; // Timeout durumunda null döndür, güncelleme gösterme
+                },
+              );
 
               if (needsUpdate == true) {
                 // Context'in hala geçerli olduğundan emin ol
