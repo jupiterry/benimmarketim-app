@@ -45,14 +45,14 @@ workflows:
       - name: Set up code signing settings
         script: |
           keychain initialize
+      - name: List certificates (Debug)
+        script: |
+          app-store-connect list-certificates
       - name: Fetch signing files
         script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create
-      - name: List certificates (Debug)
-        script: |
-          app-store-connect list-certificates
       - name: Use profiles
         script: |
           keychain add-certificates
