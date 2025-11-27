@@ -409,6 +409,28 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ],
                   ),
+
+                  const SizedBox(height: 24),
+
+                  // Misafir Girişi Linki
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        context.go('/home');
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey[600],
+                      ),
+                      child: Text(
+                        'Giriş Yapmadan Devam Et',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
