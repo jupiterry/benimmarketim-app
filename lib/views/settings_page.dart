@@ -92,6 +92,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   // Adres sayfasına git
                 },
               ),
+              _buildDivider(),
+              _buildActionTile(
+                title: 'Hesabımı Sil',
+                icon: Icons.delete_outline_rounded,
+                isDestructive: true,
+                onTap: () {
+                  _showDeleteAccountDialog(context);
+                },
+              ),
             ]),
             const SizedBox(height: 32),
             _buildSectionHeader('Diğer'),
@@ -256,6 +265,7 @@ class _SettingsPageState extends State<SettingsPage> {
     required IconData icon,
     required VoidCallback onTap,
     String? badge,
+    bool isDestructive = false,
   }) {
     return InkWell(
       onTap: onTap,
@@ -267,10 +277,14 @@ class _SettingsPageState extends State<SettingsPage> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
+                color: isDestructive
+                    ? AppColors.errorRed.withOpacity(0.1)
+                    : Colors.grey[50],
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: Colors.black87, size: 22),
+              child: Icon(icon,
+                  color: isDestructive ? AppColors.errorRed : Colors.black87,
+                  size: 22),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -279,7 +293,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 style: GoogleFonts.poppins(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+                  color: isDestructive ? AppColors.errorRed : Colors.black87,
                 ),
               ),
             ),
@@ -377,6 +391,102 @@ class _SettingsPageState extends State<SettingsPage> {
       thickness: 1,
       color: Colors.grey[100],
       indent: 68,
+    );
+  }
+
+  void _showDeleteAccountDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Hesabınızı Silmek İstiyor musunuz?',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            color: AppColors.errorRed,
+          ),
+        ),
+        content: Text(
+          'Hesabınızı sildiğinizde tüm verileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz.',
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            color: Colors.grey[700],
+          ),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => context.pop(),
+            child: Text(
+              'Vazgeç',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              // Dialogu kapat
+              context.pop();
+
+              // Loading göster
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const Center(
+                  child: CircularProgressIndicator(
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.errorRed),
+                  ),
+                ),
+              );
+
+              final authViewModel = context.read<AuthViewModel>();
+              final success = await authViewModel.deleteAccount();
+
+              // Loading kapat
+              if (context.mounted) {
+                context.pop();
+              }
+
+              if (success && context.mounted) {
+                // Başarılı mesajı göster ve ana sayfaya yönlendir
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Hesabınız başarıyla silindi.',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: AppColors.successGreen,
+                  ),
+                );
+                context.go('/');
+              } else if (context.mounted) {
+                // Hata mesajı
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      authViewModel.error ??
+                          'Hesap silinirken bir hata oluştu.',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: AppColors.errorRed,
+                  ),
+                );
+              }
+            },
+            child: Text(
+              'Hesabımı Sil',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                color: AppColors.errorRed,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

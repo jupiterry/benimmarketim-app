@@ -132,6 +132,29 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Hesap silme
+  Future<bool> deleteAccount() async {
+    _setLoading(true);
+    try {
+      await _apiService.deleteAccount();
+
+      // Başarılı silme sonrası logout işlemleri
+      _user = null;
+      _isLoggedIn = false;
+      await TokenManager.clearAllTokens();
+      await _analyticsService.setUserId(null);
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // Token yenileme (web projesindeki refresh token sistemi)
   Future<bool> refreshToken() async {
     try {

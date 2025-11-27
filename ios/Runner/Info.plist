@@ -46,12 +46,11 @@
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 		<!-- App Store Permissions -->
+		<!-- App Store Permissions -->
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>Uygulama, profil fotoğrafı yüklemek ve ürün görselleri için galeriye erişim gerektirir.</string>
+		<string>Profil fotoğrafınızı değiştirmek ve ürün görseli yüklemek için galeri erişimi gereklidir.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>Uygulama, fotoğraf çekmek ve profil resmi oluşturmak için kameraya erişim gerektirir.</string>
-		<key>NSMicrophoneUsageDescription</key>
-		<string>Uygulama, video kaydı sırasında ses kaydı için mikrofona erişim gerektirebilir.</string>
+		<string>Profil fotoğrafı çekmek ve fotokopi belgesi taramak için kamera erişimi gereklidir.</string>
 		<!-- Export Compliance -->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
@@ -93,7 +92,5 @@
 		</dict>
 		
 		<!-- Network permissions -->
-		<key>NSLocalNetworkUsageDescription</key>
-		<string>Uygulama, yerel ağ üzerinden bağlantı kurmak için izin gerektirir.</string>
 	</dict>
 </plist>

@@ -40,32 +40,31 @@ class ApiService {
     const String knownFingerprint =
         'D5:B2:3D:CB:FE:34:54:5A:DF:09:91:D8:E3:C7:6C:B2:61:91:4F:9A:F3:4C:F6:A7:B5:01:EF:2A:B1:EE:E8:53';
 
-    (_dio.httpClientAdapter as IOHttpClientAdapter)
-        .onHttpClientCreate = (client) {
+    (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+        (client) {
       client.badCertificateCallback =
           (X509Certificate cert, String host, int port) {
-            // Fingerprint kontrolü:
-            // Sertifikanın DER formatındaki verisini SHA256 ile hashle
-            final digest = sha256.convert(cert.der).toString().toUpperCase();
+        // Fingerprint kontrolü:
+        // Sertifikanın DER formatındaki verisini SHA256 ile hashle
+        final digest = sha256.convert(cert.der).toString().toUpperCase();
 
-            // Beklenen fingerprint'i formatla (aradaki : işaretlerini kaldır)
-            final expectedFingerprint = knownFingerprint
-                .replaceAll(':', '')
-                .toUpperCase();
+        // Beklenen fingerprint'i formatla (aradaki : işaretlerini kaldır)
+        final expectedFingerprint =
+            knownFingerprint.replaceAll(':', '').toUpperCase();
 
-            // Hash'i karşılaştır
-            final isValid = digest == expectedFingerprint;
+        // Hash'i karşılaştır
+        final isValid = digest == expectedFingerprint;
 
-            if (!isValid) {
-              print('GÜVENLİK UYARISI: Sertifika parmak izi eşleşmedi!');
-              print('Beklenen: $expectedFingerprint');
-              print('Gelen: $digest');
-            } else {
-              print('GÜVENLİK: SSL Pinning başarılı, sertifika doğrulandı.');
-            }
+        if (!isValid) {
+          print('GÜVENLİK UYARISI: Sertifika parmak izi eşleşmedi!');
+          print('Beklenen: $expectedFingerprint');
+          print('Gelen: $digest');
+        } else {
+          print('GÜVENLİK: SSL Pinning başarılı, sertifika doğrulandı.');
+        }
 
-            return isValid;
-          };
+        return isValid;
+      };
       return client;
     };
 
@@ -274,6 +273,27 @@ class ApiService {
     } finally {
       // Her durumda token'ı temizle
       _clearStoredToken();
+    }
+  }
+
+  // Hesap silme
+  Future<void> deleteAccount() async {
+    try {
+      print('Deleting account...');
+      final response = await _dio.delete('/auth/delete-account');
+
+      print('Delete Account Response Status: ${response.statusCode}');
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        // Başarılı, tokenları temizle
+        await _clearStoredToken();
+        return;
+      }
+
+      throw Exception('Hesap silinemedi');
+    } catch (e) {
+      print('Delete Account Error: $e');
+      throw Exception('Hesap silinirken bir hata oluştu: $e');
     }
   }
 
