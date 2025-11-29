@@ -11,7 +11,7 @@ class VersionCheckService {
   VersionCheckService._internal();
 
   // Sabitler
-  static const String appPackageName = 'com.jupi.benimapp.benimmarketim';
+  static const String appPackageName = 'com.jupi.benimapp.benimmarketim_app';
   static const String androidMinVersionKey = 'android_min_version_code';
   static const String iosMinVersionKey = 'ios_min_version_code';
 
@@ -61,7 +61,6 @@ class VersionCheckService {
       // Mevcut uygulama versiyonunu al
       final packageInfo = await PackageInfo.fromPlatform();
       final currentBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
-      debugPrint('Current build number: $currentBuildNumber');
 
       // Firebase'den değerleri çek ve aktif et - timeout ile
       try {

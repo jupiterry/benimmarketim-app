@@ -15,11 +15,9 @@ import 'viewmodels/flash_sale_viewmodel.dart';
 import 'viewmodels/banner_viewmodel.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
-import 'services/version_check_service.dart';
 import 'services/firebase_analytics_service.dart';
 import 'services/firebase_performance_service.dart';
 import 'router/app_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 
@@ -154,59 +152,6 @@ class MyApp extends StatelessWidget {
               }
             } catch (e) {
               debugPrint('Auth check failed: $e');
-            }
-
-            // Versiyon kontrolü - güvenli şekilde (timeout ile)
-            try {
-              final versionService = VersionCheckService();
-              // Timeout ekle - 15 saniye içinde tamamlanmazsa atla
-              final needsUpdate = await versionService.checkVersion().timeout(
-                const Duration(seconds: 15),
-                onTimeout: () {
-                  debugPrint('⚠️ Version check timeout - skipping');
-                  return null; // Timeout durumunda null döndür, güncelleme gösterme
-                },
-              );
-
-              if (needsUpdate == true) {
-                // Context'in hala geçerli olduğundan emin ol
-                if (context.mounted) {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false, // Kullanıcı kapatamaz
-                    builder: (BuildContext dialogContext) {
-                      // Geri tuşunu da engellemek için WillPopScope (veya PopScope)
-                      return PopScope(
-                        canPop: false,
-                        child: AlertDialog(
-                          title: const Text('Güncelleme Gerekli'),
-                          content: const Text(
-                            'Uygulamanın yeni bir sürümü mevcut. Devam etmek için lütfen güncelleyin.',
-                          ),
-                          actions: <Widget>[
-                            FilledButton(
-                              child: const Text('Güncelle'),
-                              onPressed: () async {
-                                final url = versionService.getStoreUrl();
-                                final uri = Uri.parse(url);
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(
-                                    uri,
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                }
-              }
-            } catch (e) {
-              debugPrint('Version check failed in main: $e');
-              // Hata olsa bile uygulama çalışmaya devam etmeli
             }
           });
 

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
+import 'widgets/custom_dialog.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -34,9 +35,38 @@ class _LoginPageState extends State<LoginPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(AppColors.successGreen),
+      builder: (context) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(AppColors.successGreen),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Giriş Yapılıyor...',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -60,36 +90,15 @@ class _LoginPageState extends State<LoginPage> {
       }
     } else if (mounted) {
       // Hata mesajını göster
-      showDialog(
+      CustomDialog.show(
         context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Giriş Hatası',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              color: AppColors.errorRed,
-            ),
-          ),
-          content: Text(
-            authViewModel.error ?? 'Giriş yapılamadı',
-            style: GoogleFonts.poppins(),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => context.pop(),
-              child: Text(
-                'Tamam',
-                style: GoogleFonts.poppins(
-                  color: AppColors.successGreen,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
+        title: 'Giriş Hatası',
+        message: authViewModel.error ?? 'Giriş yapılamadı',
+        confirmButtonText: 'Tamam',
+        showCancelButton: false,
+        isDestructive: true,
+        icon: Icons.error_outline_rounded,
+        onConfirm: () => context.pop(),
       );
     }
   }

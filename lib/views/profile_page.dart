@@ -5,6 +5,7 @@ import '../viewmodels/auth_viewmodel.dart';
 import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
+import 'widgets/custom_dialog.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -84,6 +85,13 @@ class _ProfilePageState extends State<ProfilePage> {
                           icon: Icons.history,
                           title: 'Fotokopi Geçmişi',
                           onTap: () => context.push('/photocopy-history'),
+                        ),
+                        _buildMenuOption(
+                          context,
+                          icon: Icons.delete_outline_rounded,
+                          title: 'Hesabımı Sil',
+                          onTap: () => _showDeleteAccountDialog(context),
+                          isDestructive: true,
                         ),
                         const SizedBox(height: 24),
                         const SizedBox(height: 24),
@@ -231,6 +239,7 @@ class _ProfilePageState extends State<ProfilePage> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    bool isDestructive = false,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -250,17 +259,21 @@ class _ProfilePageState extends State<ProfilePage> {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.grey[50],
+            color: isDestructive
+                ? AppColors.errorRed.withOpacity(0.1)
+                : Colors.grey[50],
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: Colors.black87, size: 22),
+          child: Icon(icon,
+              color: isDestructive ? AppColors.errorRed : Colors.black87,
+              size: 22),
         ),
         title: Text(
           title,
           style: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
-            color: Colors.black87,
+            color: isDestructive ? AppColors.errorRed : Colors.black87,
           ),
         ),
         trailing: Icon(
@@ -345,6 +358,64 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ],
         );
+      },
+    );
+  }
+
+  void _showDeleteAccountDialog(BuildContext context) {
+    CustomDialog.show(
+      context: context,
+      title: 'Hesabınızı Silmek İstiyor musunuz?',
+      message:
+          'Hesabınızı sildiğinizde tüm verileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz.',
+      confirmButtonText: 'Hesabımı Sil',
+      isDestructive: true,
+      icon: Icons.warning_amber_rounded,
+      onConfirm: () async {
+        // Dialogu kapat
+        Navigator.of(context, rootNavigator: true).pop();
+
+        // Loading göster
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.errorRed),
+            ),
+          ),
+        );
+
+        final authViewModel = context.read<AuthViewModel>();
+        final success = await authViewModel.deleteAccount();
+
+        // Loading kapat
+        if (context.mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+
+        if (success && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Hesabınız başarıyla silindi.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: AppColors.successGreen,
+            ),
+          );
+          context.go('/');
+        } else if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                authViewModel.error ?? 'Hesap silinirken bir hata oluştu.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: AppColors.errorRed,
+            ),
+          );
+        }
       },
     );
   }
