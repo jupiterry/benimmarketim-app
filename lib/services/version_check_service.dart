@@ -60,10 +60,14 @@ class VersionCheckService {
 
       // Mevcut uygulama versiyonunu al
       final packageInfo = await PackageInfo.fromPlatform();
+      debugPrint('Package Info - Version: ${packageInfo.version}, BuildNumber: ${packageInfo.buildNumber}');
+      
       final currentBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
+      debugPrint('Parsed Current Build Number: $currentBuildNumber');
 
       // Firebase'den değerleri çek ve aktif et - timeout ile
       try {
+        debugPrint('Fetching remote config...');
         await _remoteConfig!.fetchAndActivate().timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -71,6 +75,7 @@ class VersionCheckService {
             return false; // Timeout durumunda default değerleri kullan
           },
         );
+        debugPrint('Remote config fetch completed.');
       } catch (e) {
         debugPrint('Version check fetch error: $e - using defaults');
         // Hata durumunda default değerleri kullan, uygulama çalışmaya devam etsin
@@ -81,7 +86,8 @@ class VersionCheckService {
           Platform.isIOS ? iosMinVersionKey : androidMinVersionKey;
       final minRequiredVersion = _remoteConfig!.getInt(configKey);
 
-      debugPrint('Minimum required version ($configKey): $minRequiredVersion');
+      debugPrint('Config Key: $configKey');
+      debugPrint('Minimum required version from Remote Config: $minRequiredVersion');
 
       // Karşılaştır
       if (currentBuildNumber < minRequiredVersion) {
@@ -89,7 +95,7 @@ class VersionCheckService {
             'Update required: $currentBuildNumber < $minRequiredVersion');
         return true; // Güncelleme gerekli
       } else {
-        debugPrint('App is up to date');
+        debugPrint('App is up to date (Current: $currentBuildNumber >= Min: $minRequiredVersion)');
         return false; // Güncel
       }
     } catch (e) {
