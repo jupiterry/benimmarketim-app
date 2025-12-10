@@ -49,16 +49,19 @@ class User {
 class LoginRequest {
   final String email;
   final String password;
+  final String? deviceType;
 
   LoginRequest({
     required this.email,
     required this.password,
+    this.deviceType,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'email': email,
       'password': password,
+      if (deviceType != null) 'deviceType': deviceType,
     };
   }
 }

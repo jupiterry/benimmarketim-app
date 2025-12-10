@@ -77,12 +77,8 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Navigate after animation
-    Future.delayed(const Duration(milliseconds: 3500), () {
-      if (mounted) {
-        _checkVersionAndNavigate();
-      }
-    });
+    // Navigate after checks
+    _checkVersionAndNavigate();
   }
 
   Future<void> _getVersionInfo() async {

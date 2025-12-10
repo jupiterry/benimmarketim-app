@@ -289,7 +289,13 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildLogoutButton(BuildContext context, AuthViewModel authViewModel) {
     return TextButton(
-      onPressed: () => _showLogoutDialog(context, authViewModel),
+      onPressed: () async {
+        // Instant logout without dialog
+        await authViewModel.logout();
+        if (context.mounted) {
+          context.go('/login');
+        }
+      },
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -310,55 +316,6 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context, AuthViewModel authViewModel) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Text(
-            'Çıkış Yap',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-          ),
-          content: Text(
-            'Hesabınızdan çıkmak istediğinizden emin misiniz?',
-            style: GoogleFonts.poppins(color: Colors.grey[600]),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => context.pop(),
-              child: Text(
-                'İptal',
-                style: GoogleFonts.poppins(
-                  color: Colors.grey[500],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                context.pop();
-                await authViewModel.logout();
-                if (context.mounted) {
-                  context.go('/login');
-                }
-              },
-              child: Text(
-                'Çıkış Yap',
-                style: GoogleFonts.poppins(
-                  color: Colors.red[500],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 

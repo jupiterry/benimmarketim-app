@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
@@ -38,7 +39,22 @@ class AuthViewModel extends ChangeNotifier {
 
       print('İnternet bağlantısı başarılı, API denemesi yapılıyor...');
 
-      final request = LoginRequest(email: email, password: password);
+      String deviceType = 'unknown';
+      try {
+        if (Platform.isAndroid) {
+          deviceType = 'android';
+        } else if (Platform.isIOS) {
+          deviceType = 'ios';
+        }
+      } catch (e) {
+        print('Cihaz tipi algılanamadı: $e');
+      }
+
+      final request = LoginRequest(
+        email: email,
+        password: password,
+        deviceType: deviceType,
+      );
       final response = await _apiService.login(request);
 
       _user = response.user;
@@ -60,7 +76,7 @@ class AuthViewModel extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
     } finally {
