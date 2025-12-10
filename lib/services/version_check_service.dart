@@ -1,118 +1,104 @@
 import 'dart:io';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:version/version.dart';
 
-/// Firebase Remote Config kullanarak uygulama versiyonunu kontrol eden servis
+class VersionCheckResult {
+  final bool isUpdateRequired;
+  final bool isMandatory;
+  final String storeUrl;
+  final String latestVersion;
+  final String currentVersion;
+
+  VersionCheckResult({
+    required this.isUpdateRequired,
+    required this.isMandatory,
+    required this.storeUrl,
+    required this.latestVersion,
+    required this.currentVersion,
+  });
+}
+
 class VersionCheckService {
-  // Singleton pattern
   static final VersionCheckService _instance = VersionCheckService._internal();
   factory VersionCheckService() => _instance;
   VersionCheckService._internal();
 
-  // Sabitler
-  static const String appPackageName = 'com.jupi.benimapp.benimmarketim_app';
-  static const String androidMinVersionKey = 'android_min_version_code';
-  static const String iosMinVersionKey = 'ios_min_version_code';
+  final Dio _dio = Dio();
+  // API Endpoint - Bu adres sunucunuzda tanımlı olmalı
+  static const String _apiUrl = 'https://devrekbenimmarketim.com/api/version-check';
 
-  FirebaseRemoteConfig? _remoteConfig;
-  bool _isInitialized = false;
-
-  /// Firebase Remote Config'i başlat
-  Future<void> initialize() async {
-    if (_isInitialized) return;
-
+  Future<VersionCheckResult?> checkVersion() async {
     try {
-      _remoteConfig = FirebaseRemoteConfig.instance;
+      // 1. Mevcut sürümü al
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentVersionStr = packageInfo.version;
+      final currentVersion = Version.parse(currentVersionStr);
 
-      // Remote Config ayarları
-      await _remoteConfig!.setConfigSettings(
-        RemoteConfigSettings(
-          fetchTimeout: const Duration(seconds: 10),
-          minimumFetchInterval: Duration.zero, // Test için anlık fetch
-        ),
-      );
+      debugPrint('Current App Version: $currentVersionStr');
 
-      // Default değerler
-      await _remoteConfig!.setDefaults({
-        androidMinVersionKey: 1,
-        iosMinVersionKey: 1,
-      });
-
-      _isInitialized = true;
-      debugPrint('VersionCheckService initialized');
-    } catch (e) {
-      debugPrint('VersionCheckService initialization error: $e');
-    }
-  }
-
-  /// Versiyon kontrolü yap
-  /// Returns: true = güncelleme gerekli, false = güncel, null = kontrol yapılamadı
-  Future<bool?> checkVersion() async {
-    try {
-      if (!_isInitialized) {
-        await initialize();
-      }
-
-      if (_remoteConfig == null) {
+      // 2. API'den en son sürüm bilgisini çek
+      // Platform'a göre parametre gönderiyoruz (ios/android)
+      final platform = Platform.isIOS ? 'ios' : 'android';
+      
+      Map<String, dynamic> data;
+      try {
+         final response = await _dio.get(
+          _apiUrl,
+          queryParameters: {'platform': platform},
+          options: Options(
+            responseType: ResponseType.json, 
+            sendTimeout: const Duration(seconds: 10), // Timeout biraz artırıldı
+            receiveTimeout: const Duration(seconds: 10),
+          ),
+        );
+        data = response.data;
+      } catch (e) {
+        debugPrint('API Error: $e');
+        // API hatası durumunda (internetsiz vs) null dönerek uygulamanın açılmasını engellemeyelim
         return null;
       }
 
-      // Mevcut uygulama versiyonunu al
-      final packageInfo = await PackageInfo.fromPlatform();
-      debugPrint('Package Info - Version: ${packageInfo.version}, BuildNumber: ${packageInfo.buildNumber}');
-      
-      final currentBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
-      debugPrint('Parsed Current Build Number: $currentBuildNumber');
+      final latestVersionStr = data['latest_version'] as String;
+      final minVersionStr = data['minimum_version'] as String;
+      final storeUrl = data['url'] as String;
 
-      // Firebase'den değerleri çek ve aktif et - timeout ile
-      try {
-        debugPrint('Fetching remote config...');
-        await _remoteConfig!.fetchAndActivate().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            debugPrint('Version check timeout - using defaults');
-            return false; // Timeout durumunda default değerleri kullan
-          },
-        );
-        debugPrint('Remote config fetch completed.');
-      } catch (e) {
-        debugPrint('Version check fetch error: $e - using defaults');
-        // Hata durumunda default değerleri kullan, uygulama çalışmaya devam etsin
-      }
+      final latestVersion = Version.parse(latestVersionStr);
+      final minVersion = Version.parse(minVersionStr);
 
-      // Platforma göre minimum gerekli versiyonu al
-      String configKey =
-          Platform.isIOS ? iosMinVersionKey : androidMinVersionKey;
-      final minRequiredVersion = _remoteConfig!.getInt(configKey);
+      debugPrint('Latest Version: $latestVersionStr');
+      debugPrint('Min Version: $minVersionStr');
 
-      debugPrint('Config Key: $configKey');
-      debugPrint('Minimum required version from Remote Config: $minRequiredVersion');
+      // 3. Karşılaştırma Mantığı
+      bool isUpdateRequired = false;
+      bool isMandatory = false;
 
-      // Karşılaştır
-      if (currentBuildNumber < minRequiredVersion) {
-        debugPrint(
-            'Update required: $currentBuildNumber < $minRequiredVersion');
-        return true; // Güncelleme gerekli
+      if (currentVersion < minVersion) {
+        // Mevcut sürüm minimum sürümden küçük -> ZORUNLU GÜNCELLEME
+        isUpdateRequired = true;
+        isMandatory = true;
+        debugPrint('Status: Mandatory Update Required');
+      } else if (currentVersion < latestVersion) {
+        // Mevcut sürüm son sürümden küçük -> KULLANICI İSTEĞİ: HER GÜNCELLEME ZORUNLU
+        isUpdateRequired = true;
+        isMandatory = true; // Artık hepsi zorunlu
+        debugPrint('Status: Update Available (Mandatory)');
       } else {
-        debugPrint('App is up to date (Current: $currentBuildNumber >= Min: $minRequiredVersion)');
-        return false; // Güncel
+        debugPrint('Status: App is Up to Date');
       }
+
+      return VersionCheckResult(
+        isUpdateRequired: isUpdateRequired,
+        isMandatory: isMandatory,
+        storeUrl: storeUrl,
+        latestVersion: latestVersionStr,
+        currentVersion: currentVersionStr,
+      );
+
     } catch (e) {
-      debugPrint('Version check error: $e');
+      debugPrint('Version Check Error: $e');
       return null;
     }
-  }
-
-  /// Mağaza URL'ini al
-  String getStoreUrl() {
-    if (Platform.isAndroid) {
-      return 'https://play.google.com/store/apps/details?id=$appPackageName';
-    } else if (Platform.isIOS) {
-      // App Store ID'nizi buraya ekleyin
-      // Örnek: https://apps.apple.com/app/id123456789
-      return 'https://apps.apple.com/app/id6738341165';
-    }
-    return '';
   }
 }

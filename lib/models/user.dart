@@ -49,19 +49,19 @@ class User {
 class LoginRequest {
   final String email;
   final String password;
-  final String? deviceType;
+  final String deviceType;
 
   LoginRequest({
     required this.email,
     required this.password,
-    this.deviceType,
+    this.deviceType = 'mobile', // API dökümanına göre varsayılan 'mobile'
   });
 
   Map<String, dynamic> toJson() {
     return {
       'email': email,
       'password': password,
-      if (deviceType != null) 'deviceType': deviceType,
+      'deviceType': deviceType,
     };
   }
 }
@@ -71,12 +71,14 @@ class RegisterRequest {
   final String email;
   final String password;
   final String phone;
+  final String deviceType;
 
   RegisterRequest({
     required this.name,
     required this.email,
     required this.password,
     required this.phone,
+    this.deviceType = 'mobile', // API dökümanına göre varsayılan 'mobile'
   });
 
   Map<String, dynamic> toJson() {
@@ -85,6 +87,7 @@ class RegisterRequest {
       'email': email,
       'password': password,
       'phone': phone,
+      'deviceType': deviceType,
     };
   }
 }

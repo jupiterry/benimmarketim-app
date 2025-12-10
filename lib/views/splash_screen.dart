@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/version_check_service.dart';
 import 'widgets/update_dialog.dart';
+import 'widgets/custom_dialog.dart'; // Added CustomDialog import
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -93,18 +94,65 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _checkVersionAndNavigate() async {
     try {
       final versionService = VersionCheckService();
-      final needsUpdate = await versionService.checkVersion();
+      // Servisten null dönmesi hata/internet yok demektir.
+      final result = await versionService.checkVersion();
 
-      if (needsUpdate == true) {
+      if (result == null) {
+        // Hata durumu: İnternet yok veya sunucuya ulaşılamadı.
+        // KULLANICI İSTEĞİ: "kullanıcının interneti yoksa içeriğe erişemesin"
         if (mounted) {
-          showUpdateDialog(context);
+          await CustomDialog.show(
+            context: context,
+            title: 'Bağlantı Hatası',
+            message: 'Uygulamayı kullanabilmek için internet bağlantısı ve sürüm kontrolü gereklidir. Lütfen internetinizi kontrol edip tekrar deneyin.',
+            confirmButtonText: 'Tekrar Dene',
+            showCancelButton: false, // Kapatılamaz
+            icon: Icons.wifi_off_rounded,
+            isDestructive: true,
+            onConfirm: () {
+              Navigator.pop(context); // Dialogu kapat
+              _checkVersionAndNavigate(); // Tekrar dene
+            },
+          );
         }
-        return;
+        return; // Akışı durdur, auth kontrolüne geçme (Tekrar dene ile loop olur)
       }
+
+      if (result.isUpdateRequired) {
+        if (mounted) {
+          showUpdateDialog(
+            context,
+            isMandatory: result.isMandatory && true,
+            storeUrl: result.storeUrl,
+            latestVersion: result.latestVersion,
+          );
+        }
+        
+        if (result.isMandatory) {
+          return; 
+        }
+      }
+      
       _checkAuthAndNavigate();
     } catch (e) {
       debugPrint('Sürüm kontrolü hatası: $e');
-      _checkAuthAndNavigate();
+      // Beklenmedik hata (try-catch dışı) olsa bile güvenli tarafta kalıp tekrar ettirebiliriz
+      // Ancak sonsuz döngüden kaçınmak için burada da dialog göstermek en iyisi.
+      if (mounted) {
+          await CustomDialog.show(
+            context: context,
+            title: 'Hata',
+            message: 'Bir sorun oluştu. Lütfen tekrar deneyin.',
+            confirmButtonText: 'Tekrar Dene',
+            showCancelButton: false,
+            icon: Icons.error_outline_rounded,
+            isDestructive: true,
+            onConfirm: () {
+              Navigator.pop(context);
+              _checkVersionAndNavigate();
+            },
+          );
+      }
     }
   }
 
