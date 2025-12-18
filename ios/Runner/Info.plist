@@ -55,6 +55,8 @@
 		<string>Profil fotoğrafınızı değiştirmek ve ürün görseli yüklemek için galeri erişimi gereklidir.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>Profil fotoğrafı çekmek ve fotokopi belgesi taramak için kamera erişimi gereklidir.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>OneSignal bildirimleri kapsamında konum tabanlı özellikler için izin gereklidir.</string>
 		<!-- Export Compliance -->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
