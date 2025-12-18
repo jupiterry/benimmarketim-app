@@ -2,12 +2,13 @@ import 'package:flutter/foundation.dart';
 import '../models/cart_item.dart';
 import '../services/database_service.dart';
 import '../models/product.dart';
-import '../services/firebase_analytics_service.dart';
+import '../services/notification_service.dart';
+
 
 class CartViewModel extends ChangeNotifier {
   final List<CartItem> _cartItems = [];
   final DatabaseService _databaseService = DatabaseService();
-  final FirebaseAnalyticsService _analyticsService = FirebaseAnalyticsService();
+
 
   CartViewModel() {
     _loadCart();
@@ -16,6 +17,10 @@ class CartViewModel extends ChangeNotifier {
   Future<void> _loadCart() async {
     final items = await _databaseService.getCartItems();
     _cartItems.addAll(items);
+    
+    // Uygulama açılışında sepet durumunu güncelle (OneSignal)
+    NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
+    
     notifyListeners();
   }
 
@@ -48,14 +53,12 @@ class CartViewModel extends ChangeNotifier {
       _databaseService.addToCart(newItem);
     }
 
-    // Analytics: Add to cart event
-    _analyticsService.logAddToCart(
-      itemId: product.id,
-      itemName: product.name,
-      itemCategory: product.category,
-      price: product.actualPrice,
-      quantity: 1,
-    );
+
+
+
+
+    // Sepet durumunu güncelle (Dolu)
+    NotificationService.instance.updateCartTag(true);
 
     notifyListeners();
   }
@@ -79,14 +82,14 @@ class CartViewModel extends ChangeNotifier {
         _cartItems.removeAt(existingItemIndex);
         _databaseService.removeFromCart(product.id);
 
-        // Analytics: Remove from cart event
-        _analyticsService.logRemoveFromCart(
-          itemId: product.id,
-          itemName: product.name,
-          quantity: 1,
-        );
+
       }
     }
+
+    
+    // Sepet durumunu güncelle
+    NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
+    
     notifyListeners();
   }
 
@@ -112,6 +115,10 @@ class CartViewModel extends ChangeNotifier {
   void clearCart() {
     _cartItems.clear();
     _databaseService.clearCart();
+    
+    // Sepet durumunu güncelle (Boş)
+    NotificationService.instance.updateCartTag(false);
+    
     notifyListeners();
   }
 

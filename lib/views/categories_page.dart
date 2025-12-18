@@ -16,19 +16,32 @@ class CategoriesPage extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leading: InkWell(
+        leading: GestureDetector(
           onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.grey[50]!,
+                  Colors.grey[100]!,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
+              Icons.arrow_back_ios_new_rounded,
+              size: 18,
               color: Colors.black87,
             ),
           ),
@@ -37,8 +50,21 @@ class CategoriesPage extends StatelessWidget {
           'Kategoriler',
           style: GoogleFonts.poppins(
             fontSize: 20,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: Colors.black87,
+            letterSpacing: -0.3,
+          ),
+        ),
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
         ),
       ),
@@ -139,12 +165,22 @@ class CategoryGrid extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: iconColor.withOpacity(0.1),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
+              spreadRadius: 1,
+            ),
+            BoxShadow(
+              color: iconColor.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
@@ -152,17 +188,32 @@ class CategoryGrid extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: [
+                    bgColor,
+                    bgColor.withOpacity(0.6),
+                  ],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: iconColor.withOpacity(0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
               child: Icon(
                 _getCategoryIcon(category.name),
                 color: iconColor,
-                size: 32,
+                size: 34,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 category.name,
                 style: GoogleFonts.poppins(
@@ -170,6 +221,7 @@ class CategoryGrid extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,
                   height: 1.2,
+                  letterSpacing: -0.2,
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 2,

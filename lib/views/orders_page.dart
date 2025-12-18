@@ -104,19 +104,32 @@ class _OrdersPageState extends State<OrdersPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leading: InkWell(
+        leading: GestureDetector(
           onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.grey[50]!,
+                  Colors.grey[100]!,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
+              Icons.arrow_back_ios_new_rounded,
+              size: 18,
               color: Colors.black87,
             ),
           ),
@@ -124,16 +137,43 @@ class _OrdersPageState extends State<OrdersPage> {
         title: Text(
           'Siparişlerim',
           style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: Colors.black87,
+            letterSpacing: -0.3,
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: Colors.black87),
-            onPressed: _loadOrders,
+          Container(
+            margin: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.successGreen.withOpacity(0.1),
+                  AppColors.successGreen.withOpacity(0.05),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.refresh_rounded, color: AppColors.successGreen),
+              onPressed: _loadOrders,
+            ),
           ),
         ],
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+        ),
       ),
       body: _isLoading
           ? const Center(
@@ -218,12 +258,22 @@ class _OrdersPageState extends State<OrdersPage> {
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.grey.withOpacity(0.08),
+                      width: 1,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                        spreadRadius: 1,
+                      ),
+                      BoxShadow(
+                        color: _getStatusColor(order.status).withOpacity(0.08),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
                       ),
                     ],
                   ),

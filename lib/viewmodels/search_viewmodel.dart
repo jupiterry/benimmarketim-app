@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../models/category.dart' as models;
 import '../services/api_service.dart';
-import '../services/firebase_analytics_service.dart';
+
 
 class SearchViewModel extends ChangeNotifier {
   List<Product> _allProducts = [];
   List<Product> _filteredProducts = [];
   List<models.Category> _categories = [];
-  final FirebaseAnalyticsService _analyticsService = FirebaseAnalyticsService();
+
 
   String _searchQuery = '';
   String _selectedCategory = '';
@@ -70,8 +70,7 @@ class SearchViewModel extends ChangeNotifier {
       _filteredProducts =
           searchResult.products.where((product) => !product.isHidden).toList();
 
-      // Analytics: Search event
-      _analyticsService.logSearch(searchTerm: query);
+
     } catch (e) {
       _filteredProducts = [];
     }

@@ -15,25 +15,18 @@ import 'viewmodels/flash_sale_viewmodel.dart';
 import 'viewmodels/banner_viewmodel.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
-import 'services/firebase_analytics_service.dart';
-import 'services/firebase_performance_service.dart';
+import 'services/notification_service.dart';
 import 'router/app_router.dart';
-
-import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Hata yakalama ile güvenli başlatma
   try {
-    // Firebase initialization - hata olsa bile devam et
-    try {
-      await Firebase.initializeApp();
-      debugPrint('✅ Firebase initialized');
-    } catch (e) {
-      debugPrint('⚠️ Firebase initialization failed: $e');
-      // Firebase olmadan da devam edebilir
-    }
+    // Notification Service'i en başta başlat (await ile bekle ki izin istesin)
+    debugPrint('🔄 NotificationService initializing...');
+    await NotificationService.instance.init();
+    debugPrint('✅ NotificationService initialized');
 
     // TokenManager initialization
     try {
@@ -43,26 +36,14 @@ void main() async {
       debugPrint('⚠️ TokenManager initialization failed: $e');
       // TokenManager olmadan da devam edebilir
     }
-
-    // Initialize Firebase Analytics and Performance
-    try {
-      await FirebaseAnalyticsService().initialize();
-      debugPrint('✅ Firebase Analytics initialized');
-    } catch (e) {
-      debugPrint('⚠️ Firebase Analytics initialization failed: $e');
-    }
-
-    try {
-      await FirebasePerformanceService().initialize();
-      debugPrint('✅ Firebase Performance initialized');
-    } catch (e) {
-      debugPrint('⚠️ Firebase Performance initialization failed: $e');
-    }
   } catch (e, stackTrace) {
     debugPrint('❌ Critical initialization error: $e');
     debugPrint('Stack trace: $stackTrace');
     // Kritik hata olsa bile uygulamayı başlat
   }
+
+  // Notification Service başlat
+
 
   // Global error handler - Flutter hatalarını yakala
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -70,8 +51,7 @@ void main() async {
     debugPrint('Stack: ${details.stack}');
     // Production'da crash reporting servisine gönder
     if (kReleaseMode) {
-      // Firebase Crashlytics'e gönder
-      // FirebaseCrashlytics.instance.recordFlutterError(details);
+      // Crash reporting servisine gönder
     }
   };
 

@@ -8,7 +8,7 @@ import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../services/api_service.dart';
 import '../services/theme_service.dart';
-import '../services/firebase_analytics_service.dart';
+
 import 'package:go_router/go_router.dart';
 
 class ProductDetailPage extends StatefulWidget {
@@ -29,13 +29,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     super.initState();
     _loadSimilarProducts();
 
-    // Analytics: View item event
-    FirebaseAnalyticsService().logViewItem(
-      itemId: widget.product.id,
-      itemName: widget.product.name,
-      itemCategory: widget.product.category,
-      price: widget.product.actualPrice,
-    );
+    // Analytics kaldırıldı
   }
 
   Future<void> _loadSimilarProducts() async {

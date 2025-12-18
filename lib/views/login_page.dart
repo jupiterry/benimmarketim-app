@@ -126,24 +126,35 @@ class _LoginPageState extends State<LoginPage> {
                         Positioned(
                           left: 0,
                           top: 0,
-                          child: IconButton(
-                            onPressed: () => context.pop(),
-                            icon: Container(
-                              padding: const EdgeInsets.all(8),
+                          child: GestureDetector(
+                            onTap: () => context.pop(),
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Colors.white,
+                                    Colors.grey[50]!,
+                                  ],
+                                ),
                                 shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.grey[200]!,
+                                  width: 1.5,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
+                                    color: Colors.black.withOpacity(0.06),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
                                   ),
                                 ],
                               ),
                               child: const Icon(
                                 Icons.arrow_back_ios_new_rounded,
-                                size: 20,
+                                size: 18,
                                 color: Colors.black87,
                               ),
                             ),
@@ -152,35 +163,72 @@ class _LoginPageState extends State<LoginPage> {
                       Center(
                         child: Column(
                           children: [
+                            // Modern Logo Container with Glow
                             Container(
-                              padding: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
-                                color: AppColors.successGreen.withOpacity(0.1),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    AppColors.successGreen.withOpacity(0.15),
+                                    AppColors.successGreen.withOpacity(0.08),
+                                  ],
+                                ),
                                 shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.successGreen.withOpacity(0.2),
+                                    blurRadius: 25,
+                                    spreadRadius: 5,
+                                  ),
+                                ],
                               ),
-                              child: const Icon(
-                                Icons.shopping_bag_outlined,
-                                color: AppColors.successGreen,
-                                size: 48,
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      AppColors.successGreen,
+                                      AppColors.successGreen.withOpacity(0.85),
+                                    ],
+                                  ),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.successGreen.withOpacity(0.4),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.shopping_bag_rounded,
+                                  color: Colors.white,
+                                  size: 36,
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 28),
                             Text(
                               'Tekrar Hoş Geldiniz!',
                               style: GoogleFonts.poppins(
-                                fontSize: 28,
+                                fontSize: 30,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.black87,
-                                letterSpacing: -0.5,
+                                letterSpacing: -0.8,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             Text(
                               'Hesabınıza giriş yaparak alışverişe devam edin',
                               textAlign: TextAlign.center,
                               style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: Colors.grey[600],
+                                fontSize: 15,
+                                color: Colors.grey[500],
+                                height: 1.4,
                               ),
                             ),
                           ],
@@ -351,20 +399,36 @@ class _LoginPageState extends State<LoginPage> {
                   // Login Button
                   Consumer<AuthViewModel>(
                     builder: (context, authViewModel, child) {
-                      return SizedBox(
-                        height: 56,
+                      return Container(
+                        height: 58,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.successGreen,
+                              AppColors.successGreen.withOpacity(0.85),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.successGreen.withOpacity(0.4),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
                         child: ElevatedButton(
                           onPressed: authViewModel.isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.successGreen,
+                            backgroundColor: Colors.transparent,
                             foregroundColor: Colors.white,
+                            shadowColor: Colors.transparent,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(18),
                             ),
-                            shadowColor: AppColors.successGreen.withOpacity(
-                              0.4,
-                            ),
-                            elevation: 8,
                           ),
                           child: authViewModel.isLoading
                               ? const SizedBox(
@@ -380,9 +444,9 @@ class _LoginPageState extends State<LoginPage> {
                               : Text(
                                   'Giriş Yap',
                                   style: GoogleFonts.poppins(
-                                    fontSize: 16,
+                                    fontSize: 17,
                                     fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.5,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
                         ),

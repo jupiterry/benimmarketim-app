@@ -19,16 +19,15 @@ import '../views/photocopy_history_page.dart';
 import '../models/product.dart';
 import '../models/category.dart';
 import '../views/onboarding_page.dart';
-import '../services/firebase_analytics_service.dart';
+
 
 class AppRouter {
-  static final _analyticsService = FirebaseAnalyticsService();
+
 
   static final router = GoRouter(
     initialLocation: '/',
     observers: [
-      // Analytics observer null kontrolü ile güvenli ekleme
-      if (_analyticsService.observer != null) _analyticsService.observer!,
+
     ],
     // Hata durumunda fallback route
     errorBuilder: (context, state) => const SplashScreen(),

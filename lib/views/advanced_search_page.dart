@@ -532,7 +532,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.75,
+          childAspectRatio: 0.62,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),

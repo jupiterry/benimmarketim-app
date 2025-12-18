@@ -1,11 +1,10 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:permission_handler/permission_handler.dart';
+
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 class NotificationService {
   static NotificationService? _instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
-  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
 
   NotificationService._();
 
@@ -15,25 +14,23 @@ class NotificationService {
   }
 
   Future<void> init() async {
-    // İzin iste
-    await _requestPermissions();
+    // OneSignal Başlat
+    OneSignal.Debug.setLogLevel(OSLogLevel.none);
+    OneSignal.initialize("6469a309-0cce-496c-bc0c-e993566e421d");
+
+    // Bildirim izni iste (OneSignal) - UI hazır olana kadar bekle
+    await Future.delayed(const Duration(seconds: 1));
+    var accepted = await OneSignal.Notifications.requestPermission(true);
+    print("OneSignal Permission accepted: $accepted");
+
+    // İzin iste (Local) - Kaldırıldı, OneSignal halletmeli
+    // await _requestPermissions();
 
     // Local notifications ayarla
     await _initLocalNotifications();
-
-    // Firebase messaging ayarla
-    await _initFirebaseMessaging();
   }
 
-  Future<void> _requestPermissions() async {
-    // Bildirim izni
-    await Permission.notification.request();
-    
-    // Android 13+ için özel izin
-    if (await Permission.notification.isDenied) {
-      await Permission.notification.request();
-    }
-  }
+
 
   Future<void> _initLocalNotifications() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
@@ -58,44 +55,9 @@ class NotificationService {
     );
   }
 
-  Future<void> _initFirebaseMessaging() async {
-    // FCM token al
-    final token = await _firebaseMessaging.getToken();
-    print('FCM Token: $token');
-
-    // Foreground mesajları dinle
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-    // Background mesajları dinle
-    FirebaseMessaging.onBackgroundMessage(_handleBackgroundMessage);
-
-    // Notification tap'leri dinle
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-  }
-
   void _onNotificationTapped(NotificationResponse response) {
     // Bildirime tıklandığında yapılacak işlemler
     print('Notification tapped: ${response.payload}');
-  }
-
-  Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    print('Foreground message: ${message.notification?.title}');
-    
-    // Local notification göster
-    await showLocalNotification(
-      title: message.notification?.title ?? 'Yeni Bildirim',
-      body: message.notification?.body ?? '',
-      payload: message.data.toString(),
-    );
-  }
-
-  static Future<void> _handleBackgroundMessage(RemoteMessage message) async {
-    print('Background message: ${message.notification?.title}');
-  }
-
-  Future<void> _handleNotificationTap(RemoteMessage message) async {
-    print('Notification tapped: ${message.data}');
-    // Uygulama açıkken bildirime tıklandığında yapılacak işlemler
   }
 
   // Local notification göster
@@ -166,5 +128,20 @@ class NotificationService {
   // Belirli bildirimi iptal et
   Future<void> cancelNotification(int id) async {
     await _localNotifications.cancel(id);
+  }
+
+  // --- OneSignal Tag Yönetimi (Sepet Takibi) ---
+  Future<void> updateCartTag(bool hasItems) async {
+    if (hasItems) {
+      print("OneSignal Tag: cart_status = dolu");
+      OneSignal.User.addTagWithKey("cart_status", "dolu");
+      // Son güncelleme zamanını ekle (timestamp)
+      OneSignal.User.addTagWithKey(
+          "last_cart_update", DateTime.now().millisecondsSinceEpoch.toString());
+    } else {
+      print("OneSignal Tag: cart_status removed");
+      OneSignal.User.removeTag("cart_status");
+      OneSignal.User.removeTag("last_cart_update");
+    }
   }
 }

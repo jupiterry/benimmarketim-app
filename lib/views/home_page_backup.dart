@@ -634,110 +634,13 @@ class _HomePageState extends State<HomePage>
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                child: Row(
-                  children: [
-                    // İkon
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.successGreen.withOpacity(0.15),
-                            AppColors.successGreen.withOpacity(0.08),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.successGreen.withOpacity(0.15),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.local_fire_department_rounded,
-                        color: AppColors.successGreen,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    // Başlık ve Alt Başlık
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Popüler Ürünler',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black87,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'En çok tercih edilenler',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              color: Colors.grey[500],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Tümü Butonu
-                    GestureDetector(
-                      onTap: () {
-                        // Tüm ürünlere git
-                        _tabController.animateTo(1);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              AppColors.successGreen,
-                              AppColors.successGreen.withOpacity(0.85),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.successGreen.withOpacity(0.35),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Tümü',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              color: Colors.white,
-                              size: 12,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  'Ürünler',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
                 ),
               ),
             ),
@@ -1587,217 +1490,140 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildBottomNavigation() {
-    return Consumer<CartViewModel>(
-      builder: (context, cartViewModel, child) {
-        final cartItemCount = cartViewModel.items.length;
-        
-        return Container(
-          margin: const EdgeInsets.only(left: 16, right: 16, bottom: 24),
-          height: 75,
-          decoration: BoxDecoration(
-            // Glassmorphism efekti - %95 şeffaf beyaz
-            color: Colors.white.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.6),
-              width: 1.5,
+    return Container(
+      margin: const EdgeInsets.only(left: 20, right: 20, bottom: 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: Colors.grey.withOpacity(0.1),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 25,
+            offset: const Offset(0, 8),
+            spreadRadius: 2,
+          ),
+          BoxShadow(
+            color: AppColors.successGreen.withOpacity(0.06),
+            blurRadius: 40,
+            offset: const Offset(0, 15),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildNavItem(
+              Icons.home_rounded,
+              'Ana Sayfa',
+              0,
+              _selectedIndex == 0,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-                spreadRadius: 3,
-              ),
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                blurRadius: 50,
-                offset: const Offset(0, 20),
-              ),
-            ],
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              // Normal nav items
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildGlassNavItem(
-                      Icons.home_rounded,
-                      'Ana Sayfa',
-                      0,
-                      _selectedIndex == 0,
-                    ),
-                    // Sepet butonu için boşluk
-                    const SizedBox(width: 70),
-                    _buildGlassNavItem(
-                      Icons.person_rounded,
-                      'Hesap',
-                      2,
-                      _selectedIndex == 2,
-                    ),
-                  ],
-                ),
-              ),
-              // Floating Sepet Butonu (Merkezi Yükseltilmiş)
-              Positioned(
-                top: -22,
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _previousIndex = _selectedIndex;
-                      _selectedIndex = 1;
-                    });
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOutCubic,
-                    width: 65,
-                    height: 65,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: _selectedIndex == 1
-                            ? [
-                                AppColors.successGreen,
-                                AppColors.successGreen.withOpacity(0.85),
-                              ]
-                            : [
-                                AppColors.successGreen.withOpacity(0.9),
-                                AppColors.successGreen.withOpacity(0.7),
-                              ],
-                      ),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 4,
-                      ),
-                      boxShadow: [
-                        // Glow efekti - seçildiğinde daha parlak
-                        BoxShadow(
-                          color: AppColors.successGreen.withOpacity(
-                            _selectedIndex == 1 ? 0.5 : 0.3,
-                          ),
-                          blurRadius: _selectedIndex == 1 ? 25 : 15,
-                          spreadRadius: _selectedIndex == 1 ? 5 : 2,
-                        ),
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 15,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Icon(
-                          Icons.shopping_cart_rounded,
-                          color: Colors.white,
-                          size: _selectedIndex == 1 ? 28 : 26,
-                        ),
-                        // Kırmızı sepet sayısı badge'i
-                        if (cartItemCount > 0)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(
-                                minWidth: 20,
-                                minHeight: 20,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.red.withOpacity(0.4),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  cartItemCount > 9 ? '9+' : '$cartItemCount',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+            _buildNavItem(
+              Icons.shopping_cart_rounded,
+              'Sepet',
+              1,
+              _selectedIndex == 1,
+            ),
+            _buildNavItem(
+              Icons.person_rounded,
+              'Hesap',
+              2,
+              _selectedIndex == 2,
+            ),
+          ],
+        ),
+      ),
     );
   }
-  
-  Widget _buildGlassNavItem(
+
+  Widget _buildNavItem(
     IconData icon,
     String label,
     int index,
     bool isSelected,
   ) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _previousIndex = _selectedIndex;
-          _selectedIndex = index;
-        });
-      },
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.successGreen.withOpacity(0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedScale(
-              scale: isSelected ? 1.1 : 1.0,
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                icon,
-                color: isSelected ? AppColors.successGreen : Colors.grey[400],
-                size: 26,
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _previousIndex = _selectedIndex;
+            _selectedIndex = index;
+          });
+        },
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            gradient: isSelected
+                ? LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.successGreen.withOpacity(0.12),
+                      AppColors.successGreen.withOpacity(0.05),
+                    ],
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: EdgeInsets.all(isSelected ? 10 : 0),
+                decoration: BoxDecoration(
+                  gradient: isSelected
+                      ? LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.successGreen,
+                            AppColors.successGreen.withOpacity(0.85),
+                          ],
+                        )
+                      : null,
+                  shape: BoxShape.circle,
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.successGreen.withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Icon(
+                  icon,
+                  color: isSelected ? Colors.white : Colors.grey[400],
+                  size: isSelected ? 22 : 26,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? AppColors.successGreen : Colors.grey[400],
+              const SizedBox(height: 6),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: isSelected ? AppColors.successGreen : Colors.grey[400],
+                  letterSpacing: isSelected ? 0.2 : 0,
+                  height: 1.2,
+                ),
+                child: Text(label),
               ),
-              child: Text(label),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
