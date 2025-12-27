@@ -16,6 +16,9 @@ import '../views/advanced_search_page.dart';
 import '../views/feedback_page.dart';
 import '../views/photocopy_upload_page.dart';
 import '../views/photocopy_history_page.dart';
+import '../views/referral_page.dart';
+import '../views/chat_list_page.dart';
+import '../views/chat_detail_page.dart';
 import '../models/product.dart';
 import '../models/category.dart';
 import '../views/onboarding_page.dart';
@@ -128,6 +131,23 @@ class AppRouter {
         path: '/create-order',
         builder: (context, state) => const OrderPage(),
       ),
+      GoRoute(
+        path: '/referral',
+        builder: (context, state) => const ReferralPage(),
+      ),
+      // Chat routes
+      GoRoute(
+        path: '/chat',
+        builder: (context, state) => const ChatListPage(),
+      ),
+      GoRoute(
+        path: '/chat/:chatId',
+        builder: (context, state) {
+          final chatId = state.pathParameters['chatId']!;
+          return ChatDetailPage(chatId: chatId);
+        },
+      ),
     ],
   );
 }
+

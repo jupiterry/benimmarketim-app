@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../viewmodels/auth_viewmodel.dart';
+import '../viewmodels/referral_viewmodel.dart';
 import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
 
@@ -19,8 +21,15 @@ class _RegisterPageState extends State<RegisterPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _referralCodeController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  
+  // Referral code validation state
+  Timer? _debounceTimer;
+  bool? _isReferralCodeValid;
+  String? _referralMessage;
+  bool _isCheckingReferralCode = false;
 
   @override
   void dispose() {
@@ -29,7 +38,39 @@ class _RegisterPageState extends State<RegisterPage> {
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _referralCodeController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
+  }
+
+  void _checkReferralCode(String code) {
+    _debounceTimer?.cancel();
+    
+    if (code.isEmpty) {
+      setState(() {
+        _isReferralCodeValid = null;
+        _referralMessage = null;
+        _isCheckingReferralCode = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isCheckingReferralCode = true;
+    });
+
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      final referralViewModel = context.read<ReferralViewModel>();
+      final result = await referralViewModel.checkReferralCode(code);
+      
+      if (mounted) {
+        setState(() {
+          _isReferralCodeValid = result.isValid;
+          _referralMessage = result.message;
+          _isCheckingReferralCode = false;
+        });
+      }
+    });
   }
 
   Future<void> _register() async {
@@ -48,11 +89,17 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
     );
 
+    // Get referral code if provided
+    final referralCode = _referralCodeController.text.trim().isNotEmpty
+        ? _referralCodeController.text.trim()
+        : null;
+
     final success = await authViewModel.register(
       _nameController.text.trim(),
       _emailController.text.trim(),
       _passwordController.text,
       _phoneController.text.replaceAll(' ', ''),
+      referralCode: referralCode,
     );
 
     // Loading'i kapat
@@ -339,6 +386,11 @@ class _RegisterPageState extends State<RegisterPage> {
                   },
                 ),
 
+                const SizedBox(height: 24),
+
+                // Referral Code Field (Optional)
+                _buildReferralCodeField(),
+
                 const SizedBox(height: 32),
 
                 // Register Button
@@ -494,5 +546,148 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ],
     );
+  }
+
+  Widget _buildReferralCodeField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Referral Kodu',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF667eea).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Opsiyonel',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF667eea),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _referralCodeController,
+          textCapitalization: TextCapitalization.characters,
+          style: GoogleFonts.poppins(),
+          onChanged: _checkReferralCode,
+          decoration: InputDecoration(
+            hintText: 'Varsa davet kodu girin',
+            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+            prefixIcon: Icon(Icons.card_giftcard_outlined, color: Colors.grey[400]),
+            suffixIcon: _buildReferralCodeSuffix(),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[200]!),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: _isReferralCodeValid == true
+                    ? Colors.green
+                    : _isReferralCodeValid == false
+                        ? Colors.red
+                        : Colors.grey[200]!,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: _isReferralCodeValid == true
+                    ? Colors.green
+                    : _isReferralCodeValid == false
+                        ? Colors.red
+                        : const Color(0xFF667eea),
+              ),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+        ),
+        // Validation message
+        if (_referralMessage != null && _referralMessage!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _isReferralCodeValid == true
+                  ? Colors.green.withOpacity(0.1)
+                  : Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _isReferralCodeValid == true
+                    ? Colors.green.withOpacity(0.3)
+                    : Colors.red.withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _isReferralCodeValid == true
+                      ? Icons.check_circle_rounded
+                      : Icons.error_outline_rounded,
+                  color: _isReferralCodeValid == true ? Colors.green : Colors.red,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _referralMessage!,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: _isReferralCodeValid == true
+                          ? Colors.green[700]
+                          : Colors.red[700],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget? _buildReferralCodeSuffix() {
+    if (_isCheckingReferralCode) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+          ),
+        ),
+      );
+    }
+    
+    if (_isReferralCodeValid == true) {
+      return const Icon(Icons.check_circle, color: Colors.green);
+    }
+    
+    if (_isReferralCodeValid == false) {
+      return const Icon(Icons.cancel, color: Colors.red);
+    }
+    
+    return null;
   }
 }

@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../models/order.dart';
 import '../viewmodels/auth_viewmodel.dart';
+import '../viewmodels/chat_viewmodel.dart';
+import '../viewmodels/settings_viewmodel.dart';
 import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
 
@@ -93,6 +95,85 @@ class _OrdersPageState extends State<OrdersPage> {
         return Colors.red;
       default:
         return Colors.grey;
+    }
+  }
+  
+  Future<void> _startOrderSupport(Order order) async {
+    // Sipariş saatleri kontrolü
+    final settingsViewModel = context.read<SettingsViewModel>();
+    if (!settingsViewModel.isWithinOrderHours) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Canlı destek sadece sipariş saatlerinde aktiftir.\n${settingsViewModel.orderHoursMessage}',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.orange[700],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    
+    // Loading göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.successGreen),
+          ),
+        ),
+      ),
+    );
+    
+    try {
+      final chatViewModel = context.read<ChatViewModel>();
+      final chat = await chatViewModel.startChat(orderId: order.id);
+      
+      if (mounted) {
+        Navigator.of(context).pop(); // Loading kapat
+      }
+      
+      if (chat != null && mounted) {
+        // Sipariş bilgisi içeren otomatik mesaj gönder
+        final orderMessage = '📦 Sipariş #${order.id.substring(0, 8)} hakkında destek istiyorum.\n'
+            '📅 Tarih: ${_formatDate(order.createdAt)}\n'
+            '💰 Tutar: ₺${order.totalAmount.toStringAsFixed(2)}\n'
+            '📊 Durum: ${order.status}';
+        
+        await chatViewModel.sendMessage(orderMessage);
+        
+        // Chat sayfasına git
+        context.push('/chat/${chat.id}');
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Destek başlatılamadı', style: GoogleFonts.poppins()),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // Loading kapat
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: $e', style: GoogleFonts.poppins()),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -418,28 +499,61 @@ class _OrdersPageState extends State<OrdersPage> {
                           ),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            if (order.status == 'Hazırlanıyor')
-                              TextButton(
-                                onPressed: () => _showCancelDialog(order.id),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                            // Destek Al Butonu
+                            GestureDetector(
+                              onTap: () => _startOrderSupport(order),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: Text(
-                                  'İptal Et',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.support_agent_rounded, size: 16, color: Colors.blue[600]),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Destek',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.blue[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (order.status == 'Hazırlanıyor')
+                              GestureDetector(
+                                onTap: () => _showCancelDialog(order.id),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.close_rounded, size: 14, color: Colors.red[600]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'İptal',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.red[600],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              )
-                            else
-                              const SizedBox(),
+                              ),
+                            const Spacer(),
                             Row(
                               children: [
                                 Text(

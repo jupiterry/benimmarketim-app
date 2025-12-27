@@ -8,6 +8,7 @@ import '../viewmodels/category_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/banner_viewmodel.dart';
 import '../viewmodels/favorites_viewmodel.dart';
+import '../viewmodels/chat_viewmodel.dart';
 import '../views/widgets/product_card.dart';
 import '../views/widgets/skeleton_widgets.dart';
 import '../views/categories_page.dart';
@@ -1587,9 +1588,10 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildBottomNavigation() {
-    return Consumer<CartViewModel>(
-      builder: (context, cartViewModel, child) {
+    return Consumer2<CartViewModel, ChatViewModel>(
+      builder: (context, cartViewModel, chatViewModel, child) {
         final cartItemCount = cartViewModel.items.length;
+        final chatUnreadCount = chatViewModel.totalUnreadCount;
         
         return Container(
           margin: const EdgeInsets.only(left: 16, right: 16, bottom: 24),
@@ -1634,11 +1636,55 @@ class _HomePageState extends State<HomePage>
                     ),
                     // Sepet butonu için boşluk
                     const SizedBox(width: 70),
-                    _buildGlassNavItem(
-                      Icons.person_rounded,
-                      'Hesap',
-                      2,
-                      _selectedIndex == 2,
+                    // Hesap butonu - chat badge ile
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _buildGlassNavItem(
+                          Icons.person_rounded,
+                          'Hesap',
+                          2,
+                          _selectedIndex == 2,
+                        ),
+                        // Canlı destek bildirim badge'i
+                        if (chatUnreadCount > 0)
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.red.withOpacity(0.4),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  chatUnreadCount > 9 ? '9+' : '$chatUnreadCount',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

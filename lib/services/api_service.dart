@@ -9,6 +9,8 @@ import '../models/category.dart' as models;
 import '../models/flash_sale.dart';
 import '../models/search_result.dart';
 import '../models/banner.dart';
+import '../models/referral.dart';
+import '../models/coupon.dart';
 import 'token_manager.dart';
 
 class ApiService {
@@ -38,7 +40,7 @@ class ApiService {
     // Bu fingerprint devrekbenimmarketim.com'un sertifikasına ait.
     // Sertifika değişirse bu değerin de güncellenmesi gerekir!
     const String knownFingerprint =
-        'D5:B2:3D:CB:FE:34:54:5A:DF:09:91:D8:E3:C7:6C:B2:61:91:4F:9A:F3:4C:F6:A7:B5:01:EF:2A:B1:EE:E8:53';
+        'EE:EB:A5:75:11:B3:AF:3F:C3:E3:FC:3B:FB:4F:98:D0:03:46:94:E4:C6:DD:5C:02:C2:47:2E:EA:91:0B:C2:81';
 
     (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
         (client) {
@@ -772,7 +774,15 @@ class ApiService {
       print('User Orders Response: ${response.data}');
 
       if (response.statusCode == 200) {
-        final List<dynamic> ordersData = response.data;
+        // API {orders: [...]} formatında döndürüyor
+        List<dynamic> ordersData;
+        if (response.data is Map && response.data['orders'] != null) {
+          ordersData = response.data['orders'] as List<dynamic>;
+        } else if (response.data is List) {
+          ordersData = response.data as List<dynamic>;
+        } else {
+          ordersData = [];
+        }
         return ordersData
             .map((orderJson) => Order.fromJson(orderJson))
             .toList();
@@ -946,6 +956,29 @@ class ApiService {
           'boysDorm': {'enabled': true},
         },
       };
+    }
+  }
+
+  // Kupon kodu doğrula
+  Future<Map<String, dynamic>> validateCoupon(String code, double orderAmount) async {
+    try {
+      print('Validating coupon: $code for amount: $orderAmount');
+
+      final response = await _dio.post('/coupons/validate', data: {
+        'code': code,
+        'orderAmount': orderAmount,
+      });
+
+      print('Validate Coupon Response Status: ${response.statusCode}');
+      print('Validate Coupon Response: ${response.data}');
+
+      return response.data ?? {};
+    } catch (e) {
+      print('Validate Coupon Error: $e');
+      if (e is DioException && e.response != null) {
+        return e.response!.data ?? {'success': false, 'message': 'Kupon doğrulanamadı'};
+      }
+      throw Exception('Kupon doğrulanırken hata oluştu');
     }
   }
 
@@ -1261,6 +1294,134 @@ class ApiService {
         print('Get Settings Error: $e');
         return {};
       }
+    }
+  }
+
+  // ========================
+  // REFERRAL API METHODS
+  // ========================
+
+  /// Kullanıcının referral bilgilerini getir
+  Future<Referral> getMyReferrals() async {
+    try {
+      print('Getting my referrals from API...');
+      final response = await _dio.get('/referrals/my-referrals');
+
+      print('My Referrals Response Status: ${response.statusCode}');
+      print('My Referrals Response: ${response.data}');
+
+      if (response.statusCode == 200 && response.data != null) {
+        if (response.data['success'] == true && response.data['referral'] != null) {
+          return Referral.fromJson(response.data['referral']);
+        }
+      }
+
+      throw Exception('Referral bilgileri alınamadı');
+    } catch (e) {
+      print('Get My Referrals Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Referral kodu kontrol et (kayıt öncesi)
+  Future<ReferralCodeCheck> checkReferralCode(String code) async {
+    try {
+      print('Checking referral code: $code');
+      final response = await _dio.get('/referrals/check/$code');
+
+      print('Check Referral Code Response Status: ${response.statusCode}');
+      print('Check Referral Code Response: ${response.data}');
+
+      if (response.statusCode == 200 && response.data != null) {
+        return ReferralCodeCheck.fromJson(
+          response.data,
+          response.data['success'] ?? false,
+        );
+      }
+
+      return ReferralCodeCheck(
+        isValid: false,
+        message: 'Geçersiz referral kodu',
+      );
+    } on DioException catch (e) {
+      print('Check Referral Code Error: $e');
+
+      // Handle 400 (limit dolmuş) and 404 (geçersiz) errors
+      if (e.response?.statusCode == 400) {
+        return ReferralCodeCheck(
+          isValid: false,
+          message: e.response?.data['message'] ?? 'Bu referral kodu artık kullanılamaz (limit doldu)',
+        );
+      } else if (e.response?.statusCode == 404) {
+        return ReferralCodeCheck(
+          isValid: false,
+          message: e.response?.data['message'] ?? 'Geçersiz referral kodu',
+        );
+      }
+
+      return ReferralCodeCheck(
+        isValid: false,
+        message: 'Referral kodu kontrol edilemedi',
+      );
+    } catch (e) {
+      print('Check Referral Code Error: $e');
+      return ReferralCodeCheck(
+        isValid: false,
+        message: 'Referral kodu kontrol edilemedi',
+      );
+    }
+  }
+
+  /// Yeni referral kodu oluştur
+  Future<Referral> regenerateReferralCode() async {
+    try {
+      print('Regenerating referral code...');
+      final response = await _dio.post('/referrals/regenerate');
+
+      print('Regenerate Referral Response Status: ${response.statusCode}');
+      print('Regenerate Referral Response: ${response.data}');
+
+      if (response.statusCode == 200 && response.data != null) {
+        if (response.data['success'] == true) {
+          // Yeni kod ve link ile basit Referral objesi döndür
+          return Referral(
+            code: response.data['code'] ?? '',
+            link: response.data['link'] ?? '',
+            totalReferrals: 0,
+            successfulReferrals: 0,
+            totalRewardsEarned: 0,
+            referredUsers: [],
+          );
+        }
+      }
+
+      throw Exception('Referral kodu yenilenemedi');
+    } catch (e) {
+      print('Regenerate Referral Code Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Kullanıcının kuponlarını getir
+  Future<List<Coupon>> getUserCoupons() async {
+    try {
+      print('Getting user coupons from API...');
+      final response = await _dio.get('/coupons');
+
+      print('User Coupons Response Status: ${response.statusCode}');
+      print('User Coupons Response: ${response.data}');
+
+      if (response.statusCode == 200 && response.data != null) {
+        if (response.data['success'] == true && response.data['coupons'] != null) {
+          final List<dynamic> couponsData = response.data['coupons'];
+          return couponsData.map((json) => Coupon.fromJson(json)).toList();
+        }
+      }
+
+      return [];
+    } catch (e) {
+      print('Get User Coupons Error: $e');
+      return [];
     }
   }
 }

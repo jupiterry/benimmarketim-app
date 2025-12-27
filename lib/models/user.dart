@@ -72,6 +72,7 @@ class RegisterRequest {
   final String password;
   final String phone;
   final String deviceType;
+  final String? referralCode;
 
   RegisterRequest({
     required this.name,
@@ -79,16 +80,21 @@ class RegisterRequest {
     required this.password,
     required this.phone,
     this.deviceType = 'mobile', // API dökümanına göre varsayılan 'mobile'
+    this.referralCode,
   });
 
   Map<String, dynamic> toJson() {
-    return {
+    final data = {
       'name': name,
       'email': email,
       'password': password,
       'phone': phone,
       'deviceType': deviceType,
     };
+    if (referralCode != null && referralCode!.isNotEmpty) {
+      data['referralCode'] = referralCode!;
+    }
+    return data;
   }
 }
 
@@ -96,11 +102,13 @@ class AuthResponse {
   final User user;
   final String accessToken;
   final String refreshToken;
+  final String? referralCoupon; // Referral ile kayıt olunduğunda dönen kupon kodu
 
   AuthResponse({
     required this.user,
     required this.accessToken,
     required this.refreshToken,
+    this.referralCoupon,
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
@@ -110,6 +118,7 @@ class AuthResponse {
       user: User.fromJson(json['user'] ?? json['data']?['user'] ?? {}),
       accessToken: json['accessToken'] ?? json['token'] ?? json['data']?['accessToken'] ?? '',
       refreshToken: json['refreshToken'] ?? json['data']?['refreshToken'] ?? '',
+      referralCoupon: json['referralCoupon'],
     );
   }
 }

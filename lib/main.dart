@@ -13,6 +13,8 @@ import 'viewmodels/favorites_viewmodel.dart';
 import 'viewmodels/search_viewmodel.dart';
 import 'viewmodels/flash_sale_viewmodel.dart';
 import 'viewmodels/banner_viewmodel.dart';
+import 'viewmodels/referral_viewmodel.dart';
+import 'viewmodels/chat_viewmodel.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
 import 'services/notification_service.dart';
@@ -104,8 +106,15 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _authChecked = false;
 
   @override
   Widget build(BuildContext context) {
@@ -121,19 +130,24 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SearchViewModel()),
         ChangeNotifierProvider(create: (_) => FlashSaleViewModel()),
         ChangeNotifierProvider(create: (_) => BannerViewModel()),
+        ChangeNotifierProvider(create: (_) => ReferralViewModel()),
+        ChangeNotifierProvider(create: (_) => ChatViewModel()),
       ],
-      child: Consumer<AuthViewModel>(
-        builder: (context, authViewModel, child) {
-          // Auth durumunu kontrol et - güvenli şekilde
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            try {
-              if (context.mounted) {
-                authViewModel.checkAuthStatus();
+      child: Builder(
+        builder: (context) {
+          // Auth durumunu sadece bir kez kontrol et
+          if (!_authChecked) {
+            _authChecked = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              try {
+                if (context.mounted) {
+                  context.read<AuthViewModel>().checkAuthStatus();
+                }
+              } catch (e) {
+                debugPrint('Auth check failed: $e');
               }
-            } catch (e) {
-              debugPrint('Auth check failed: $e');
-            }
-          });
+            });
+          }
 
           return MaterialApp.router(
             title: 'Benim Marketim',
@@ -162,3 +176,4 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+

@@ -5,7 +5,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/version_check_service.dart';
 import 'widgets/update_dialog.dart';
-import 'widgets/custom_dialog.dart'; // Added CustomDialog import
+import 'widgets/custom_dialog.dart';
+import 'whats_new_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -167,7 +168,26 @@ class _SplashScreenState extends State<SplashScreen>
         if (isFirstTime) {
           context.go('/onboarding');
         } else {
-          context.go('/home');
+          // What's New ekranı kontrolü
+          final shouldShowWhatsNew = await WhatsNewScreen.shouldShow(_version);
+          
+          if (shouldShowWhatsNew && mounted) {
+            // What's New ekranını modal olarak göster
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => WhatsNewScreen(
+                  currentVersion: _version,
+                  onComplete: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ),
+            );
+          }
+          
+          if (mounted) {
+            context.go('/home');
+          }
         }
       }
     } catch (e) {

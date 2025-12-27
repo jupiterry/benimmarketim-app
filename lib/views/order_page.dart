@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,7 @@ import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import '../services/api_service.dart';
 import '../services/theme_service.dart';
+import '../services/review_service.dart';
 import '../models/order.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
@@ -37,152 +39,191 @@ class _OrderPageState extends State<OrderPage> {
     int rating = 5;
     String message = '';
     bool submitting = false;
+    
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setState) {
             final bottom = MediaQuery.of(context).viewInsets.bottom;
-            return Padding(
-              padding: EdgeInsets.only(bottom: bottom),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            return Container(
+              margin: EdgeInsets.only(bottom: bottom),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle bar
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                    child: Column(
                       children: [
+                        // Header with emoji
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.successGreen.withOpacity(0.15),
+                                Colors.amber.withOpacity(0.1),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Text('🎉', style: TextStyle(fontSize: 40)),
+                        ),
+                        const SizedBox(height: 20),
+                        
                         Text(
-                          'İlk Sipariş Geri Bildirimi',
+                          'Merhaba!',
                           style: GoogleFonts.poppins(
-                            fontSize: 18,
+                            fontSize: 24,
                             fontWeight: FontWeight.w700,
+                            color: Colors.black87,
                           ),
                         ),
-                        IconButton(
+                        const SizedBox(height: 8),
+                        Text(
+                          'İlk siparişinizi nasıl buldunuz?\nBize puanınızı verin!',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        
+                        // Star Rating with Emojis
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: List.generate(5, (index) {
+                              final starIndex = index + 1;
+                              final filled = starIndex <= rating;
+                              return GestureDetector(
+                                onTap: () => setState(() => rating = starIndex),
+                                child: AnimatedScale(
+                                  scale: filled ? 1.1 : 1.0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: Text(
+                                    filled ? '⭐' : '☆',
+                                    style: TextStyle(fontSize: filled ? 36 : 32),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                        
+                        // Rating label
+                        const SizedBox(height: 12),
+                        Text(
+                          _getRatingLabel(rating),
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _getRatingColor(rating),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        // Message Input
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: TextField(
+                            style: GoogleFonts.poppins(fontSize: 14),
+                            decoration: InputDecoration(
+                              hintText: 'Düşüncelerinizi paylaşın (opsiyonel)',
+                              hintStyle: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
+                              prefixIcon: Icon(Icons.mode_comment_outlined, color: Colors.grey[400], size: 22),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            ),
+                            maxLines: 3,
+                            minLines: 1,
+                            onChanged: (v) => message = v,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        
+                        // Submit Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: submitting ? null : () async {
+                              setState(() => submitting = true);
+                              try {
+                                final api = ApiService();
+                                await api.createFeedback(
+                                  rating: rating,
+                                  ratings: {'overall': rating},
+                                  title: 'Genel Değerlendirme',
+                                  message: message,
+                                  category: 'Genel',
+                                );
+                                if (context.mounted) context.pop(true);
+                              } catch (_) {
+                                if (context.mounted) context.pop(false);
+                              } finally {
+                                if (context.mounted) setState(() => submitting = false);
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.successGreen,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            ),
+                            child: submitting
+                                ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.send_rounded, size: 20),
+                                      const SizedBox(width: 10),
+                                      Text('Gönder ve Devam Et', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        
+                        // Skip Button
+                        TextButton(
                           onPressed: () => context.pop(false),
-                          icon: const Icon(Icons.close),
+                          child: Text('Daha Sonra', style: GoogleFonts.poppins(color: Colors.grey[500], fontWeight: FontWeight.w500)),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Deneyimini 1-5 arası yıldızla değerlendirir misin? Opsiyonel bir mesaj da bırakabilirsin.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: List.generate(5, (index) {
-                        final starIndex = index + 1;
-                        final filled = starIndex <= rating;
-                        return GestureDetector(
-                          onTap: () => setState(() {
-                            rating = starIndex;
-                          }),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            margin: const EdgeInsets.only(right: 6),
-                            child: Icon(
-                              filled
-                                  ? Icons.star_rounded
-                                  : Icons.star_border_rounded,
-                              size: 32,
-                              color: filled
-                                  ? Colors.amber[700]
-                                  : Colors.grey[400],
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      decoration: InputDecoration(
-                        labelText: 'Mesaj (opsiyonel)',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.chat_bubble_outline),
-                      ),
-                      maxLines: 3,
-                      onChanged: (v) => message = v,
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: submitting
-                            ? null
-                            : () async {
-                                setState(() {
-                                  submitting = true;
-                                });
-                                try {
-                                  final api = ApiService();
-                                  await api.createFeedback(
-                                    rating: rating,
-                                    ratings: {'overall': rating},
-                                    title: 'Genel Değerlendirme',
-                                    message: message,
-                                    category: 'Genel',
-                                  );
-                                  if (context.mounted) context.pop(true);
-                                } catch (_) {
-                                  if (context.mounted) context.pop(false);
-                                } finally {
-                                  if (context.mounted)
-                                    setState(() {
-                                      submitting = false;
-                                    });
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.successGreen,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: submitting
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(
-                                'Gönder ve Devam Et',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: TextButton(
-                        onPressed: () => context.pop(false),
-                        child: Text(
-                          'Daha Sonra',
-                          style: GoogleFonts.poppins(color: Colors.grey[700]),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             );
           },
@@ -190,6 +231,29 @@ class _OrderPageState extends State<OrderPage> {
       },
     );
   }
+  
+  String _getRatingLabel(int rating) {
+    switch (rating) {
+      case 1: return '😞 Berbat';
+      case 2: return '😕 Kötü';
+      case 3: return '😐 Orta';
+      case 4: return '😊 İyi';
+      case 5: return '🤩 Mükemmel!';
+      default: return '';
+    }
+  }
+  
+  Color _getRatingColor(int rating) {
+    switch (rating) {
+      case 1: return Colors.red;
+      case 2: return Colors.orange;
+      case 3: return Colors.amber;
+      case 4: return Colors.lightGreen;
+      case 5: return AppColors.successGreen;
+      default: return Colors.grey;
+    }
+  }
+
 
   Future<void> _createOrder() async {
     print('==============================================');
@@ -530,7 +594,7 @@ class _OrderPageState extends State<OrderPage> {
               },
             )
             .toList(),
-        totalAmount: cartViewModel.totalPrice,
+        totalAmount: cartViewModel.finalPrice, // İndirimli fiyatı kullan
         city: 'Zonguldak', // Web projesinde zorunlu
         phone: _phoneController.text,
         deliveryPoint: _selectedDeliveryPoint, // 'girlsDorm' veya 'boysDorm'
@@ -538,6 +602,13 @@ class _OrderPageState extends State<OrderPage> {
             ? 'Kız KYK Yurdu'
             : 'Erkek KYK Yurdu',
         note: _notesController.text,
+        couponCode: cartViewModel.appliedCouponCode, // Kupon kodu
+        discountAmount: cartViewModel.discountAmount, // İndirim miktarı
+        device: {
+          'platform': Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown'),
+          'model': '', // Gerekirse device_info paketi ile alınabilir
+          'appVersion': '3.0.0', // Gerekirse package_info_plus ile alınabilir
+        },
       );
 
       // Debug: Request data'yı yazdır
@@ -550,7 +621,14 @@ class _OrderPageState extends State<OrderPage> {
       print('Delivery Point: ${orderRequest.deliveryPoint}');
       print('Delivery Point Name: ${orderRequest.deliveryPointName}');
       print('Note: ${orderRequest.note}');
-      print('===========================');
+      print('=== COUPON DEBUG ===');
+      print('Applied Coupon Code: ${cartViewModel.appliedCouponCode}');
+      print('Discount Amount: ${cartViewModel.discountAmount}');
+      print('Total Price (before discount): ${cartViewModel.totalPrice}');
+      print('Final Price (after discount): ${cartViewModel.finalPrice}');
+      print('Request Coupon Code: ${orderRequest.couponCode}');
+      print('Request Discount Amount: ${orderRequest.discountAmount}');
+      print('===================');
 
       final apiService = ApiService();
 
@@ -580,6 +658,9 @@ class _OrderPageState extends State<OrderPage> {
 
       // Başarılı sipariş
       // Başarılı sipariş - SnackBar kaldırıldı
+
+      // In-app review - sipariş tamamlandığında değerlendirme iste (koşullar sağlanıyorsa)
+      await ReviewService.instance.onOrderCompleted();
 
       // Sepeti temizle
       cartViewModel.clearCart();
@@ -843,6 +924,60 @@ class _OrderPageState extends State<OrderPage> {
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(height: 1),
           ),
+          // Ara Toplam
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Ara Toplam',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              Text(
+                '₺${cartViewModel.totalPrice.toStringAsFixed(2)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          // Kupon İndirimi (varsa)
+          if (cartViewModel.discountAmount > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.discount, size: 16, color: AppColors.successGreen),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Kupon (${cartViewModel.appliedCouponCode ?? ""})',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: AppColors.successGreen,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '-₺${cartViewModel.discountAmount.toStringAsFixed(2)}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.successGreen,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ] else
+            const SizedBox(height: 8),
+          // Toplam Tutar
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -855,7 +990,7 @@ class _OrderPageState extends State<OrderPage> {
                 ),
               ),
               Text(
-                '₺${cartViewModel.totalPrice.toStringAsFixed(2)}',
+                '₺${cartViewModel.finalPrice.toStringAsFixed(2)}',
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,

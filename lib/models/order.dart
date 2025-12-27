@@ -146,6 +146,9 @@ class CreateOrderRequest {
   final String deliveryPoint; // 'girlsDorm' veya 'boysDorm'
   final String deliveryPointName;
   final String note;
+  final String? couponCode; // Kupon kodu
+  final double? discountAmount; // İndirim miktarı
+  final Map<String, dynamic>? device; // Cihaz bilgisi
 
   CreateOrderRequest({
     required this.products,
@@ -155,10 +158,13 @@ class CreateOrderRequest {
     required this.deliveryPoint,
     required this.deliveryPointName,
     required this.note,
+    this.couponCode,
+    this.discountAmount,
+    this.device,
   });
 
   Map<String, dynamic> toJson() {
-    return {
+    final Map<String, dynamic> json = {
       'products': products,
       'totalAmount': totalAmount,
       'city': city,
@@ -167,5 +173,22 @@ class CreateOrderRequest {
       'deliveryPointName': deliveryPointName,
       'note': note,
     };
+    
+    // Kupon bilgisi varsa ekle
+    if (couponCode != null && couponCode!.isNotEmpty) {
+      json['couponCode'] = couponCode!;
+    }
+    if (discountAmount != null && discountAmount! > 0) {
+      json['couponDiscount'] = discountAmount!; // Backend 'couponDiscount' bekliyor
+      json['subtotalAmount'] = totalAmount + discountAmount!; // İndirim öncesi ara toplam
+    }
+    
+    // Cihaz bilgisi varsa ekle
+    if (device != null) {
+      json['device'] = device;
+    }
+    
+    return json;
   }
 }
+

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:benimmarketim_app/viewmodels/cart_viewmodel.dart';
 import 'package:benimmarketim_app/viewmodels/settings_viewmodel.dart';
+import 'package:benimmarketim_app/viewmodels/referral_viewmodel.dart';
 
 import '../viewmodels/auth_viewmodel.dart';
 import '../services/theme_service.dart';
@@ -32,6 +33,8 @@ class CartPage extends StatelessWidget {
 
                   return Column(
                     children: [
+                      // Kullanılabilir Kupon Banner'ı
+                      _buildAvailableCouponBanner(context, cartViewModel),
                       Expanded(
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(
@@ -437,6 +440,62 @@ class CartPage extends StatelessWidget {
                   ),
                 ),
 
+              // Kupon kodu girişi
+              _buildCouponSection(context, cartViewModel),
+              const SizedBox(height: 16),
+
+              // Fiyat özeti
+              if (cartViewModel.discountAmount > 0) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Ara Toplam',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    Text(
+                      '₺${cartViewModel.totalPrice.toStringAsFixed(2)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.discount, size: 16, color: AppColors.successGreen),
+                        const SizedBox(width: 4),
+                        Text(
+                          'İndirim (${cartViewModel.appliedCouponCode})',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: AppColors.successGreen,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '-₺${cartViewModel.discountAmount.toStringAsFixed(2)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: AppColors.successGreen,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+              ],
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -449,7 +508,7 @@ class CartPage extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '₺${cartViewModel.totalPrice.toStringAsFixed(2)}',
+                    '₺${cartViewModel.finalPrice.toStringAsFixed(2)}',
                     style: GoogleFonts.poppins(
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
@@ -538,4 +597,276 @@ class CartPage extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildCouponSection(BuildContext context, CartViewModel cartViewModel) {
+    final TextEditingController couponController = TextEditingController();
+    
+    // Uygulanan kupon varsa göster
+    if (cartViewModel.appliedCouponCode != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.successGreen.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.successGreen.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle, color: AppColors.successGreen, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Kupon Uygulandı',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.successGreen,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    cartViewModel.appliedCouponCode!,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: AppColors.successGreen,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => cartViewModel.removeCoupon(),
+              child: Text(
+                'Kaldır',
+                style: GoogleFonts.poppins(
+                  color: Colors.red[400],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Kupon girişi
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: couponController,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      hintText: 'Kupon kodu girin',
+                      hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon: Icon(Icons.discount_outlined, color: Colors.grey[500]),
+                    ),
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: cartViewModel.isValidatingCoupon
+                        ? null
+                        : () async {
+                            final success = await cartViewModel.applyCoupon(
+                              couponController.text,
+                            );
+                            if (success) {
+                              couponController.clear();
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.successGreen,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    child: cartViewModel.isValidatingCoupon
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            'Uygula',
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+            if (cartViewModel.couponError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  cartViewModel.couponError!,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.red[600],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Kullanılabilir Kupon Banner'ı
+  Widget _buildAvailableCouponBanner(BuildContext context, CartViewModel cartViewModel) {
+    // Eğer zaten kupon uygulanmışsa gösterme
+    if (cartViewModel.appliedCouponCode != null) {
+      return const SizedBox.shrink();
+    }
+
+    return Consumer<ReferralViewModel>(
+      builder: (context, referralViewModel, child) {
+        // Kuponları yükle (eğer yüklenmemişse)
+        if (referralViewModel.coupons.isEmpty && !referralViewModel.isLoading) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            referralViewModel.loadCoupons();
+          });
+        }
+
+        final validCoupons = referralViewModel.validCoupons;
+        if (validCoupons.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final coupon = validCoupons.first;
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.purple.withOpacity(0.15),
+                Colors.purple.withOpacity(0.08),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.purple.withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.confirmation_number_rounded,
+                  color: Colors.purple,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🎁 Kullanılabilir Kuponunuz Var!',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.purple[800],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.purple,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              coupon.code,
+                              style: GoogleFonts.spaceMono(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          coupon.discountText,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.purple[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  // Kuponu otomatik uygula
+                  cartViewModel.applyCoupon(coupon.code);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.successGreen,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'UYGULA',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
+

@@ -76,6 +76,12 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                         _buildMenuOption(
                           context,
+                          icon: Icons.card_giftcard_outlined,
+                          title: 'Arkadaşını Getir',
+                          onTap: () => context.push('/referral'),
+                        ),
+                        _buildMenuOption(
+                          context,
                           icon: Icons.print_outlined,
                           title: 'Fotokopi Hizmeti',
                           onTap: () => context.push('/photocopy-upload'),
@@ -85,6 +91,12 @@ class _ProfilePageState extends State<ProfilePage> {
                           icon: Icons.history,
                           title: 'Fotokopi Geçmişi',
                           onTap: () => context.push('/photocopy-history'),
+                        ),
+                        _buildMenuOption(
+                          context,
+                          icon: Icons.chat_bubble_outline,
+                          title: 'Canlı Destek',
+                          onTap: () => context.push('/chat'),
                         ),
                         _buildMenuOption(
                           context,

@@ -75,8 +75,9 @@ class AuthViewModel extends ChangeNotifier {
     String name,
     String email,
     String password,
-    String phone,
-  ) async {
+    String phone, {
+    String? referralCode,
+  }) async {
     _setLoading(true);
     _error = null;
 
@@ -88,6 +89,7 @@ class AuthViewModel extends ChangeNotifier {
         password: password,
         phone: phone,
         deviceType: 'mobile',
+        referralCode: referralCode,
       );
       final response = await _apiService.register(request);
 
