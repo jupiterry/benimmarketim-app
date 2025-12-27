@@ -46,7 +46,7 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
     WhatsNewItem(
       emoji: '👥',
       title: 'Arkadaşını Getir, Kazan',
-      description: 'Arkadaşınızı davet edin, o %15 hoş geldin indirimi kazansın, siz de %10 ödül kuponu alın! Paylaştıkça kazanın, dostluk büyüsün.',
+      description: 'Arkadaşınızı davet edin, o %5 hoş geldin indirimi kazansın, siz de %5 ödül kuponu alın! Paylaştıkça kazanın, dostluk büyüsün.',
       color: Colors.orange,
     ),
     WhatsNewItem(
