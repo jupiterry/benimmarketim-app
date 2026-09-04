@@ -9,8 +9,97 @@ import '../viewmodels/auth_viewmodel.dart';
 import '../services/theme_service.dart';
 import '../models/cart_item.dart';
 import '../models/coupon.dart';
+import '../services/api_service.dart';
 import 'package:go_router/go_router.dart';
 import 'widgets/market_palette.dart';
+
+class _CouponRequestCampaignCard extends StatefulWidget {
+  const _CouponRequestCampaignCard();
+
+  @override
+  State<_CouponRequestCampaignCard> createState() =>
+      _CouponRequestCampaignCardState();
+}
+
+class _CouponRequestCampaignCardState
+    extends State<_CouponRequestCampaignCard> {
+  final _api = ApiService();
+  Map<String, dynamic>? _campaign;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final campaign = await _api.getActiveCouponRequestCampaign();
+    if (mounted)
+      setState(() {
+        _campaign = campaign;
+        _loading = false;
+      });
+  }
+
+  Future<void> _request() async {
+    final response = await _api.requestCouponCampaign();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(response['message'] ?? 'İşlem tamamlandı')));
+    if (response['success'] == true)
+      setState(
+          () => _campaign = Map<String, dynamic>.from(response['campaign']));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || _campaign == null) return const SizedBox.shrink();
+    final campaign = _campaign!;
+    final target = (campaign['targetCount'] ?? 0) as num;
+    final current = (campaign['weightedCount'] ?? 0) as num;
+    final progress = target == 0 ? 0.0 : (current / target).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+            color: const Color(0xFFE8F8EE),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFBDE9CD))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('🎁 ${campaign['title']}',
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700, color: MarketPalette.greenDeep)),
+          const SizedBox(height: 4),
+          Text(
+              '${campaign['targetCount']} istek gelirse %${campaign['discountPercentage']} indirim açılacak. Yalnızca katılanlar yararlanır.',
+              style:
+                  GoogleFonts.inter(fontSize: 11, color: MarketPalette.muted)),
+          const SizedBox(height: 10),
+          LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              borderRadius: BorderRadius.circular(9),
+              color: MarketPalette.green,
+              backgroundColor: Colors.white),
+          const SizedBox(height: 8),
+          Row(children: [
+            Text('${current.toInt()} / ${target.toInt()} istek',
+                style: GoogleFonts.inter(
+                    fontSize: 11, fontWeight: FontWeight.w700)),
+            const Spacer(),
+            ElevatedButton(
+                onPressed: campaign['userRequested'] == true ? null : _request,
+                child: Text(campaign['userRequested'] == true
+                    ? 'İsteğin alındı'
+                    : 'Kupon iste'))
+          ])
+        ]),
+      ),
+    );
+  }
+}
 
 class CartPage extends StatelessWidget {
   final VoidCallback? onExplore;
@@ -39,6 +128,7 @@ class CartPage extends StatelessWidget {
                     children: [
                       // Kullanılabilir Kupon Banner'ı
                       _buildAvailableCouponBanner(context, cartViewModel),
+                      const _CouponRequestCampaignCard(),
                       Expanded(
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(

@@ -1452,4 +1452,25 @@ class ApiService {
       return [];
     }
   }
+
+  Future<Map<String, dynamic>?> getActiveCouponRequestCampaign() async {
+    try {
+      final response = await _dio.get('/coupon-requests/active');
+      return response.data?['campaign'] == null
+          ? null
+          : Map<String, dynamic>.from(response.data['campaign']);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> requestCouponCampaign() async {
+    try {
+      final response = await _dio.post('/coupon-requests/active/request');
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (error) {
+      return Map<String, dynamic>.from(error.response?.data ??
+          {'success': false, 'message': 'İstek gönderilemedi'});
+    }
+  }
 }
