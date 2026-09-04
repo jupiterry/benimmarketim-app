@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
+import '../viewmodels/referral_viewmodel.dart';
 import '../services/api_service.dart';
 import '../services/theme_service.dart';
 import '../services/review_service.dart';
@@ -527,6 +528,7 @@ class _OrderPageState extends State<OrderPage> {
       print('✅ At least one delivery point is open');
 
       final cartViewModel = context.read<CartViewModel>();
+      final referralViewModel = context.read<ReferralViewModel>();
 
       if (cartViewModel.items.isEmpty) {
         showDialog(
@@ -716,6 +718,11 @@ class _OrderPageState extends State<OrderPage> {
 
       // Sepeti temizle
       cartViewModel.clearCart();
+
+      // Kupon, sipariş başarıyla kaydedildiğinde sunucuda atomik olarak
+      // tüketilir. Cüzdanı zorla yenilemek eski kuponun ana sayfa/sepet
+      // bannerında yeniden görünmesini engeller.
+      await referralViewModel.loadCoupons(force: true);
 
       // Sipariş onay sayfasına yönlendir
       print('=== NAVIGATING TO ORDER CONFIRMATION ===');

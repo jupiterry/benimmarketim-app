@@ -63,7 +63,7 @@ class MarketQuickDiscovery extends StatelessWidget {
         final categories = activeCategories.take(8).toList();
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 30, 20, 0),
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -95,9 +95,9 @@ class MarketQuickDiscovery extends StatelessWidget {
                       itemCount: categories.length,
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: columns,
-                        mainAxisExtent: 112,
+                        mainAxisExtent: 104,
                         crossAxisSpacing: 10,
-                        mainAxisSpacing: 12,
+                        mainAxisSpacing: 8,
                       ),
                       itemBuilder: (context, index) {
                         final category = categories[index];
@@ -534,9 +534,9 @@ class _CategorySkeletonGrid extends StatelessWidget {
       itemCount: 8,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        mainAxisExtent: 112,
+        mainAxisExtent: 104,
         crossAxisSpacing: 10,
-        mainAxisSpacing: 12,
+        mainAxisSpacing: 8,
       ),
       itemBuilder: (_, __) => Column(
         children: [
