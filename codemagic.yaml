@@ -43,7 +43,7 @@ workflows:
         - app_store_credentials # Codemagic'te oluşturmanız gereken environment group
       vars:
         BUNDLE_ID: "com.jupi.benimmarketim" # iOS projesindeki Bundle ID
-        APP_STORE_APPLE_ID: 6755705908 # App Store Connect'teki App ID (değiştirilecek)
+        APP_STORE_APPLE_ID: 6755792336 # App Store Connect'teki Benim Marketim Apple ID
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.jupi.benimmarketim
