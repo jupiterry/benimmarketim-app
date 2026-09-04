@@ -62,7 +62,7 @@ class MarketProductsSection extends StatelessWidget {
           children: [
             if (spotlight.isNotEmpty) ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 30, 20, 16),
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
                 child: MarketSectionHeader(
                   eyebrow: discounted.isNotEmpty
                       ? 'AVANTAJLI FİYATLAR'

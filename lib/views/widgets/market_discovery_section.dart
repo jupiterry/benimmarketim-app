@@ -89,28 +89,29 @@ class MarketQuickDiscovery extends StatelessWidget {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final columns = constraints.maxWidth > 650 ? 6 : 4;
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: categories.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        mainAxisExtent: 104,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 8,
-                      ),
-                      itemBuilder: (context, index) {
+                    const spacing = 10.0;
+                    final itemWidth =
+                        (constraints.maxWidth - ((columns - 1) * spacing)) /
+                            columns;
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: 8,
+                      children: List.generate(categories.length, (index) {
                         final category = categories[index];
-                        return _CategoryTile(
-                          category: category,
-                          emoji: categoryEmoji(category.name),
-                          colorIndex: index,
-                          onTap: () => context.push(
-                            '/category-products',
-                            extra: category,
+                        return SizedBox(
+                          width: itemWidth,
+                          height: 104,
+                          child: _CategoryTile(
+                            category: category,
+                            emoji: categoryEmoji(category.name),
+                            colorIndex: index,
+                            onTap: () => context.push(
+                              '/category-products',
+                              extra: category,
+                            ),
                           ),
                         );
-                      },
+                      }),
                     );
                   },
                 ),
