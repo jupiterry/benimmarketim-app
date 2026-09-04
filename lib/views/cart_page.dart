@@ -1121,10 +1121,26 @@ class CartPage extends StatelessWidget {
                 const SizedBox(height: 16),
                 Expanded(
                   child: coupons.isEmpty
-                      ? Center(
-                          child: Text('Şu anda aktif kupon bulunmuyor.',
-                              style:
-                                  GoogleFonts.poppins(color: Colors.grey[600])),
+                      ? ListView(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(0, 8, 0, 28),
+                          children: [
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: Text(
+                                'Henüz kullanabileceğin bir kupon yok. Aktif kampanyaya katılarak kişisel kupon kazanabilirsin.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const _CouponRequestCampaignCard(),
+                          ],
                         )
                       : ListView.separated(
                           controller: controller,
