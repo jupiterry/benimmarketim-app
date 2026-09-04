@@ -311,7 +311,15 @@ class ApiService {
         return null;
       }
 
-      final response = await _dio.post('/auth/refresh-token');
+      final refreshToken = await TokenManager.getRefreshToken();
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return null;
+      }
+
+      final response = await _dio.post(
+        '/auth/refresh-token',
+        data: {'refreshToken': refreshToken},
+      );
 
       if (response.statusCode == 200) {
         final newToken = response.data['accessToken'];
@@ -333,68 +341,39 @@ class ApiService {
   // Kategori işlemleri
   Future<List<models.Category>> getCategories() async {
     try {
-      print('Getting categories from products API...');
-      // Tüm ürünleri çek ve kategorileri çıkar
-      final response = await _dio.get('/products');
+      final response = await _dio.get('/categories');
+      final rawCategories = response.data is Map
+          ? (response.data['categories'] as List<dynamic>? ?? [])
+          : <dynamic>[];
 
-      print('Products Response Status: ${response.statusCode}');
-
-      if (response.data == null) {
-        print('Products response is null, using mock data');
-        return _getMockCategories();
-      }
-
-      // API'den gelen ürünlerden kategorileri çıkar
-      List<models.Category> categories = [];
-
-      if (response.data is Map && response.data['products'] != null) {
-        List products = response.data['products'];
-        print('Found ${products.length} products, extracting categories...');
-
-        // Sabit kategori listesi - API'deki kategori ID'leri ile eşleştirildi
-        final List<Map<String, String>> fixedCategories = [
-          {'id': 'kahve', 'name': 'Benim Kahvem'},
-          {'id': 'yiyecekler', 'name': 'Yiyecekler'},
-          {'id': 'kahvalti', 'name': 'Kahvaltılık Ürünler'},
-          {'id': 'gida', 'name': 'Temel Gıda'},
-          {'id': 'meyve-sebze', 'name': 'Meyve & Sebze'},
-          {'id': 'sut', 'name': 'Süt & Süt Ürünleri'},
-          {'id': 'bespara', 'name': 'Beş Para Etmeyen Ürünler'},
-          {'id': 'tozicecekler', 'name': 'Toz İçecekler'},
-          {'id': 'cips', 'name': 'Cips & Çerez'},
-          {'id': 'cayseker', 'name': 'Çay ve Şekerler'},
-          {'id': 'atistirma', 'name': 'Atıştırmalıklar'},
-          {'id': 'temizlik', 'name': 'Temizlik & Hijyen'},
-          {'id': 'kisisel', 'name': 'Kişisel Bakım'},
-          {'id': 'makarna', 'name': 'Makarna ve Kuru Bakliyat'},
-          {'id': 'et', 'name': 'Şarküteri & Et Ürünleri'},
-          {'id': 'icecekler', 'name': 'Buz Gibi İçecekler'},
-          {'id': 'dondurulmus', 'name': 'Dondurulmuş Gıdalar'},
-          {'id': 'baharat', 'name': 'Baharatlar'},
-          {'id': 'dondurma', 'name': 'Golf Dondurmalar'},
-        ];
-
-        print('Using fixed categories: ${fixedCategories.length}');
-
-        // Kategorileri Category objelerine dönüştür
-        for (int i = 0; i < fixedCategories.length; i++) {
-          final categoryData = fixedCategories[i];
-          categories.add(
-            models.Category(
-              id: categoryData['id']!,
-              name: categoryData['name']!,
-              description: _getCategoryDescription(categoryData['id']!),
-              icon: _getCategoryIcon(categoryData['id']!),
-              isActive: true,
+      return rawCategories
+          .map((json) {
+            final name = (json['name'] ?? '').toString();
+            final slug = name
+                .toLowerCase()
+                .replaceAll('ı', 'i')
+                .replaceAll('ş', 's')
+                .replaceAll('ğ', 'g')
+                .replaceAll('ü', 'u')
+                .replaceAll('ö', 'o')
+                .replaceAll('ç', 'c')
+                .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+                .replaceAll(RegExp(r'^-|-$'), '');
+            return models.Category(
+              // Backend ürünleri kategori adlarıyla filtrelediği için ID olarak adı kullan.
+              id: name,
+              name: name,
+              description: '${json['productCount'] ?? 0} ürün',
+              image: json['image'],
+              icon: _getCategoryIcon(slug),
+              order: json['productCount'] ?? 0,
+              isActive: json['isActive'] ?? true,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
-            ),
-          );
-        }
-      }
-
-      print('Created ${categories.length} categories from API');
-      return categories.isNotEmpty ? categories : _getMockCategories();
+            );
+          })
+          .where((category) => category.name.isNotEmpty)
+          .toList();
     } catch (e) {
       print('Categories API Error: $e');
       print('Using mock categories as fallback');
@@ -659,6 +638,22 @@ class ApiService {
     }
   }
 
+  Future<List<Product>> getPersonalizedProducts() async {
+    try {
+      final response = await _dio.get('/products/personalized');
+      final data = response.data;
+      if (data is Map && data['products'] is List) {
+        return (data['products'] as List)
+            .map((json) => Product.fromJson(json))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      // Giriş yapılmamış veya geçmiş oluşmamışsa ana sayfa normal ürünlerle devam eder.
+      return [];
+    }
+  }
+
   // Geri bildirim gönder
   Future<Map<String, dynamic>> createFeedback({
     required int rating,
@@ -854,7 +849,10 @@ class ApiService {
         // Backend'den gelen response yapısına göre parse et
         if (response.data is Map) {
           // Eğer response'da 'order' key'i varsa
-          final orderData = response.data['order'] ?? response.data;
+          final orderData = Map<String, dynamic>.from(
+            response.data['order'] ?? response.data,
+          );
+          orderData['_id'] ??= response.data['orderId'];
           print('=== ORDER DATA DEBUG ===');
           print('Order Data: $orderData');
           print('_id field: ${orderData['_id']}');
@@ -960,13 +958,22 @@ class ApiService {
   }
 
   // Kupon kodu doğrula
-  Future<Map<String, dynamic>> validateCoupon(String code, double orderAmount) async {
+  Future<Map<String, dynamic>> validateCoupon(
+    String code,
+    double orderAmount, {
+    List<Map<String, dynamic>> products = const [],
+    String? deliveryPoint,
+    String? channel,
+  }) async {
     try {
       print('Validating coupon: $code for amount: $orderAmount');
 
       final response = await _dio.post('/coupons/validate', data: {
         'code': code,
         'orderAmount': orderAmount,
+        'products': products,
+        if (deliveryPoint != null) 'deliveryPoint': deliveryPoint,
+        if (channel != null) 'channel': channel,
       });
 
       print('Validate Coupon Response Status: ${response.statusCode}');
@@ -976,9 +983,32 @@ class ApiService {
     } catch (e) {
       print('Validate Coupon Error: $e');
       if (e is DioException && e.response != null) {
-        return e.response!.data ?? {'success': false, 'message': 'Kupon doğrulanamadı'};
+        return e.response!.data ??
+            {'success': false, 'message': 'Kupon doğrulanamadı'};
       }
       throw Exception('Kupon doğrulanırken hata oluştu');
+    }
+  }
+
+  Future<Map<String, dynamic>> recommendCoupons(
+    double orderAmount, {
+    List<Map<String, dynamic>> products = const [],
+    String? deliveryPoint,
+    String? channel,
+  }) async {
+    try {
+      final response = await _dio.post('/coupons/recommend', data: {
+        'orderAmount': orderAmount,
+        'products': products,
+        if (deliveryPoint != null) 'deliveryPoint': deliveryPoint,
+        if (channel != null) 'channel': channel,
+      });
+      return response.data ?? {};
+    } catch (e) {
+      if (e is DioException && e.response != null) {
+        return e.response!.data ?? {'success': false};
+      }
+      return {'success': false};
     }
   }
 
@@ -1311,7 +1341,8 @@ class ApiService {
       print('My Referrals Response: ${response.data}');
 
       if (response.statusCode == 200 && response.data != null) {
-        if (response.data['success'] == true && response.data['referral'] != null) {
+        if (response.data['success'] == true &&
+            response.data['referral'] != null) {
           return Referral.fromJson(response.data['referral']);
         }
       }
@@ -1350,7 +1381,8 @@ class ApiService {
       if (e.response?.statusCode == 400) {
         return ReferralCodeCheck(
           isValid: false,
-          message: e.response?.data['message'] ?? 'Bu referral kodu artık kullanılamaz (limit doldu)',
+          message: e.response?.data['message'] ??
+              'Bu referral kodu artık kullanılamaz (limit doldu)',
         );
       } else if (e.response?.statusCode == 404) {
         return ReferralCodeCheck(
@@ -1405,14 +1437,11 @@ class ApiService {
   /// Kullanıcının kuponlarını getir
   Future<List<Coupon>> getUserCoupons() async {
     try {
-      print('Getting user coupons from API...');
       final response = await _dio.get('/coupons');
 
-      print('User Coupons Response Status: ${response.statusCode}');
-      print('User Coupons Response: ${response.data}');
-
       if (response.statusCode == 200 && response.data != null) {
-        if (response.data['success'] == true && response.data['coupons'] != null) {
+        if (response.data['success'] == true &&
+            response.data['coupons'] != null) {
           final List<dynamic> couponsData = response.data['coupons'];
           return couponsData.map((json) => Coupon.fromJson(json)).toList();
         }
@@ -1420,7 +1449,6 @@ class ApiService {
 
       return [];
     } catch (e) {
-      print('Get User Coupons Error: $e');
       return [];
     }
   }

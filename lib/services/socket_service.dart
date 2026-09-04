@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'token_manager.dart';
 
 class SocketService {
   static SocketService? _instance;
   IO.Socket? _socket;
-  
-  final StreamController<Map<String, dynamic>> _messageController = 
+
+  final StreamController<Map<String, dynamic>> _messageController =
       StreamController<Map<String, dynamic>>.broadcast();
-  final StreamController<String> _typingController = 
+  final StreamController<String> _typingController =
       StreamController<String>.broadcast();
-  
+
   bool _isConnected = false;
   String? _userId;
   String? _currentChatId;
@@ -23,7 +24,7 @@ class SocketService {
 
   /// Mesaj stream'i
   Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
-  
+
   /// Yazıyor göstergesi stream'i
   Stream<String> get typingStream => _typingController.stream;
 
@@ -39,27 +40,25 @@ class SocketService {
     _userId = userId;
 
     try {
+      final token = await TokenManager.getAccessToken();
       _socket = IO.io(
         'https://devrekbenimmarketim.com',
         IO.OptionBuilder()
-            .setTransports(['websocket', 'polling']) // Polling'i de ekle fallback için
+            .setTransports(
+                ['websocket', 'polling']) // Polling'i de ekle fallback için
             .enableAutoConnect()
             .enableReconnection()
             .setReconnectionAttempts(10)
             .setReconnectionDelay(1000)
             .setReconnectionDelayMax(5000)
+            .setAuth({'token': token})
             .build(),
       );
 
       _socket!.onConnect((_) {
         print('SocketService: ✅ Connected to server');
         _isConnected = true;
-        
-        // Kullanıcı varsa auth gönder
-        if (_userId != null) {
-          _socket!.emit('auth', {'userId': _userId});
-        }
-        
+
         // Eğer aktif sohbet varsa yeniden katıl
         if (_currentChatId != null) {
           _socket!.emit('joinChat', _currentChatId);
@@ -76,7 +75,7 @@ class SocketService {
         print('SocketService: ⚠️ Connection error: $error');
         _isConnected = false;
       });
-      
+
       _socket!.onError((error) {
         print('SocketService: ⚠️ Socket error: $error');
       });
@@ -156,7 +155,8 @@ class SocketService {
       _socket!.emit('joinChat', chatId);
       print('SocketService: 🚪 Joined chat room: $chatId');
     } else {
-      print('SocketService: ⚠️ Not connected, will join $chatId when connected');
+      print(
+          'SocketService: ⚠️ Not connected, will join $chatId when connected');
     }
   }
 
@@ -192,7 +192,11 @@ class SocketService {
   }
 
   /// Kullanıcı sohbete girdi - admin'e bildir
-  void notifyUserInChat(String chatId, {String? userId, String? userName, String? platform, String? appVersion}) {
+  void notifyUserInChat(String chatId,
+      {String? userId,
+      String? userName,
+      String? platform,
+      String? appVersion}) {
     if (_socket != null && _isConnected) {
       _socket!.emit('userInChat', {
         'chatId': chatId,
@@ -201,7 +205,8 @@ class SocketService {
         'platform': platform,
         'appVersion': appVersion,
       });
-      print('SocketService: 👀 User entered chat: $chatId (platform: $platform, v$appVersion)');
+      print(
+          'SocketService: 👀 User entered chat: $chatId (platform: $platform, v$appVersion)');
     }
   }
 
@@ -222,7 +227,7 @@ class SocketService {
       notifyUserLeftChat(_currentChatId!);
       leaveChat(_currentChatId!);
     }
-    
+
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;

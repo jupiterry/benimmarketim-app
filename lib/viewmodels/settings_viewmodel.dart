@@ -3,7 +3,7 @@ import '../services/api_service.dart';
 
 class SettingsViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
-  
+
   Map<String, dynamic> _settings = {};
   bool _isLoading = false;
   String? _error;
@@ -38,7 +38,7 @@ class SettingsViewModel extends ChangeNotifier {
   String? get error => _error;
 
   // Minimum sipariş tutarı
-  double get minimumOrderAmount => 
+  double get minimumOrderAmount =>
       _settings['minimumOrderAmount']?.toDouble() ?? 250.0;
 
   // Sipariş saatleri
@@ -48,15 +48,15 @@ class SettingsViewModel extends ChangeNotifier {
   int get orderEndMinute => _settings['orderEndMinute'] ?? 0;
 
   // Teslimat noktaları
-  bool get girlsDormEnabled => 
+  bool get girlsDormEnabled =>
       _settings['deliveryPoints']?['girlsDorm']?['enabled'] ?? false;
-  bool get boysDormEnabled => 
+  bool get boysDormEnabled =>
       _settings['deliveryPoints']?['boysDorm']?['enabled'] ?? false;
-  
+
   // Teslimat noktası isimleri
-  String get girlsDormName => 
+  String get girlsDormName =>
       _settings['deliveryPoints']?['girlsDorm']?['name'] ?? 'Kız KYK Yurdu';
-  String get boysDormName => 
+  String get boysDormName =>
       _settings['deliveryPoints']?['boysDorm']?['name'] ?? 'Erkek KYK Yurdu';
 
   // Ayarları yükle
@@ -102,16 +102,23 @@ class SettingsViewModel extends ChangeNotifier {
 
   // Sipariş saatleri kontrolü
   bool get isWithinOrderHours {
-    final now = DateTime.now();
+    // İşletme Türkiye'de çalıştığı için cihazın/emülatörün saat dilimine
+    // güvenmeyiz. Türkiye 2016'dan beri yıl boyunca UTC+3 kullanıyor.
+    final now = DateTime.now().toUtc().add(const Duration(hours: 3));
     final currentHour = now.hour;
     final currentMinute = now.minute;
-    
+
     final startTime = orderStartHour * 60 + orderStartMinute;
     final endTime = orderEndHour * 60 + orderEndMinute;
     final currentTime = currentHour * 60 + currentMinute;
-    
+
+    // 00:00–00:00, yönetim panelinde 24 saat açık anlamına gelir.
+    if (startTime == 0 && endTime == 0) {
+      return true;
+    }
+
     // Gece yarısını geçen saatler için özel kontrol
-    if (endTime < startTime) {
+    if (endTime <= startTime) {
       return currentTime >= startTime || currentTime <= endTime;
     } else {
       return currentTime >= startTime && currentTime <= endTime;

@@ -7,12 +7,14 @@ class HomePageViewModel extends ChangeNotifier {
 
   List<Product> _products = [];
   List<Product> _featuredProducts = [];
+  List<Product> _personalizedProducts = [];
   bool _isLoading = false;
   String? _error;
 
   // Getters
   List<Product> get products => _products;
   List<Product> get featuredProducts => _featuredProducts;
+  List<Product> get personalizedProducts => _personalizedProducts;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -29,7 +31,7 @@ class HomePageViewModel extends ChangeNotifier {
 
   // Constructor'da yükleme yapma, UI'dan tetiklenecek
 
-  // Ana sayfa ürünlerini yükle (Rastgele 50)
+  // Ana sayfa ürünlerini yükle (kullanıcıya hızlı keşif için sınırlı liste)
   Future<void> loadHomeProducts() async {
     // Eğer zaten ürün varsa tekrar yükleme (Session Persistence)
     if (_products.isNotEmpty) {
@@ -46,20 +48,19 @@ class HomePageViewModel extends ChangeNotifier {
       final results = await Future.wait([
         _apiService.getProducts(),
         _apiService.getFeaturedProducts(),
+        _apiService.getPersonalizedProducts(),
       ]);
 
       final allProducts = results[0] as List<Product>;
       _featuredProducts = results[1] as List<Product>;
+      _personalizedProducts = results[2] as List<Product>;
 
       if (allProducts.isNotEmpty) {
         // Gizli ürünleri filtrele (isHidden: false olanları al)
         final visibleProducts =
             allProducts.where((product) => !product.isHidden).toList();
 
-        // Listeyi karıştır
-        visibleProducts.shuffle();
-
-        // İlk 50 tanesini al
+        // Listeyi karıştırmadan sırayı koru; ürün keşfi tutarlı kalsın.
         _products = visibleProducts.take(50).toList();
         print(
           'HomePageViewModel: Selected 50 random visible products (filtered ${allProducts.length - visibleProducts.length} hidden)',
@@ -81,6 +82,7 @@ class HomePageViewModel extends ChangeNotifier {
   // Manuel yenileme için (Pull to refresh vb.)
   Future<void> refreshProducts() async {
     _products.clear(); // Cache'i temizle
+    _personalizedProducts.clear();
     await loadHomeProducts();
   }
 

@@ -65,7 +65,8 @@ class _ReferralPageState extends State<ReferralPage> {
           if (viewModel.isLoading && viewModel.referral == null) {
             return const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.successGreen),
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(AppColors.successGreen),
               ),
             );
           }
@@ -114,11 +115,13 @@ class _ReferralPageState extends State<ReferralPage> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => context.read<ReferralViewModel>().loadReferralInfo(),
+              onPressed: () =>
+                  context.read<ReferralViewModel>().loadReferralInfo(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.successGreen,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -141,6 +144,8 @@ class _ReferralPageState extends State<ReferralPage> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
+          _buildRewardHero(referral),
+          const SizedBox(height: 16),
           // Referral Code Card
           _buildCodeCard(referral),
           const SizedBox(height: 20),
@@ -156,7 +161,7 @@ class _ReferralPageState extends State<ReferralPage> {
           ],
 
           // Info Banner
-          _buildInfoBanner(),
+          _buildInfoBanner(referral),
           const SizedBox(height: 20),
 
           // Referred Users
@@ -205,16 +210,16 @@ class _ReferralPageState extends State<ReferralPage> {
             ),
           ),
           const SizedBox(height: 16),
-          
+
           Text(
-            'Referral Kodunuz',
+            referral.isActive ? 'Davet kodun hazır' : 'Davet tamamlandı',
             style: GoogleFonts.poppins(
               fontSize: 14,
               color: Colors.grey[600],
             ),
           ),
           const SizedBox(height: 8),
-          
+
           // Code Display
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
@@ -245,7 +250,7 @@ class _ReferralPageState extends State<ReferralPage> {
             ),
           ),
           const SizedBox(height: 24),
-          
+
           // Action Buttons
           Row(
             children: [
@@ -270,7 +275,8 @@ class _ReferralPageState extends State<ReferralPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => _shareCode(referral),
+                  onPressed:
+                      referral.isActive ? () => _shareCode(referral) : null,
                   icon: const Icon(Icons.share_rounded, size: 20),
                   label: Text(
                     'Paylaş',
@@ -288,6 +294,60 @@ class _ReferralPageState extends State<ReferralPage> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardHero(Referral referral) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF063F2B), Color(0xFF0B7549)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              color: const Color(0xFFB9EB67),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(Icons.celebration_rounded,
+                color: Color(0xFF063F2B), size: 31),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Birlikte kazanın',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Arkadaşın ilk siparişinde %${referral.inviteeDiscountPercent}, sen de %${referral.rewardDiscountPercent} indirim kazanırsın.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white.withValues(alpha: .72),
+                    fontSize: 11,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -377,7 +437,7 @@ class _ReferralPageState extends State<ReferralPage> {
     );
   }
 
-  Widget _buildInfoBanner() {
+  Widget _buildInfoBanner(Referral referral) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -402,7 +462,9 @@ class _ReferralPageState extends State<ReferralPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Her kullanıcı sadece 1 kişiyi başarılı şekilde davet edebilir.',
+              referral.isActive
+                  ? '${referral.remainingInvites} davet hakkın kaldı. Ödül kuponun arkadaşının ilk siparişinden sonra oluşur ve ${referral.rewardExpiresInDays} gün geçerlidir.'
+                  : 'Davet görevin tamamlandı. Kazandığın ödül kuponunu sepetindeki kupon cüzdanında görebilirsin.',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: Colors.orange[800],
@@ -539,7 +601,8 @@ class _ReferralPageState extends State<ReferralPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.help_outline_rounded, color: Colors.grey[600], size: 22),
+              Icon(Icons.help_outline_rounded,
+                  color: Colors.grey[600], size: 22),
               const SizedBox(width: 8),
               Text(
                 'Nasıl Çalışır?',
@@ -602,7 +665,7 @@ class _ReferralPageState extends State<ReferralPage> {
   void _copyCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
     HapticFeedback.lightImpact();
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -625,7 +688,7 @@ class _ReferralPageState extends State<ReferralPage> {
 
   void _shareCode(Referral referral) {
     HapticFeedback.lightImpact();
-    
+
     final message = '''
 🎁 Benim Marketim'e davetlisiniz!
 
@@ -693,7 +756,7 @@ ${referral.link}
 
   Widget _buildCouponCard(Coupon coupon) {
     final isExpiringSoon = coupon.daysUntilExpiration <= 3;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -762,8 +825,10 @@ ${referral.link}
                       : 'Geçerlilik: ${_formatDate(coupon.expirationDate)}',
                   style: GoogleFonts.poppins(
                     fontSize: 11,
-                    color: isExpiringSoon ? Colors.orange[700] : Colors.grey[500],
-                    fontWeight: isExpiringSoon ? FontWeight.w500 : FontWeight.normal,
+                    color:
+                        isExpiringSoon ? Colors.orange[700] : Colors.grey[500],
+                    fontWeight:
+                        isExpiringSoon ? FontWeight.w500 : FontWeight.normal,
                   ),
                 ),
               ],

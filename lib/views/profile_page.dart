@@ -6,6 +6,7 @@ import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api_service.dart';
 import 'widgets/custom_dialog.dart';
+import 'widgets/modern_ui.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -166,33 +167,54 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildHeader(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: const LinearGradient(
+          colors: [Color(0xFF123D24), Color(0xFF087F35)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: AppColors.successGreen.withOpacity(.22),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Row(
         children: [
-          const SizedBox(width: 40),
-          const Expanded(
-            child: Text(
-              'Profilim',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: Colors.black87,
-              ),
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.14),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(.18)),
+            ),
+            child: const Icon(Icons.person_rounded, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Hesabım',
+                    style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800)),
+                Text('Siparişlerini ve tercihlerini yönet',
+                    style: GoogleFonts.poppins(
+                        color: Colors.white.withOpacity(.72),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500)),
+              ],
             ),
           ),
-          const SizedBox(width: 40),
+          Icon(Icons.more_horiz_rounded,
+              color: Colors.white.withOpacity(.75), size: 25),
         ],
       ),
     );
@@ -201,28 +223,60 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildProfileHeader(dynamic user) {
     return Column(
       children: [
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.successGreen.withOpacity(0.1),
-            border: Border.all(color: AppColors.successGreen, width: 2),
+        ModernSoftCard(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [AppColors.successGreen, Color(0xFF8DE8A5)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.successGreen.withOpacity(.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.person_rounded,
+                    size: 35, color: Colors.white),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Hoş geldin 👋',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.successGreenDark,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 3),
+                    Text(user.name.isNotEmpty ? user.name : 'Kullanıcı',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF17221B))),
+                    Text(user.email ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                            fontSize: 11, color: Colors.black45)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Colors.black26),
+            ],
           ),
-          child: Icon(Icons.person, size: 50, color: AppColors.successGreen),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          user.name.isNotEmpty ? user.name : 'Kullanıcı',
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-          ),
-        ),
-        Text(
-          user.email ?? '', // Assuming email exists or handle accordingly
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
         ),
       ],
     );
@@ -266,35 +320,42 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
-      child: ListTile(
-        onTap: onTap,
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isDestructive
-                ? AppColors.errorRed.withOpacity(0.1)
-                : Colors.grey[50],
-            borderRadius: BorderRadius.circular(12),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          onTap: onTap,
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDestructive
+                  ? AppColors.errorRed.withOpacity(0.1)
+                  : Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon,
+                color: isDestructive ? AppColors.errorRed : Colors.black87,
+                size: 22),
           ),
-          child: Icon(icon,
+          title: Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
               color: isDestructive ? AppColors.errorRed : Colors.black87,
-              size: 22),
-        ),
-        title: Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: isDestructive ? AppColors.errorRed : Colors.black87,
+            ),
           ),
+          trailing: Icon(
+            Icons.arrow_forward_ios,
+            size: 16,
+            color: Colors.grey[300],
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
-        trailing: Icon(
-          Icons.arrow_forward_ios,
-          size: 16,
-          color: Colors.grey[300],
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }
@@ -536,33 +597,40 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(12),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Colors.black87, size: 22),
           ),
-          child: Icon(icon, color: Colors.black87, size: 22),
-        ),
-        title: Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[600],
+          title: Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[600],
+            ),
           ),
-        ),
-        trailing: Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
+          trailing: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
           ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }

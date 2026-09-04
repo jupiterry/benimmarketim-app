@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../services/theme_service.dart';
 import '../services/review_service.dart';
 import '../models/order.dart';
+import 'widgets/market_palette.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 
@@ -39,7 +40,7 @@ class _OrderPageState extends State<OrderPage> {
     int rating = 5;
     String message = '';
     bool submitting = false;
-    
+
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -67,7 +68,7 @@ class _OrderPageState extends State<OrderPage> {
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  
+
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
                     child: Column(
@@ -86,10 +87,11 @@ class _OrderPageState extends State<OrderPage> {
                             ),
                             shape: BoxShape.circle,
                           ),
-                          child: const Text('🎉', style: TextStyle(fontSize: 40)),
+                          child:
+                              const Text('🎉', style: TextStyle(fontSize: 40)),
                         ),
                         const SizedBox(height: 20),
-                        
+
                         Text(
                           'Merhaba!',
                           style: GoogleFonts.poppins(
@@ -109,10 +111,11 @@ class _OrderPageState extends State<OrderPage> {
                           ),
                         ),
                         const SizedBox(height: 28),
-                        
+
                         // Star Rating with Emojis
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 16),
                           decoration: BoxDecoration(
                             color: Colors.grey[50],
                             borderRadius: BorderRadius.circular(20),
@@ -129,14 +132,15 @@ class _OrderPageState extends State<OrderPage> {
                                   duration: const Duration(milliseconds: 200),
                                   child: Text(
                                     filled ? '⭐' : '☆',
-                                    style: TextStyle(fontSize: filled ? 36 : 32),
+                                    style:
+                                        TextStyle(fontSize: filled ? 36 : 32),
                                   ),
                                 ),
                               );
                             }),
                           ),
                         ),
-                        
+
                         // Rating label
                         const SizedBox(height: 12),
                         Text(
@@ -148,7 +152,7 @@ class _OrderPageState extends State<OrderPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        
+
                         // Message Input
                         Container(
                           decoration: BoxDecoration(
@@ -160,10 +164,13 @@ class _OrderPageState extends State<OrderPage> {
                             style: GoogleFonts.poppins(fontSize: 14),
                             decoration: InputDecoration(
                               hintText: 'Düşüncelerinizi paylaşın (opsiyonel)',
-                              hintStyle: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
-                              prefixIcon: Icon(Icons.mode_comment_outlined, color: Colors.grey[400], size: 22),
+                              hintStyle: GoogleFonts.poppins(
+                                  color: Colors.grey[400], fontSize: 14),
+                              prefixIcon: Icon(Icons.mode_comment_outlined,
+                                  color: Colors.grey[400], size: 22),
                               border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 14),
                             ),
                             maxLines: 3,
                             minLines: 1,
@@ -171,54 +178,68 @@ class _OrderPageState extends State<OrderPage> {
                           ),
                         ),
                         const SizedBox(height: 28),
-                        
+
                         // Submit Button
                         SizedBox(
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: submitting ? null : () async {
-                              setState(() => submitting = true);
-                              try {
-                                final api = ApiService();
-                                await api.createFeedback(
-                                  rating: rating,
-                                  ratings: {'overall': rating},
-                                  title: 'Genel Değerlendirme',
-                                  message: message,
-                                  category: 'Genel',
-                                );
-                                if (context.mounted) context.pop(true);
-                              } catch (_) {
-                                if (context.mounted) context.pop(false);
-                              } finally {
-                                if (context.mounted) setState(() => submitting = false);
-                              }
-                            },
+                            onPressed: submitting
+                                ? null
+                                : () async {
+                                    setState(() => submitting = true);
+                                    try {
+                                      final api = ApiService();
+                                      await api.createFeedback(
+                                        rating: rating,
+                                        ratings: {'overall': rating},
+                                        title: 'Genel Değerlendirme',
+                                        message: message,
+                                        category: 'Genel',
+                                      );
+                                      if (context.mounted) context.pop(true);
+                                    } catch (_) {
+                                      if (context.mounted) context.pop(false);
+                                    } finally {
+                                      if (context.mounted)
+                                        setState(() => submitting = false);
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.successGreen,
                               foregroundColor: Colors.white,
                               elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
                             ),
                             child: submitting
-                                ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2.5, color: Colors.white))
                                 : Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       const Icon(Icons.send_rounded, size: 20),
                                       const SizedBox(width: 10),
-                                      Text('Gönder ve Devam Et', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      Text('Gönder ve Devam Et',
+                                          style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600)),
                                     ],
                                   ),
                           ),
                         ),
                         const SizedBox(height: 12),
-                        
+
                         // Skip Button
                         TextButton(
                           onPressed: () => context.pop(false),
-                          child: Text('Daha Sonra', style: GoogleFonts.poppins(color: Colors.grey[500], fontWeight: FontWeight.w500)),
+                          child: Text('Daha Sonra',
+                              style: GoogleFonts.poppins(
+                                  color: Colors.grey[500],
+                                  fontWeight: FontWeight.w500)),
                         ),
                       ],
                     ),
@@ -231,29 +252,40 @@ class _OrderPageState extends State<OrderPage> {
       },
     );
   }
-  
+
   String _getRatingLabel(int rating) {
     switch (rating) {
-      case 1: return '😞 Berbat';
-      case 2: return '😕 Kötü';
-      case 3: return '😐 Orta';
-      case 4: return '😊 İyi';
-      case 5: return '🤩 Mükemmel!';
-      default: return '';
-    }
-  }
-  
-  Color _getRatingColor(int rating) {
-    switch (rating) {
-      case 1: return Colors.red;
-      case 2: return Colors.orange;
-      case 3: return Colors.amber;
-      case 4: return Colors.lightGreen;
-      case 5: return AppColors.successGreen;
-      default: return Colors.grey;
+      case 1:
+        return '😞 Berbat';
+      case 2:
+        return '😕 Kötü';
+      case 3:
+        return '😐 Orta';
+      case 4:
+        return '😊 İyi';
+      case 5:
+        return '🤩 Mükemmel!';
+      default:
+        return '';
     }
   }
 
+  Color _getRatingColor(int rating) {
+    switch (rating) {
+      case 1:
+        return Colors.red;
+      case 2:
+        return Colors.orange;
+      case 3:
+        return Colors.amber;
+      case 4:
+        return Colors.lightGreen;
+      case 5:
+        return AppColors.successGreen;
+      default:
+        return Colors.grey;
+    }
+  }
 
   Future<void> _createOrder() async {
     print('==============================================');
@@ -581,14 +613,32 @@ class _OrderPageState extends State<OrderPage> {
         return;
       }
 
+      final couponIsValid = await cartViewModel
+          .validateCouponForDeliveryPoint(_selectedDeliveryPoint);
+      if (!couponIsValid) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                cartViewModel.couponError ??
+                    'Kupon seçilen teslimat noktasında kullanılamıyor.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: AppColors.errorRed,
+            ),
+          );
+          setState(() => _isLoading = false);
+        }
+        return;
+      }
+
       // Sipariş oluştur - Web projesindeki API formatına uygun
       final orderRequest = CreateOrderRequest(
         products: cartViewModel.items
             .map(
               (item) => {
                 'product': item
-                    .product
-                    .id, // Web projesinde 'product' field'ı bekleniyor
+                    .product.id, // Web projesinde 'product' field'ı bekleniyor
                 'quantity': item.quantity,
                 'price': item.product.actualPrice, // İndirimli fiyatı kullan
               },
@@ -599,13 +649,15 @@ class _OrderPageState extends State<OrderPage> {
         phone: _phoneController.text,
         deliveryPoint: _selectedDeliveryPoint, // 'girlsDorm' veya 'boysDorm'
         deliveryPointName: _selectedDeliveryPoint == 'girlsDorm'
-            ? 'Kız KYK Yurdu'
-            : 'Erkek KYK Yurdu',
+            ? settingsViewModel.girlsDormName
+            : settingsViewModel.boysDormName,
         note: _notesController.text,
         couponCode: cartViewModel.appliedCouponCode, // Kupon kodu
         discountAmount: cartViewModel.discountAmount, // İndirim miktarı
         device: {
-          'platform': Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown'),
+          'platform': Platform.isIOS
+              ? 'ios'
+              : (Platform.isAndroid ? 'android' : 'unknown'),
           'model': '', // Gerekirse device_info paketi ile alınabilir
           'appVersion': '3.0.0', // Gerekirse package_info_plus ile alınabilir
         },
@@ -739,162 +791,265 @@ class _OrderPageState extends State<OrderPage> {
         );
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    return Consumer<CartViewModel>(
+      builder: (context, cart, child) {
+        if (cart.items.isEmpty) return _buildEmptyOrderPage();
+
+        return Scaffold(
+          backgroundColor: MarketPalette.canvas,
+          body: Form(
+            key: _formKey,
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(child: _buildCheckoutHeader(cart)),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 132),
+                  sliver: SliverList.list(
+                    children: [
+                      _buildModernOrderSummary(cart),
+                      const SizedBox(height: 16),
+                      _buildModernDeliverySection(),
+                      const SizedBox(height: 16),
+                      _buildModernNotes(),
+                      const SizedBox(height: 16),
+                      _buildSecureInfo(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: _buildCheckoutBar(cart),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyOrderPage() {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(
-          'Sipariş Oluştur',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
+      backgroundColor: MarketPalette.canvas,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _roundIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  onTap: () => context.pop(),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                width: 142,
+                height: 142,
+                decoration: const BoxDecoration(
+                  color: MarketPalette.greenSoft,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 62,
+                  color: MarketPalette.green,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Sepetin şu an boş',
+                style: GoogleFonts.manrope(
+                  fontSize: 25,
+                  fontWeight: FontWeight.w800,
+                  color: MarketPalette.ink,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Siparişini oluşturmak için birkaç ürün seçmen yeterli.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  height: 1.5,
+                  color: MarketPalette.muted,
+                ),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: FilledButton.icon(
+                  onPressed: () => context.go('/home'),
+                  icon: const Icon(Icons.explore_rounded),
+                  label: const Text('Ürünleri keşfet'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: MarketPalette.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+            ],
           ),
         ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: InkWell(
-          onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ),
-      body: Consumer<CartViewModel>(
-        builder: (context, cartViewModel, child) {
-          if (cartViewModel.items.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.shopping_cart_outlined,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Sepetiniz boş!',
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Sipariş vermek için önce ürün ekleyin.',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Sipariş Özeti
-                  _buildOrderSummary(cartViewModel),
-                  const SizedBox(height: 24),
-
-                  // Teslimat Noktası Seçimi
-                  _buildDeliveryPointSelection(),
-                  const SizedBox(height: 24),
-
-                  // Sipariş Notu
-                  _buildOrderNotes(),
-                  const SizedBox(height: 32),
-
-                  // Sipariş Oluştur Butonu
-                  _buildOrderButton(),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          );
-        },
       ),
     );
   }
 
-  Widget _buildOrderSummary(CartViewModel cartViewModel) {
+  Widget _buildCheckoutHeader(CartViewModel cart) {
+    final itemCount = cart.items.fold<int>(
+      0,
+      (total, item) => total + item.quantity,
+    );
+
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [MarketPalette.greenDeep, MarketPalette.greenDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(34)),
       ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Sipariş Özeti',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _roundIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    onTap: () => context.pop(),
+                    dark: true,
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.12),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: Colors.white.withOpacity(.12)),
+                    ),
+                    child: Text(
+                      '$itemCount ürün',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'SON ADIM',
+                          style: GoogleFonts.inter(
+                            color: MarketPalette.lime,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.7,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          'Siparişini tamamla',
+                          style: GoogleFonts.manrope(
+                            color: Colors.white,
+                            fontSize: 27,
+                            height: 1.1,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          'Teslimat bilgilerini kontrol et, hazırsan gönder.',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withOpacity(.72),
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: MarketPalette.lime,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      color: MarketPalette.greenDeep,
+                      size: 28,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          ...cartViewModel.items.map(
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernOrderSummary(CartViewModel cart) {
+    return _checkoutCard(
+      child: Column(
+        children: [
+          _sectionTitle(
+            icon: Icons.shopping_bag_rounded,
+            title: 'Sepet özeti',
+            trailing: '${cart.items.length} çeşit',
+          ),
+          const SizedBox(height: 18),
+          ...cart.items.map(
             (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 14),
               child: Row(
                 children: [
                   Container(
-                    width: 24,
-                    height: 24,
+                    width: 38,
+                    height: 38,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: AppColors.successGreen.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
+                      color: MarketPalette.greenSoft,
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: Text(
-                      '${item.quantity}x',
-                      style: GoogleFonts.poppins(
+                      '${item.quantity}×',
+                      style: GoogleFonts.inter(
+                        color: MarketPalette.greenDark,
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.successGreen,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
@@ -902,99 +1057,56 @@ class _OrderPageState extends State<OrderPage> {
                   Expanded(
                     child: Text(
                       item.product.name,
-                      style: GoogleFonts.poppins(
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: MarketPalette.ink,
                         fontSize: 14,
-                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 10),
                   Text(
                     '₺${item.totalPrice.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.manrope(
+                      color: MarketPalette.ink,
                       fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(height: 1),
-          ),
-          // Ara Toplam
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Ara Toplam',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              Text(
-                '₺${cartViewModel.totalPrice.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-          // Kupon İndirimi (varsa)
-          if (cartViewModel.discountAmount > 0) ...[
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.discount, size: 16, color: AppColors.successGreen),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Kupon (${cartViewModel.appliedCouponCode ?? ""})',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: AppColors.successGreen,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                Text(
-                  '-₺${cartViewModel.discountAmount.toStringAsFixed(2)}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.successGreen,
-                  ),
-                ),
-              ],
+          const Divider(color: MarketPalette.line, height: 18),
+          _priceLine('Ara toplam', cart.totalPrice),
+          if (cart.discountAmount > 0) ...[
+            const SizedBox(height: 9),
+            _priceLine(
+              'Kupon indirimi (${cart.appliedCouponCode ?? ''})',
+              -cart.discountAmount,
+              highlight: true,
             ),
-            const SizedBox(height: 8),
-          ] else
-            const SizedBox(height: 8),
-          // Toplam Tutar
+          ],
+          const SizedBox(height: 13),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Toplam Tutar',
-                style: GoogleFonts.poppins(
+                'Ödenecek tutar',
+                style: GoogleFonts.manrope(
+                  color: MarketPalette.ink,
                   fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
+              const Spacer(),
               Text(
-                '₺${cartViewModel.finalPrice.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.successGreen,
+                '₺${cart.finalPrice.toStringAsFixed(2)}',
+                style: GoogleFonts.manrope(
+                  color: MarketPalette.green,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
@@ -1004,127 +1116,77 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  Widget _buildDeliveryPointSelection() {
+  Widget _buildModernDeliverySection() {
     return Consumer<SettingsViewModel>(
-      builder: (context, settingsViewModel, child) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(20),
+      builder: (context, settings, child) {
+        return _checkoutCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _sectionTitle(
+                icon: Icons.location_on_rounded,
+                title: 'Teslimat noktası',
+                trailing: 'Zonguldak',
+              ),
+              const SizedBox(height: 8),
               Text(
-                'Teslimat Noktası',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                'Siparişini nereden teslim almak istediğini seç.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: MarketPalette.muted,
                 ),
               ),
               const SizedBox(height: 16),
-
-              if (settingsViewModel.girlsDormEnabled) ...[
-                _buildDeliveryOption(
+              if (settings.girlsDormEnabled)
+                _buildModernDeliveryOption(
                   id: 'girlsDorm',
-                  title: settingsViewModel.girlsDormName,
+                  title: settings.girlsDormName,
                   subtitle: 'Kız öğrenci yurdu teslimat noktası',
-                  icon: Icons.apartment_rounded,
                 ),
-                const SizedBox(height: 12),
-              ],
-
-              if (settingsViewModel.boysDormEnabled) ...[
-                _buildDeliveryOption(
+              if (settings.girlsDormEnabled && settings.boysDormEnabled)
+                const SizedBox(height: 10),
+              if (settings.boysDormEnabled)
+                _buildModernDeliveryOption(
                   id: 'boysDorm',
-                  title: settingsViewModel.boysDormName,
+                  title: settings.boysDormName,
                   subtitle: 'Erkek öğrenci yurdu teslimat noktası',
-                  icon: Icons.apartment_rounded,
                 ),
-              ],
-
-              if (!settingsViewModel.girlsDormEnabled &&
-                  !settingsViewModel.boysDormEnabled)
+              if (!settings.girlsDormEnabled && !settings.boysDormEnabled)
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.red[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red[200]!),
+                    color: const Color(0xFFFFF1F0),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: Colors.red[400]),
-                      const SizedBox(width: 12),
+                      const Icon(Icons.info_outline_rounded,
+                          color: MarketPalette.red),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Aktif teslimat noktası bulunmuyor.',
-                          style: GoogleFonts.poppins(
+                          'Şu anda aktif teslimat noktası bulunmuyor.',
+                          style: GoogleFonts.inter(
+                            color: MarketPalette.red,
                             fontSize: 13,
-                            color: Colors.red[700],
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-
-              const SizedBox(height: 20),
-              TextFormField(
+              const SizedBox(height: 18),
+              _modernTextField(
                 controller: _phoneController,
-                style: GoogleFonts.poppins(fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Telefon Numarası',
-                  hintText: '5XX XXX XX XX',
-                  labelStyle: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                  hintStyle: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.grey[400],
-                  ),
-                  prefixIcon: Icon(
-                    Icons.phone_iphone_rounded,
-                    size: 20,
-                    color: Colors.grey[400],
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey[200]!),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: AppColors.successGreen,
-                      width: 1.5,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                ),
+                label: 'Telefon numarası',
+                hint: '5XX XXX XX XX',
+                icon: Icons.phone_iphone_rounded,
                 keyboardType: TextInputType.phone,
                 validator: (value) {
-                  if (value == null || value.isEmpty)
-                    return 'Telefon numarası gerekli';
-                  if (value.length < 10) return 'Geçerli bir numara giriniz';
+                  final phone = value?.replaceAll(RegExp(r'\D'), '') ?? '';
+                  if (phone.isEmpty) return 'Telefon numarası gerekli';
+                  if (phone.length < 10) return 'Geçerli bir numara giriniz';
                   return null;
                 },
               ),
@@ -1135,136 +1197,101 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  Widget _buildDeliveryOption({
+  Widget _buildModernDeliveryOption({
     required String id,
     required String title,
     required String subtitle,
-    required IconData icon,
   }) {
-    final isSelected = _selectedDeliveryPoint == id;
-    return InkWell(
-      onTap: () => setState(() => _selectedDeliveryPoint = id),
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.successGreen.withOpacity(0.05)
-              : Colors.grey[50],
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? AppColors.successGreen : Colors.grey[200]!,
-            width: isSelected ? 1.5 : 1,
+    final selected = _selectedDeliveryPoint == id;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$title teslimat noktasını seç',
+      child: InkWell(
+        onTap: () => setState(() => _selectedDeliveryPoint = id),
+        borderRadius: BorderRadius.circular(18),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? MarketPalette.greenSoft : MarketPalette.canvas,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? MarketPalette.green : MarketPalette.line,
+              width: selected ? 1.4 : 1,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? AppColors.successGreen.withOpacity(0.1)
-                    : Colors.white,
-                shape: BoxShape.circle,
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: selected ? MarketPalette.green : Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  Icons.apartment_rounded,
+                  color: selected ? Colors.white : MarketPalette.muted,
+                ),
               ),
-              child: Icon(
-                icon,
-                color: isSelected ? AppColors.successGreen : Colors.grey[400],
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected
-                          ? AppColors.successGreen
-                          : Colors.black87,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        color: MarketPalette.ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.inter(
+                        color: MarketPalette.muted,
+                        fontSize: 11,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            if (isSelected)
-              const Icon(
-                Icons.check_circle_rounded,
-                color: AppColors.successGreen,
-                size: 20,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                child: Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  key: ValueKey(selected),
+                  color: selected ? MarketPalette.green : MarketPalette.muted,
+                ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildOrderNotes() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
+  Widget _buildModernNotes() {
+    return _checkoutCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Sipariş Notu',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
+          _sectionTitle(
+            icon: Icons.edit_note_rounded,
+            title: 'Sipariş notu',
+            trailing: 'İsteğe bağlı',
           ),
-          const SizedBox(height: 16),
-          TextFormField(
+          const SizedBox(height: 14),
+          _modernTextField(
             controller: _notesController,
-            style: GoogleFonts.poppins(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Siparişinizle ilgili eklemek istedikleriniz...',
-              hintStyle: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[400],
-              ),
-              filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[200]!),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(
-                  color: AppColors.successGreen,
-                  width: 1.5,
-                ),
-              ),
-              contentPadding: const EdgeInsets.all(16),
-            ),
+            label: 'Notun',
+            hint: 'Örn. Kapıya geldiğinizde arayabilirsiniz.',
+            icon: Icons.chat_bubble_outline_rounded,
             maxLines: 3,
           ),
         ],
@@ -1272,35 +1299,281 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  Widget _buildOrderButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _createOrder,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.successGreen,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+  Widget _buildSecureInfo() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: MarketPalette.greenSoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.verified_user_rounded,
+              color: MarketPalette.greenDark),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Sipariş bilgilerin yalnızca teslimat için kullanılır.',
+              style: GoogleFonts.inter(
+                color: MarketPalette.greenDark,
+                fontSize: 12,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCheckoutBar(CartViewModel cart) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 13, 18, 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: const Border(top: BorderSide(color: MarketPalette.line)),
+          boxShadow: [
+            BoxShadow(
+              color: MarketPalette.greenDeep.withOpacity(.08),
+              blurRadius: 30,
+              offset: const Offset(0, -8),
+            ),
+          ],
         ),
-        child: _isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+        child: Row(
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Toplam',
+                  style: GoogleFonts.inter(
+                    color: MarketPalette.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              )
-            : Text(
-                'Siparişi Tamamla',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                Text(
+                  '₺${cart.finalPrice.toStringAsFixed(2)}',
+                  style: GoogleFonts.manrope(
+                    color: MarketPalette.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: SizedBox(
+                height: 56,
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _createOrder,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: MarketPalette.green,
+                    disabledBackgroundColor: MarketPalette.greenSoft,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: MarketPalette.green,
+                          ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Siparişi tamamla',
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.arrow_forward_rounded, size: 20),
+                          ],
+                        ),
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _checkoutCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: MarketPalette.line),
+        boxShadow: [
+          BoxShadow(
+            color: MarketPalette.greenDeep.withOpacity(.035),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _sectionTitle({
+    required IconData icon,
+    required String title,
+    required String trailing,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: MarketPalette.greenSoft,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(icon, color: MarketPalette.green, size: 20),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Text(
+            title,
+            style: GoogleFonts.manrope(
+              color: MarketPalette.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Text(
+          trailing,
+          style: GoogleFonts.inter(
+            color: MarketPalette.muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _priceLine(String label, double value, {bool highlight = false}) {
+    final prefix = value < 0 ? '-₺' : '₺';
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              color: highlight ? MarketPalette.green : MarketPalette.muted,
+              fontSize: 12,
+              fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+        Text(
+          '$prefix${value.abs().toStringAsFixed(2)}',
+          style: GoogleFonts.inter(
+            color: highlight ? MarketPalette.green : MarketPalette.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _modernTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      maxLines: maxLines,
+      style: GoogleFonts.inter(
+        color: MarketPalette.ink,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        alignLabelWithHint: maxLines > 1,
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(bottom: maxLines > 1 ? 54 : 0),
+          child: Icon(icon, color: MarketPalette.green, size: 21),
+        ),
+        labelStyle: GoogleFonts.inter(color: MarketPalette.muted),
+        hintStyle: GoogleFonts.inter(
+          color: MarketPalette.muted.withOpacity(.7),
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+        ),
+        filled: true,
+        fillColor: MarketPalette.canvas,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(17),
+          borderSide: const BorderSide(color: MarketPalette.line),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(17),
+          borderSide: const BorderSide(color: MarketPalette.line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(17),
+          borderSide: const BorderSide(color: MarketPalette.green, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(17),
+          borderSide: const BorderSide(color: MarketPalette.red),
+        ),
+      ),
+    );
+  }
+
+  Widget _roundIconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    bool dark = false,
+  }) {
+    return Material(
+      color: dark ? Colors.white.withOpacity(.13) : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Icon(
+            icon,
+            color: dark ? Colors.white : MarketPalette.ink,
+            size: 22,
+          ),
+        ),
       ),
     );
   }

@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:io' show Platform;
 import '../models/cart_item.dart';
 import '../services/database_service.dart';
 import '../models/product.dart';
 import '../services/notification_service.dart';
 import '../services/api_service.dart';
-
 
 class CartViewModel extends ChangeNotifier {
   final List<CartItem> _cartItems = [];
@@ -17,6 +18,8 @@ class CartViewModel extends ChangeNotifier {
   double _discountAmount = 0;
   bool _isValidatingCoupon = false;
   String? _couponError;
+  Map<String, dynamic>? _recommendedCoupon;
+  Timer? _couponSyncTimer;
 
   CartViewModel() {
     _loadCart();
@@ -25,11 +28,32 @@ class CartViewModel extends ChangeNotifier {
   Future<void> _loadCart() async {
     final items = await _databaseService.getCartItems();
     _cartItems.addAll(items);
-    
+
     // Uygulama açılışında sepet durumunu güncelle (OneSignal)
     NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
-    
+
     notifyListeners();
+    _scheduleCouponSync();
+
+    if (_cartItems.isNotEmpty) {
+      final refreshedItems = await Future.wait(
+        _cartItems.map((item) async {
+          try {
+            final currentProduct =
+                await _apiService.getProductById(item.product.id);
+            return item.copyWith(product: currentProduct);
+          } catch (_) {
+            return item;
+          }
+        }),
+      );
+      _cartItems
+        ..clear()
+        ..addAll(refreshedItems);
+      await Future.wait(_cartItems.map(_databaseService.saveCartItem));
+      notifyListeners();
+      _scheduleCouponSync();
+    }
   }
 
   // Getters
@@ -40,14 +64,16 @@ class CartViewModel extends ChangeNotifier {
   double get totalPrice =>
       _cartItems.fold(0.0, (sum, item) => sum + item.totalPrice);
   bool get isEmpty => _cartItems.isEmpty;
-  
+
   // Kupon getters
   String? get appliedCouponCode => _appliedCouponCode;
   Map<String, dynamic>? get appliedCoupon => _appliedCoupon;
   double get discountAmount => _discountAmount;
   bool get isValidatingCoupon => _isValidatingCoupon;
   String? get couponError => _couponError;
-  double get finalPrice => (totalPrice - _discountAmount).clamp(0, double.infinity);
+  Map<String, dynamic>? get recommendedCoupon => _recommendedCoupon;
+  double get finalPrice =>
+      (totalPrice - _discountAmount).clamp(0, double.infinity);
 
   // Sepete ürün ekle
   void addToCart(Product product) {
@@ -57,11 +83,12 @@ class CartViewModel extends ChangeNotifier {
 
     if (existingItemIndex >= 0) {
       // Ürün zaten sepette, miktarını artır
-      _cartItems[existingItemIndex].quantity++;
-      _databaseService.updateCartItemQuantity(
-        product.id,
-        _cartItems[existingItemIndex].quantity,
+      final updatedItem = _cartItems[existingItemIndex].copyWith(
+        product: product,
+        quantity: _cartItems[existingItemIndex].quantity + 1,
       );
+      _cartItems[existingItemIndex] = updatedItem;
+      _databaseService.saveCartItem(updatedItem);
     } else {
       // Yeni ürün ekle
       final newItem = CartItem(product: product);
@@ -69,10 +96,7 @@ class CartViewModel extends ChangeNotifier {
       _databaseService.addToCart(newItem);
     }
 
-    // Kupon indirimi varsa yeniden hesapla
-    if (_appliedCouponCode != null) {
-      _recalculateDiscount();
-    }
+    _scheduleCouponSync();
 
     // Sepet durumunu güncelle (Dolu)
     NotificationService.instance.updateCartTag(true);
@@ -101,14 +125,11 @@ class CartViewModel extends ChangeNotifier {
       }
     }
 
-    // Kupon indirimi varsa yeniden hesapla
-    if (_appliedCouponCode != null) {
-      _recalculateDiscount();
-    }
-    
+    _scheduleCouponSync();
+
     // Sepet durumunu güncelle
     NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
-    
+
     notifyListeners();
   }
 
@@ -125,13 +146,10 @@ class CartViewModel extends ChangeNotifier {
 
     if (itemIndex >= 0) {
       _cartItems[itemIndex].quantity = quantity;
-      _databaseService.updateCartItemQuantity(product.id, quantity);
-      
-      // Kupon indirimi varsa yeniden hesapla
-      if (_appliedCouponCode != null) {
-        _recalculateDiscount();
-      }
-      
+      _databaseService.saveCartItem(_cartItems[itemIndex]);
+
+      _scheduleCouponSync();
+
       notifyListeners();
     }
   }
@@ -140,16 +158,17 @@ class CartViewModel extends ChangeNotifier {
   void clearCart() {
     _cartItems.clear();
     _databaseService.clearCart();
-    
+
     // Kupon bilgilerini temizle
     _appliedCouponCode = null;
     _appliedCoupon = null;
     _discountAmount = 0;
     _couponError = null;
-    
+    _recommendedCoupon = null;
+
     // Sepet durumunu güncelle (Boş)
     NotificationService.instance.updateCartTag(false);
-    
+
     notifyListeners();
   }
 
@@ -166,12 +185,18 @@ class CartViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _apiService.validateCoupon(code.trim(), totalPrice);
-      
+      final response = await _apiService.validateCoupon(
+        code.trim(),
+        totalPrice,
+        products: _couponProducts,
+        channel: _channel,
+      );
+
       if (response['success'] == true && response['coupon'] != null) {
         _appliedCouponCode = code.trim().toUpperCase();
         _appliedCoupon = response['coupon'];
-        _discountAmount = (response['coupon']['calculatedDiscount'] ?? 0).toDouble();
+        _discountAmount =
+            (response['coupon']['calculatedDiscount'] ?? 0).toDouble();
         _couponError = null;
         _isValidatingCoupon = false;
         notifyListeners();
@@ -190,6 +215,37 @@ class CartViewModel extends ChangeNotifier {
     }
   }
 
+  Future<bool> validateCouponForDeliveryPoint(String deliveryPoint) async {
+    if (_appliedCouponCode == null) return true;
+    _isValidatingCoupon = true;
+    _couponError = null;
+    notifyListeners();
+    try {
+      final response = await _apiService.validateCoupon(
+        _appliedCouponCode!,
+        totalPrice,
+        products: _couponProducts,
+        channel: _channel,
+        deliveryPoint: deliveryPoint,
+      );
+      if (response['success'] == true && response['coupon'] != null) {
+        _appliedCoupon = Map<String, dynamic>.from(response['coupon']);
+        _discountAmount =
+            (response['coupon']['calculatedDiscount'] ?? 0).toDouble();
+        return true;
+      }
+      _couponError = response['message'] ??
+          'Bu kupon seçtiğiniz teslimat noktasında geçerli değil';
+      return false;
+    } catch (e) {
+      _couponError = e.toString().replaceAll('Exception: ', '');
+      return false;
+    } finally {
+      _isValidatingCoupon = false;
+      notifyListeners();
+    }
+  }
+
   // Kuponu kaldır
   void removeCoupon() {
     _appliedCouponCode = null;
@@ -199,28 +255,62 @@ class CartViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // İndirim yeniden hesapla
-  void _recalculateDiscount() {
-    if (_appliedCoupon != null) {
-      final discountType = _appliedCoupon!['discountType'] ?? 'percentage';
-      final discountPercentage = (_appliedCoupon!['discountPercentage'] ?? 0).toDouble();
-      final discountFixed = (_appliedCoupon!['discountAmount'] ?? 0).toDouble();
-      final maxDiscount = _appliedCoupon!['maximumDiscount']?.toDouble();
-      
-      if (discountType == 'percentage') {
-        _discountAmount = totalPrice * discountPercentage / 100;
-        if (maxDiscount != null && _discountAmount > maxDiscount) {
-          _discountAmount = maxDiscount;
+  String get _channel => Platform.isIOS ? 'ios' : 'android';
+
+  List<Map<String, dynamic>> get _couponProducts => _cartItems
+      .map((item) => {'product': item.product.id, 'quantity': item.quantity})
+      .toList();
+
+  void _scheduleCouponSync() {
+    _couponSyncTimer?.cancel();
+    _couponSyncTimer = Timer(const Duration(milliseconds: 400), _syncCoupon);
+  }
+
+  Future<void> _syncCoupon() async {
+    if (_cartItems.isEmpty) {
+      _recommendedCoupon = null;
+      return;
+    }
+    try {
+      if (_appliedCouponCode != null) {
+        final response = await _apiService.validateCoupon(
+          _appliedCouponCode!,
+          totalPrice,
+          products: _couponProducts,
+          channel: _channel,
+        );
+        if (response['success'] == true && response['coupon'] != null) {
+          _appliedCoupon = Map<String, dynamic>.from(response['coupon']);
+          _discountAmount =
+              (response['coupon']['calculatedDiscount'] ?? 0).toDouble();
+          _couponError = null;
+        } else {
+          _couponError =
+              response['message'] ?? 'Kupon artık sepetiniz için geçerli değil';
+          _appliedCouponCode = null;
+          _appliedCoupon = null;
+          _discountAmount = 0;
         }
       } else {
-        _discountAmount = discountFixed;
+        final response = await _apiService.recommendCoupons(
+          totalPrice,
+          products: _couponProducts,
+          channel: _channel,
+        );
+        _recommendedCoupon = response['bestCoupon'] == null
+            ? null
+            : Map<String, dynamic>.from(response['bestCoupon']);
       }
-      
-      // Toplam fiyatı geçemez
-      if (_discountAmount > totalPrice) {
-        _discountAmount = totalPrice;
-      }
+      notifyListeners();
+    } catch (_) {
+      // Ağ geçici olarak yoksa mevcut sepet akışı kesilmez; siparişte sunucu tekrar doğrular.
     }
+  }
+
+  @override
+  void dispose() {
+    _couponSyncTimer?.cancel();
+    super.dispose();
   }
 
   // Belirli ürünün sepetteki miktarını getir
@@ -256,4 +346,3 @@ class CartViewModel extends ChangeNotifier {
     return _cartItems.any((item) => item.product.id == productId);
   }
 }
-

@@ -1,11 +1,14 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
-import '../services/theme_service.dart';
-import 'package:go_router/go_router.dart';
+import 'widgets/auth_ui.dart';
+import 'widgets/market_palette.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -22,10 +25,9 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _referralCodeController = TextEditingController();
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  
-  // Referral code validation state
   Timer? _debounceTimer;
   bool? _isReferralCodeValid;
   String? _referralMessage;
@@ -45,8 +47,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _checkReferralCode(String code) {
     _debounceTimer?.cancel();
-    
-    if (code.isEmpty) {
+    final normalizedCode = code.trim();
+
+    if (normalizedCode.isEmpty) {
       setState(() {
         _isReferralCodeValid = null;
         _referralMessage = null;
@@ -55,605 +58,354 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    setState(() {
-      _isCheckingReferralCode = true;
-    });
-
+    setState(() => _isCheckingReferralCode = true);
     _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
-      final referralViewModel = context.read<ReferralViewModel>();
-      final result = await referralViewModel.checkReferralCode(code);
-      
-      if (mounted) {
-        setState(() {
-          _isReferralCodeValid = result.isValid;
-          _referralMessage = result.message;
-          _isCheckingReferralCode = false;
-        });
-      }
+      final result = await context
+          .read<ReferralViewModel>()
+          .checkReferralCode(normalizedCode);
+      if (!mounted) return;
+      setState(() {
+        _isReferralCodeValid = result.isValid;
+        _referralMessage = result.message;
+        _isCheckingReferralCode = false;
+      });
     });
   }
 
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final authViewModel = context.read<AuthViewModel>();
-
-    // Loading göster
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(AppColors.successGreen),
-        ),
-      ),
-    );
-
-    // Get referral code if provided
-    final referralCode = _referralCodeController.text.trim().isNotEmpty
-        ? _referralCodeController.text.trim()
-        : null;
-
-    final success = await authViewModel.register(
+    final auth = context.read<AuthViewModel>();
+    final referralCode = _referralCodeController.text.trim();
+    final success = await auth.register(
       _nameController.text.trim(),
       _emailController.text.trim(),
       _passwordController.text,
       _phoneController.text.replaceAll(' ', ''),
-      referralCode: referralCode,
+      referralCode: referralCode.isEmpty ? null : referralCode,
     );
 
-    // Loading'i kapat
-    if (mounted) {
-      context.pop();
+    if (!mounted) return;
+    if (success) {
+      context.go('/home');
+      return;
     }
 
-    if (success && mounted) {
-      context.go('/home');
-    } else if (mounted) {
-      // Hata mesajını göster
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        icon: Container(
+          width: 52,
+          height: 52,
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFE9E9),
+            shape: BoxShape.circle,
           ),
-          title: Text(
-            'Kayıt Hatası',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              color: AppColors.errorRed,
-            ),
+          child: const Icon(
+            Icons.error_outline_rounded,
+            color: MarketPalette.red,
           ),
-          content: Text(
-            authViewModel.error ?? 'Kayıt olunamadı',
-            style: GoogleFonts.poppins(),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => context.pop(),
-              child: Text(
-                'Tamam',
-                style: GoogleFonts.poppins(
-                  color: AppColors.successGreen,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
         ),
-      );
+        title: Text(
+          'Kayıt tamamlanamadı',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.manrope(
+            color: MarketPalette.ink,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          auth.error ?? 'Bilgilerini kontrol edip tekrar deneyebilirsin.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: MarketPalette.muted,
+            fontSize: 13,
+            height: 1.45,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: FilledButton.styleFrom(
+              backgroundColor: MarketPalette.green,
+            ),
+            child: const Text('Tekrar dene'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openLogin() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/login');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => context.pop(),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.grey[50]!,
-                  Colors.grey[100]!,
-                ],
+    return AuthPageShell(
+      onBack: _openLogin,
+      child: Form(
+        key: _formKey,
+        child: AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AuthBrandHeader(
+                icon: Icons.person_add_alt_1_rounded,
+                title: 'Aramıza katıl',
+                subtitle:
+                    'Siparişlerini kolayca takip et, favorilerini sakla ve alışverişini hızlandır.',
               ),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey[200]!),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+              const SizedBox(height: 30),
+              AuthFormCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _FormIntro(
+                      title: 'Hesabını oluştur',
+                      subtitle: 'Birkaç bilgiyle hemen başlayabilirsin.',
+                    ),
+                    const SizedBox(height: 24),
+                    AuthTextField(
+                      controller: _nameController,
+                      label: 'Ad soyad',
+                      hint: 'Adınız ve soyadınız',
+                      icon: Icons.person_outline_rounded,
+                      textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.words,
+                      autofillHints: const [AutofillHints.name],
+                      validator: (value) {
+                        final words = (value ?? '')
+                            .trim()
+                            .split(RegExp(r'\s+'))
+                            .where((word) => word.isNotEmpty)
+                            .toList();
+                        if (words.length < 2 ||
+                            words.any((word) => word.length < 2)) {
+                          return 'Adınızı ve soyadınızı eksiksiz girin';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 17),
+                    AuthTextField(
+                      controller: _emailController,
+                      label: 'E-posta adresi',
+                      hint: 'ornek@email.com',
+                      icon: Icons.alternate_email_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.email],
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+                        if (email.isEmpty) return 'E-posta adresini girin';
+                        if (!RegExp(
+                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+                        ).hasMatch(email)) {
+                          return 'Geçerli bir e-posta adresi girin';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 17),
+                    AuthTextField(
+                      controller: _phoneController,
+                      label: 'Telefon numarası',
+                      hint: '5XX XXX XX XX',
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.telephoneNumber],
+                      validator: (value) {
+                        final phone = (value ?? '').replaceAll(' ', '');
+                        if (phone.isEmpty) {
+                          return 'Telefon numaranızı girin';
+                        }
+                        if (!RegExp(r'^[0-9]+$').hasMatch(phone)) {
+                          return 'Telefon numarası yalnızca rakam içermeli';
+                        }
+                        if (phone.length < 10 || phone.length > 15) {
+                          return 'Telefon numarası 10-15 haneli olmalı';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 17),
+                    AuthTextField(
+                      controller: _passwordController,
+                      label: 'Şifre',
+                      hint: 'En az 6 karakter',
+                      icon: Icons.lock_outline_rounded,
+                      obscureText: _obscurePassword,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.newPassword],
+                      onToggleVisibility: () => setState(
+                        () => _obscurePassword = !_obscurePassword,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Şifrenizi belirleyin';
+                        }
+                        if (value.length < 6) {
+                          return 'Şifre en az 6 karakter olmalı';
+                        }
+                        if (value.length > 50) {
+                          return 'Şifre en fazla 50 karakter olabilir';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 17),
+                    AuthTextField(
+                      controller: _confirmPasswordController,
+                      label: 'Şifre tekrarı',
+                      hint: 'Şifrenizi yeniden girin',
+                      icon: Icons.lock_reset_rounded,
+                      obscureText: _obscureConfirmPassword,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.newPassword],
+                      onToggleVisibility: () => setState(
+                        () =>
+                            _obscureConfirmPassword = !_obscureConfirmPassword,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Şifrenizi tekrar girin';
+                        }
+                        if (value != _passwordController.text) {
+                          return 'Şifreler birbiriyle eşleşmiyor';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 22),
+                    _buildReferralField(),
+                    const SizedBox(height: 25),
+                    Consumer<AuthViewModel>(
+                      builder: (context, auth, _) => AuthPrimaryButton(
+                        label: 'Hesabımı Oluştur',
+                        icon: Icons.arrow_forward_rounded,
+                        isLoading: auth.isLoading,
+                        onPressed: _register,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Zaten hesabın var mı?',
+                          style: GoogleFonts.inter(
+                            color: MarketPalette.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _openLogin,
+                          child: Text(
+                            'Giriş yap',
+                            style: GoogleFonts.inter(
+                              color: MarketPalette.greenDark,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              size: 18,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-        title: Text(
-          'Kayıt Ol',
-          style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-            letterSpacing: -0.3,
-          ),
-        ),
-        centerTitle: true,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
               ),
             ],
           ),
         ),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Logo
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(22),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppColors.successGreen.withOpacity(0.15),
-                          AppColors.successGreen.withOpacity(0.08),
-                        ],
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.successGreen.withOpacity(0.2),
-                          blurRadius: 25,
-                          spreadRadius: 5,
-                        ),
-                      ],
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.successGreen,
-                            AppColors.successGreen.withOpacity(0.85),
-                          ],
-                        ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.successGreen.withOpacity(0.4),
-                            blurRadius: 15,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.person_add_rounded,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // Name Field
-                _buildTextField(
-                  controller: _nameController,
-                  label: 'Ad Soyad',
-                  icon: Icons.person_outline_rounded,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Ad soyad gerekli';
-                    }
-                    final words = value.trim().split(RegExp(r'\s+'));
-                    if (words.length < 2 ||
-                        words.any((word) => word.length < 2)) {
-                      return 'Geçerli ad soyad giriniz (en az 2 kelime)';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Email Field
-                _buildTextField(
-                  controller: _emailController,
-                  label: 'E-posta',
-                  icon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'E-posta gerekli';
-                    }
-                    if (!RegExp(
-                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                    ).hasMatch(value)) {
-                      return 'Geçerli bir e-posta adresi girin';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Phone Field
-                _buildTextField(
-                  controller: _phoneController,
-                  label: 'Telefon *',
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Telefon numarası zorunludur';
-                    }
-                    if (!RegExp(
-                      r'^[0-9]+$',
-                    ).hasMatch(value.replaceAll(' ', ''))) {
-                      return 'Telefon numarası sadece rakam içermelidir';
-                    }
-                    if (value.replaceAll(' ', '').length < 10) {
-                      return 'Telefon numarası en az 10 haneli olmalıdır';
-                    }
-                    if (value.replaceAll(' ', '').length > 15) {
-                      return 'Telefon numarası en fazla 15 haneli olabilir';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Password Field
-                _buildTextField(
-                  controller: _passwordController,
-                  label: 'Şifre',
-                  icon: Icons.lock_outline_rounded,
-                  obscureText: _obscurePassword,
-                  onToggleVisibility: () {
-                    setState(() {
-                      _obscurePassword = !_obscurePassword;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Şifre gerekli';
-                    }
-                    if (value.length < 6) {
-                      return 'Şifre en az 6 karakter olmalı';
-                    }
-                    if (value.length > 50) {
-                      return 'Şifre en fazla 50 karakter olabilir';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Confirm Password Field
-                _buildTextField(
-                  controller: _confirmPasswordController,
-                  label: 'Şifre Tekrar',
-                  icon: Icons.lock_outline_rounded,
-                  obscureText: _obscureConfirmPassword,
-                  onToggleVisibility: () {
-                    setState(() {
-                      _obscureConfirmPassword = !_obscureConfirmPassword;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Şifre tekrarı gerekli';
-                    }
-                    if (value != _passwordController.text) {
-                      return 'Şifreler eşleşmiyor';
-                    }
-                    if (value.length < 6) {
-                      return 'Şifre en az 6 karakter olmalı';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 24),
-
-                // Referral Code Field (Optional)
-                _buildReferralCodeField(),
-
-                const SizedBox(height: 32),
-
-                // Register Button
-                Consumer<AuthViewModel>(
-                  builder: (context, authViewModel, child) {
-                    return Container(
-                      height: 58,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.successGreen,
-                            AppColors.successGreen.withOpacity(0.85),
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.successGreen.withOpacity(0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: authViewModel.isLoading ? null : _register,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          foregroundColor: Colors.white,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                        ),
-                        child: authViewModel.isLoading
-                            ? const SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
-                            : Text(
-                                'Kayıt Ol',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 24),
-
-                // Login Link
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Zaten hesabınız var mı?',
-                      style: GoogleFonts.poppins(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => context.pop(),
-                      child: Text(
-                        'Giriş Yapın',
-                        style: GoogleFonts.poppins(
-                          color: AppColors.successGreen,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType? keyboardType,
-    bool obscureText = false,
-    VoidCallback? onToggleVisibility,
-    String? Function(String?)? validator,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          obscureText: obscureText,
-          style: GoogleFonts.poppins(),
-          decoration: InputDecoration(
-            hintText: label,
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-            prefixIcon: Icon(icon, color: Colors.grey[400]),
-            suffixIcon: onToggleVisibility != null
-                ? IconButton(
-                    icon: Icon(
-                      obscureText
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      color: Colors.grey[400],
-                    ),
-                    onPressed: onToggleVisibility,
-                  )
-                : null,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[200]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[200]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.successGreen),
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-          validator: validator,
-        ),
-      ],
-    );
-  }
+  Widget _buildReferralField() {
+    final validationColor = _isReferralCodeValid == true
+        ? MarketPalette.green
+        : _isReferralCodeValid == false
+            ? MarketPalette.red
+            : MarketPalette.muted;
 
-  Widget _buildReferralCodeField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Text(
-              'Referral Kodu',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
+              'Davet kodu',
+              style: GoogleFonts.inter(
+                color: MarketPalette.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFF667eea).withOpacity(0.1),
+                color: const Color(0xFFEDF0FF),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Opsiyonel',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFF667eea),
+                'İsteğe bağlı',
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF4C6FFF),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        TextFormField(
+        AuthTextField(
           controller: _referralCodeController,
+          label: 'Kod',
+          hint: 'Varsa davet kodunu gir',
+          icon: Icons.card_giftcard_rounded,
+          showLabel: false,
           textCapitalization: TextCapitalization.characters,
-          style: GoogleFonts.poppins(),
           onChanged: _checkReferralCode,
-          decoration: InputDecoration(
-            hintText: 'Varsa davet kodu girin',
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-            prefixIcon: Icon(Icons.card_giftcard_outlined, color: Colors.grey[400]),
-            suffixIcon: _buildReferralCodeSuffix(),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[200]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: _isReferralCodeValid == true
-                    ? Colors.green
-                    : _isReferralCodeValid == false
-                        ? Colors.red
-                        : Colors.grey[200]!,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: _isReferralCodeValid == true
-                    ? Colors.green
-                    : _isReferralCodeValid == false
-                        ? Colors.red
-                        : const Color(0xFF667eea),
-              ),
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(vertical: 16),
-          ),
+          suffix: _referralSuffix(validationColor),
         ),
-        // Validation message
-        if (_referralMessage != null && _referralMessage!.isNotEmpty) ...[
-          const SizedBox(height: 8),
+        if (_referralMessage?.isNotEmpty == true) ...[
+          const SizedBox(height: 9),
           Container(
-            padding: const EdgeInsets.all(12),
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(
-              color: _isReferralCodeValid == true
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _isReferralCodeValid == true
-                    ? Colors.green.withOpacity(0.3)
-                    : Colors.red.withOpacity(0.3),
-              ),
+              color: validationColor.withValues(alpha: .09),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
                 Icon(
                   _isReferralCodeValid == true
                       ? Icons.check_circle_rounded
-                      : Icons.error_outline_rounded,
-                  color: _isReferralCodeValid == true ? Colors.green : Colors.red,
-                  size: 20,
+                      : Icons.info_outline_rounded,
+                  color: validationColor,
+                  size: 18,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _referralMessage!,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: _isReferralCodeValid == true
-                          ? Colors.green[700]
-                          : Colors.red[700],
+                    style: GoogleFonts.inter(
+                      color: validationColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -665,29 +417,76 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  Widget? _buildReferralCodeSuffix() {
+  Widget? _referralSuffix(Color color) {
     if (_isCheckingReferralCode) {
       return const Padding(
-        padding: EdgeInsets.all(12),
+        padding: EdgeInsets.all(14),
         child: SizedBox(
-          width: 20,
-          height: 20,
+          width: 18,
+          height: 18,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+            color: Color(0xFF4C6FFF),
           ),
         ),
       );
     }
-    
-    if (_isReferralCodeValid == true) {
-      return const Icon(Icons.check_circle, color: Colors.green);
-    }
-    
-    if (_isReferralCodeValid == false) {
-      return const Icon(Icons.cancel, color: Colors.red);
-    }
-    
-    return null;
+    if (_isReferralCodeValid == null) return null;
+    return Icon(
+      _isReferralCodeValid! ? Icons.check_circle_rounded : Icons.cancel_rounded,
+      color: color,
+    );
+  }
+}
+
+class _FormIntro extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _FormIntro({required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: MarketPalette.greenSoft,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.person_add_alt_rounded,
+            color: MarketPalette.greenDark,
+            size: 19,
+          ),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.manrope(
+                  color: MarketPalette.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: GoogleFonts.inter(
+                  color: MarketPalette.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

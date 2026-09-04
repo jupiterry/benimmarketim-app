@@ -35,31 +35,38 @@ class ChatViewModel extends ChangeNotifier {
   bool get isTyping => _isTyping;
   String? get error => _error;
   bool get hasMoreMessages => _hasMoreMessages;
-  
+
   /// Toplam okunmamış mesaj sayısı
-  int get totalUnreadCount => _chats.fold(0, (sum, chat) => sum + chat.userUnreadCount);
-  
+  int get totalUnreadCount =>
+      _chats.fold(0, (sum, chat) => sum + chat.userUnreadCount);
+
   /// Sipariş saatleri içinde mi kontrol et (API'den güncel veri çekerek)
   Future<bool> isWithinChatHours() async {
     try {
       final apiService = ApiService();
       final settings = await apiService.getSettings();
-      
-      final now = DateTime.now();
+
+      // Destek/sipariş saatleri cihazın saat diliminden bağımsız olarak
+      // mağazanın bulunduğu Türkiye saatine göre değerlendirilir.
+      final now = DateTime.now().toUtc().add(const Duration(hours: 3));
       final currentHour = now.hour;
       final currentMinute = now.minute;
-      
+
       final startHour = settings['orderStartHour'] ?? 10;
       final startMinute = settings['orderStartMinute'] ?? 0;
       final endHour = settings['orderEndHour'] ?? 1;
       final endMinute = settings['orderEndMinute'] ?? 0;
-      
+
       final startTime = startHour * 60 + startMinute;
       final endTime = endHour * 60 + endMinute;
       final currentTime = currentHour * 60 + currentMinute;
-      
+
+      if (startTime == 0 && endTime == 0) {
+        return true;
+      }
+
       // Gece yarısını geçen saatler için özel kontrol
-      if (endTime < startTime) {
+      if (endTime <= startTime) {
         return currentTime >= startTime || currentTime <= endTime;
       } else {
         return currentTime >= startTime && currentTime <= endTime;
@@ -69,18 +76,22 @@ class ChatViewModel extends ChangeNotifier {
       return false; // Hata durumunda erişime izin verme
     }
   }
-  
+
   /// Sipariş saatleri mesajını al
   Future<String> getChatHoursMessage() async {
     try {
       final apiService = ApiService();
       final settings = await apiService.getSettings();
-      
-      final startHour = (settings['orderStartHour'] ?? 10).toString().padLeft(2, '0');
-      final startMinute = (settings['orderStartMinute'] ?? 0).toString().padLeft(2, '0');
-      final endHour = (settings['orderEndHour'] ?? 1).toString().padLeft(2, '0');
-      final endMinute = (settings['orderEndMinute'] ?? 0).toString().padLeft(2, '0');
-      
+
+      final startHour =
+          (settings['orderStartHour'] ?? 10).toString().padLeft(2, '0');
+      final startMinute =
+          (settings['orderStartMinute'] ?? 0).toString().padLeft(2, '0');
+      final endHour =
+          (settings['orderEndHour'] ?? 1).toString().padLeft(2, '0');
+      final endMinute =
+          (settings['orderEndMinute'] ?? 0).toString().padLeft(2, '0');
+
       return 'Canlı destek sadece $startHour:$startMinute - $endHour:$endMinute saatleri arasında aktiftir.';
     } catch (e) {
       return 'Canlı destek şu an aktif değil.';
@@ -101,7 +112,7 @@ class ChatViewModel extends ChangeNotifier {
       if (chatId.isNotEmpty && _activeChat?.id == chatId) {
         _isTyping = true;
         notifyListeners();
-        
+
         // 3 saniye sonra typing'i kapat
         _typingTimer?.cancel();
         _typingTimer = Timer(const Duration(seconds: 3), () {
@@ -118,7 +129,7 @@ class ChatViewModel extends ChangeNotifier {
   /// Socket mesajlarını işle
   void _handleSocketMessage(Map<String, dynamic> data) {
     final type = data['type'];
-    
+
     if (type == 'messagesRead') {
       // Mesajlar okundu
       final chatId = data['chatId'];
@@ -172,7 +183,7 @@ class ChatViewModel extends ChangeNotifier {
           }
         }
       }
-      
+
       // Sohbet listesini güncelle (sadece admin mesajları için)
       if (message.sender != 'user') {
         _updateChatInList(message);
@@ -185,13 +196,13 @@ class ChatViewModel extends ChangeNotifier {
     final index = _chats.indexWhere((c) => c.id == message.chatId);
     if (index != -1) {
       final chat = _chats[index];
-      
+
       // Aktif sohbetteyken okunmamış sayısını artırma
       final isInActiveChat = _activeChat?.id == message.chatId;
       final newUnreadCount = (message.sender == 'admin' && !isInActiveChat)
-          ? chat.userUnreadCount + 1 
+          ? chat.userUnreadCount + 1
           : (isInActiveChat ? 0 : chat.userUnreadCount);
-      
+
       _chats[index] = ChatModel(
         id: chat.id,
         orderId: chat.orderId,
@@ -202,7 +213,7 @@ class ChatViewModel extends ChangeNotifier {
         lastMessageSender: message.sender,
         userUnreadCount: newUnreadCount,
       );
-      
+
       // Listeyi son mesaja göre sırala
       _chats.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
       notifyListeners();
@@ -221,6 +232,7 @@ class ChatViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await connectSocket();
       _chats = await _chatService.getMyChats();
       _chats.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
     } catch (e) {
@@ -239,16 +251,6 @@ class ChatViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Önce sipariş saatlerini kontrol et
-      final isWithinHours = await isWithinChatHours();
-      if (!isWithinHours) {
-        final message = await getChatHoursMessage();
-        _error = message;
-        _isLoading = false;
-        notifyListeners();
-        return null;
-      }
-      
       // Aktif (kapanmamış) sohbet var mı kontrol et
       final activeChats = _chats.where((c) => c.status == 'active').toList();
       if (activeChats.isNotEmpty && orderId == null) {
@@ -258,9 +260,9 @@ class ChatViewModel extends ChangeNotifier {
         notifyListeners();
         return activeChats.first; // Mevcut aktif sohbeti döndür
       }
-      
+
       final response = await _chatService.createChat(orderId: orderId);
-      
+
       if (response.isNew) {
         // Yeni sohbet, listeye ekle
         _chats.insert(0, response.chat);
@@ -268,7 +270,7 @@ class ChatViewModel extends ChangeNotifier {
 
       // Aktif sohbeti ayarla
       _activeChat = response.chat;
-      
+
       // Mesajları yükle
       await loadMessages(response.chat.id);
 
@@ -276,7 +278,9 @@ class ChatViewModel extends ChangeNotifier {
       _socketService.joinChat(response.chat.id);
       _socketService.notifyUserInChat(
         response.chat.id,
-        platform: Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown'),
+        platform: Platform.isIOS
+            ? 'ios'
+            : (Platform.isAndroid ? 'android' : 'unknown'),
         appVersion: '3.0.0', // package_info_plus ile alınabilir
       );
 
@@ -312,7 +316,8 @@ class ChatViewModel extends ChangeNotifier {
     _socketService.joinChat(chat.id);
     _socketService.notifyUserInChat(
       chat.id,
-      platform: Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown'),
+      platform:
+          Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown'),
       appVersion: '3.0.0', // package_info_plus ile alınabilir
     );
 
@@ -327,7 +332,7 @@ class ChatViewModel extends ChangeNotifier {
       _socketService.notifyUserLeftChat(_activeChat!.id);
       // Socket odasından ayrıl
       _socketService.leaveChat(_activeChat!.id);
-      
+
       _activeChat = null;
       _messages = [];
       notifyListeners();
@@ -360,7 +365,7 @@ class ChatViewModel extends ChangeNotifier {
       }
 
       _hasMoreMessages = response.hasMore;
-      
+
       if (response.chat != null) {
         _activeChat = response.chat;
       }
@@ -421,7 +426,7 @@ class ChatViewModel extends ChangeNotifier {
   /// Mesajları okundu işaretle
   Future<void> markAsRead(String chatId) async {
     await _chatService.markAsRead(chatId);
-    
+
     // Lokal state'i güncelle
     final index = _chats.indexWhere((c) => c.id == chatId);
     if (index != -1) {
@@ -453,7 +458,6 @@ class ChatViewModel extends ChangeNotifier {
       _socketService.sendStopTyping(_activeChat!.id);
     }
   }
-
 
   /// Hata mesajını temizle
   void clearError() {

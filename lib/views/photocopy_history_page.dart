@@ -81,16 +81,16 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF5F8F5),
       appBar: AppBar(
         title: Text(
           'Fotokopi Geçmişi',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
-            color: Colors.black87,
+            color: Colors.white,
           ),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF075B39),
         elevation: 0,
         centerTitle: true,
         leading: InkWell(
@@ -99,21 +99,21 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: Colors.white.withValues(alpha: .12),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
+              border: Border.all(color: Colors.white.withValues(alpha: .18)),
             ),
             child: const Icon(
               Icons.arrow_back_ios_new,
               size: 16,
-              color: Colors.black87,
+              color: Colors.white,
             ),
           ),
         ),
         actions: [
           IconButton(
             onPressed: _refreshHistory,
-            icon: const Icon(Icons.refresh_rounded, color: Colors.black87),
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
             tooltip: 'Yenile',
           ),
         ],

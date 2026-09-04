@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import '../services/theme_service.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import 'widgets/market_palette.dart';
 
 class OrderConfirmationPage extends StatefulWidget {
   final String? orderId;
@@ -14,33 +15,17 @@ class OrderConfirmationPage extends StatefulWidget {
 
 class _OrderConfirmationPageState extends State<OrderConfirmationPage>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _fadeAnimation;
+  late final AnimationController _controller;
+  late final Animation<double> _arrival;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
       vsync: this,
-    );
-
-    _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.elasticOut),
-      ),
-    );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
-      ),
-    );
-
-    _controller.forward();
+      duration: const Duration(milliseconds: 850),
+    )..forward();
+    _arrival = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
   }
 
   @override
@@ -49,172 +34,318 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
     super.dispose();
   }
 
+  String get _shortOrderId {
+    final id = widget.orderId ?? '';
+    if (id.isEmpty) return '—';
+    return id.substring(0, id.length > 8 ? 8 : id.length).toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Spacer(),
-
-              // Başarı İkonu Animasyonu
-              ScaleTransition(
-                scale: _scaleAnimation,
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: AppColors.successGreen,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.successGreen.withOpacity(0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: Colors.white,
-                    size: 64,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 40),
-
-              // İçerik Animasyonu
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Column(
-                  children: [
-                    Text(
-                      'Siparişiniz Alındı!',
-                      style: GoogleFonts.poppins(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Siparişiniz başarıyla oluşturuldu ve restoranımıza iletildi. Hazırlanmaya başladığında bildirim alacaksınız.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        color: Colors.grey[600],
-                        height: 1.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    if (widget.orderId != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: MarketPalette.canvas,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+            child: FadeTransition(
+              opacity: _controller,
+              child: Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => context.go('/home'),
+                      child: Text(
+                        'Ana sayfa',
+                        style: GoogleFonts.inter(
+                          color: MarketPalette.greenDark,
+                          fontWeight: FontWeight.w700,
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.grey[200]!,
-                            width: 1,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ScaleTransition(
+                    scale: _arrival,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 176,
+                          height: 176,
+                          decoration: BoxDecoration(
+                            color: MarketPalette.greenSoft,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: MarketPalette.green.withValues(alpha: .12),
+                              width: 12,
+                            ),
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.receipt_long_rounded,
-                              size: 20,
-                              color: Colors.grey[600],
+                        Container(
+                          width: 112,
+                          height: 112,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                MarketPalette.green,
+                                MarketPalette.greenDark
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Sipariş No: #${widget.orderId!.substring(0, widget.orderId!.length > 8 ? 8 : widget.orderId!.length)}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey[800],
-                                letterSpacing: 0.5,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    MarketPalette.green.withValues(alpha: .28),
+                                blurRadius: 30,
+                                offset: const Offset(0, 14),
                               ),
+                            ],
+                          ),
+                          child: const Icon(Icons.check_rounded,
+                              color: Colors.white, size: 58),
+                        ),
+                        const Positioned(
+                          right: 7,
+                          top: 19,
+                          child: _SuccessDot(
+                            color: MarketPalette.orange,
+                            icon: Icons.auto_awesome_rounded,
+                          ),
+                        ),
+                        const Positioned(
+                          left: 3,
+                          bottom: 23,
+                          child: _SuccessDot(
+                            color: MarketPalette.lime,
+                            icon: Icons.favorite_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Siparişin bizde!',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.manrope(
+                      color: MarketPalette.ink,
+                      fontSize: 29,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -.7,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Siparişin başarıyla alındı. Hazırlık başladığında durumunu Siparişlerim sayfasından takip edebilirsin.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      color: MarketPalette.muted,
+                      fontSize: 14,
+                      height: 1.55,
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  _buildOrderCard(),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: MarketPalette.greenSoft,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.notifications_active_outlined,
+                            color: MarketPalette.greenDark),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Text(
+                            'Sipariş durumundaki değişiklikleri sana bildireceğiz.',
+                            style: GoogleFonts.inter(
+                              color: MarketPalette.greenDark,
+                              fontSize: 12,
+                              height: 1.4,
+                              fontWeight: FontWeight.w600,
                             ),
-                          ],
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton.icon(
+                      onPressed: () => context.go(
+                        '/home',
+                        extra: {'initialTabIndex': 2, 'openOrders': true},
                       ),
-                  ],
-                ),
-              ),
-
-              const Spacer(),
-
-              // Butonlar
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          // Ana sayfaya dön
-                          context.go('/home');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.successGreen,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: Text(
-                          'Alışverişe Devam Et',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                      icon: const Icon(Icons.local_shipping_outlined),
+                      label: Text('Siparişimi takip et',
+                          style: GoogleFonts.inter(
+                              fontSize: 15, fontWeight: FontWeight.w800)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: MarketPalette.green,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18)),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: TextButton(
-                        onPressed: () {
-                          // Siparişlerim sayfasına git
-                          context.push('/orders');
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.grey[700],
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: Text(
-                          'Siparişlerimi Gör',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: TextButton(
+                      onPressed: () => context.go('/home'),
+                      child: Text('Alışverişe devam et',
+                          style: GoogleFonts.inter(
+                              color: MarketPalette.greenDark,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800)),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildOrderCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: MarketPalette.line),
+        boxShadow: [
+          BoxShadow(
+            color: MarketPalette.greenDeep.withValues(alpha: .05),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: MarketPalette.greenSoft,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(Icons.receipt_long_rounded,
+                    color: MarketPalette.green),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sipariş numarası',
+                        style: GoogleFonts.inter(
+                            color: MarketPalette.muted, fontSize: 11)),
+                    const SizedBox(height: 3),
+                    Text('#$_shortOrderId',
+                        style: GoogleFonts.manrope(
+                            color: MarketPalette.ink,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .6)),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3DF),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text('Alındı',
+                    style: GoogleFonts.inter(
+                        color: const Color(0xFFC87316),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          const _OrderProgress(),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuccessDot extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+
+  const _SuccessDot({required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, size: 19, color: MarketPalette.greenDeep),
+    );
+  }
+}
+
+class _OrderProgress extends StatelessWidget {
+  const _OrderProgress();
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Alındı', 'Hazırlanıyor', 'Yolda'];
+    return Row(
+      children: List.generate(labels.length * 2 - 1, (index) {
+        if (index.isOdd) {
+          return const Expanded(
+              child: Divider(color: MarketPalette.line, thickness: 2));
+        }
+        final step = index ~/ 2;
+        final active = step == 0;
+        return Column(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: active ? MarketPalette.green : MarketPalette.canvas,
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: active ? MarketPalette.green : MarketPalette.line),
+              ),
+              child: Icon(active ? Icons.check_rounded : Icons.circle,
+                  color: active ? Colors.white : MarketPalette.line,
+                  size: active ? 17 : 8),
+            ),
+            const SizedBox(height: 7),
+            Text(labels[step],
+                style: GoogleFonts.inter(
+                    color:
+                        active ? MarketPalette.greenDark : MarketPalette.muted,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700)),
+          ],
+        );
+      }),
     );
   }
 }

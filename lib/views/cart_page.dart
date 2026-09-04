@@ -8,15 +8,19 @@ import 'package:benimmarketim_app/viewmodels/referral_viewmodel.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../services/theme_service.dart';
 import '../models/cart_item.dart';
+import '../models/coupon.dart';
 import 'package:go_router/go_router.dart';
+import 'widgets/market_palette.dart';
 
 class CartPage extends StatelessWidget {
-  const CartPage({super.key});
+  final VoidCallback? onExplore;
+
+  const CartPage({super.key, this.onExplore});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: MarketPalette.canvas,
       body: SafeArea(
         child: Column(
           children: [
@@ -61,41 +65,70 @@ class CartPage extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+    return Consumer<CartViewModel>(
+      builder: (context, cart, child) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [MarketPalette.greenDeep, MarketPalette.greenDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          BoxShadow(
-            color: AppColors.successGreen.withOpacity(0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 40),
-          Expanded(
-            child: Text(
-              'Sepetim',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: Colors.black87,
-                letterSpacing: -0.3,
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: MarketPalette.lime,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.shopping_bag_rounded,
+                  color: MarketPalette.greenDeep),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Sepetim',
+                      style: GoogleFonts.manrope(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                  Text(
+                    cart.items.isEmpty
+                        ? 'Alışverişe başlamaya hazır mısın?'
+                        : '${cart.items.length} ürün seçtin',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 40),
-        ],
+            if (cart.items.isNotEmpty)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  '${cart.items.length} çeşit',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -214,7 +247,21 @@ class CartPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 40),
-            // Button removed as requested
+            ElevatedButton.icon(
+              onPressed: onExplore ?? () => context.go('/home'),
+              icon: const Icon(Icons.explore_rounded, size: 19),
+              label: const Text('Ürünleri keşfet'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.successGreen,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -223,25 +270,16 @@ class CartPage extends StatelessWidget {
 
   Widget _buildCartItem(CartItem item, CartViewModel cartViewModel) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.08),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: MarketPalette.line),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 15,
-            offset: const Offset(0, 4),
-            spreadRadius: 1,
-          ),
-          BoxShadow(
-            color: AppColors.successGreen.withOpacity(0.03),
-            blurRadius: 20,
+            color: MarketPalette.greenDeep.withValues(alpha: .035),
+            blurRadius: 18,
             offset: const Offset(0, 8),
           ),
         ],
@@ -250,14 +288,14 @@ class CartPage extends StatelessWidget {
         children: [
           // Product Image
           Container(
-            width: 90,
-            height: 90,
+            width: 84,
+            height: 84,
             decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(12),
+              color: MarketPalette.canvas,
+              borderRadius: BorderRadius.circular(16),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               child: item.product.image.isNotEmpty
                   ? Image.network(
                       item.product.image,
@@ -295,10 +333,10 @@ class CartPage extends StatelessWidget {
               children: [
                 Text(
                   item.product.name,
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: MarketPalette.ink,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -308,19 +346,33 @@ class CartPage extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Price
-                    Text(
-                      '₺${item.product.price.toStringAsFixed(2)}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.successGreen,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (item.product.actualPrice < item.product.price)
+                          Text(
+                            '₺${item.product.price.toStringAsFixed(2)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: MarketPalette.muted,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        Text(
+                          '₺${item.product.actualPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.manrope(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: MarketPalette.greenDark,
+                          ),
+                        ),
+                      ],
                     ),
                     // Quantity Controls
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
+                        color: MarketPalette.greenSoft,
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
@@ -343,7 +395,7 @@ class CartPage extends StatelessWidget {
                           _buildQuantityButton(
                             icon: Icons.add,
                             onTap: () => cartViewModel.addToCart(item.product),
-                            color: AppColors.successGreen,
+                            color: MarketPalette.green,
                           ),
                         ],
                       ),
@@ -393,15 +445,16 @@ class CartPage extends StatelessWidget {
         final remainingAmount = minOrderAmount - cartViewModel.totalPrice;
 
         return Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: const Border(top: BorderSide(color: MarketPalette.line)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 20,
-                offset: const Offset(0, -5),
+                color: MarketPalette.greenDeep.withValues(alpha: .08),
+                blurRadius: 26,
+                offset: const Offset(0, -8),
               ),
             ],
           ),
@@ -414,9 +467,8 @@ class CartPage extends StatelessWidget {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange[200]!),
+                    color: const Color(0xFFFFF3DF),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     children: [
@@ -429,9 +481,9 @@ class CartPage extends StatelessWidget {
                       Expanded(
                         child: Text(
                           'Minimum sipariş tutarı ₺${minOrderAmount.toStringAsFixed(2)}.\nSipariş vermek için ₺${remainingAmount.toStringAsFixed(2)} daha ekleyin.',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: Colors.orange[900],
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF9B5B13),
                             height: 1.4,
                           ),
                         ),
@@ -451,16 +503,16 @@ class CartPage extends StatelessWidget {
                   children: [
                     Text(
                       'Ara Toplam',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         fontSize: 14,
-                        color: Colors.grey[600],
+                        color: MarketPalette.muted,
                       ),
                     ),
                     Text(
                       '₺${cartViewModel.totalPrice.toStringAsFixed(2)}',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         fontSize: 14,
-                        color: Colors.grey[600],
+                        color: MarketPalette.muted,
                       ),
                     ),
                   ],
@@ -471,13 +523,14 @@ class CartPage extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.discount, size: 16, color: AppColors.successGreen),
+                        Icon(Icons.discount,
+                            size: 16, color: MarketPalette.green),
                         const SizedBox(width: 4),
                         Text(
                           'İndirim (${cartViewModel.appliedCouponCode})',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontSize: 14,
-                            color: AppColors.successGreen,
+                            color: MarketPalette.green,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -485,9 +538,9 @@ class CartPage extends StatelessWidget {
                     ),
                     Text(
                       '-₺${cartViewModel.discountAmount.toStringAsFixed(2)}',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         fontSize: 14,
-                        color: AppColors.successGreen,
+                        color: MarketPalette.green,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -501,18 +554,18 @@ class CartPage extends StatelessWidget {
                 children: [
                   Text(
                     'Toplam Tutar',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.inter(
                       fontSize: 16,
-                      color: Colors.grey[600],
+                      color: MarketPalette.muted,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                   Text(
                     '₺${cartViewModel.finalPrice.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.manrope(
                       fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
+                      fontWeight: FontWeight.w900,
+                      color: MarketPalette.ink,
                     ),
                   ),
                 ],
@@ -569,22 +622,19 @@ class CartPage extends StatelessWidget {
                           : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isOrderAllowed
-                            ? AppColors.successGreen
-                            : Colors.grey[300],
+                            ? MarketPalette.green
+                            : MarketPalette.greenSoft,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(18),
                         ),
-                        elevation: isOrderAllowed ? 5 : 0,
-                        shadowColor: isOrderAllowed
-                            ? AppColors.successGreen.withOpacity(0.4)
-                            : null,
+                        elevation: 0,
                       ),
                       child: Text(
-                        'Sipariş Ver',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                        'Siparişi tamamla  →',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
@@ -598,57 +648,83 @@ class CartPage extends StatelessWidget {
     );
   }
 
-  Widget _buildCouponSection(BuildContext context, CartViewModel cartViewModel) {
+  Widget _buildCouponSection(
+      BuildContext context, CartViewModel cartViewModel) {
     final TextEditingController couponController = TextEditingController();
-    
+    final referralViewModel = context.watch<ReferralViewModel>();
+    if (!referralViewModel.couponsLoaded && !referralViewModel.isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        referralViewModel.loadCoupons();
+      });
+    }
+
     // Uygulanan kupon varsa göster
     if (cartViewModel.appliedCouponCode != null) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.successGreen.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.successGreen.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.check_circle, color: AppColors.successGreen, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Kupon Uygulandı',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: AppColors.successGreen,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    cartViewModel.appliedCouponCode!,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: AppColors.successGreen,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
+      final needsDelivery =
+          cartViewModel.appliedCoupon?['requiresDeliveryPoint'] == true;
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.successGreen.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border:
+                  Border.all(color: AppColors.successGreen.withOpacity(0.3)),
             ),
-            TextButton(
-              onPressed: () => cartViewModel.removeCoupon(),
-              child: Text(
-                'Kaldır',
-                style: GoogleFonts.poppins(
-                  color: Colors.red[400],
-                  fontWeight: FontWeight.w500,
+            child: Row(children: [
+              Icon(Icons.check_circle, color: AppColors.successGreen, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Kupon Uygulandı',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.successGreen,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      cartViewModel.appliedCouponCode!,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: AppColors.successGreen,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (needsDelivery)
+                      Text(
+                        'Teslimat noktasında doğrulanacak',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
+              TextButton(
+                onPressed: () => cartViewModel.removeCoupon(),
+                child: Text(
+                  'Kaldır',
+                  style: GoogleFonts.poppins(
+                    color: Colors.red[400],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          _buildCouponWalletButton(
+            context,
+            referralViewModel,
+            cartViewModel,
+          ),
+        ],
       );
     }
 
@@ -677,7 +753,8 @@ class CartPage extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
-                      prefixIcon: Icon(Icons.discount_outlined, color: Colors.grey[500]),
+                      prefixIcon: Icon(Icons.discount_outlined,
+                          color: Colors.grey[500]),
                     ),
                     style: GoogleFonts.poppins(
                       fontSize: 14,
@@ -718,7 +795,8 @@ class CartPage extends StatelessWidget {
                           )
                         : Text(
                             'Uygula',
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600),
                           ),
                   ),
                 ),
@@ -735,23 +813,323 @@ class CartPage extends StatelessWidget {
                   ),
                 ),
               ),
+            const SizedBox(height: 10),
+            _buildCouponWalletButton(
+              context,
+              referralViewModel,
+              cartViewModel,
+            ),
           ],
         );
       },
     );
   }
 
+  Widget _buildCouponWalletButton(
+    BuildContext context,
+    ReferralViewModel referral,
+    CartViewModel cart,
+  ) {
+    final count = referral.validCoupons.length;
+    return InkWell(
+      onTap: () => _showCouponWallet(context, referral, cart),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F8F4),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDDEBE1)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.confirmation_number_outlined,
+                color: AppColors.successGreen),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                referral.isLoading
+                    ? 'Kuponlar yükleniyor...'
+                    : count > 0
+                        ? 'Aktif kuponları gör ($count)'
+                        : 'Kuponları görüntüle',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF173323),
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF668071)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCouponWallet(
+    BuildContext context,
+    ReferralViewModel referral,
+    CartViewModel cart,
+  ) async {
+    if (!referral.couponsLoaded) await referral.loadCoupons(force: true);
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: .76,
+        minChildSize: .5,
+        maxChildSize: .92,
+        expand: false,
+        builder: (context, controller) {
+          final coupons = referral.validCoupons;
+          return Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAF7),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
+                  margin: const EdgeInsets.only(top: 12, bottom: 18),
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE1F4E8),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(Icons.local_activity_outlined,
+                            color: AppColors.successGreen),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Kupon cüzdanım',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 21, fontWeight: FontWeight.w700)),
+                            Text('${coupons.length} aktif fırsat',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 12, color: Colors.grey[600])),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: coupons.isEmpty
+                      ? Center(
+                          child: Text('Şu anda aktif kupon bulunmuyor.',
+                              style:
+                                  GoogleFonts.poppins(color: Colors.grey[600])),
+                        )
+                      : ListView.separated(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                          itemCount: coupons.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, index) => _buildCouponCard(
+                            sheetContext,
+                            coupons[index],
+                            cart,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCouponCard(
+      BuildContext context, Coupon coupon, CartViewModel cart) {
+    final expiry =
+        '${coupon.expirationDate.day.toString().padLeft(2, '0')}.${coupon.expirationDate.month.toString().padLeft(2, '0')}.${coupon.expirationDate.year}';
+    final conditions = <String>[
+      if (coupon.minimumOrderAmount > 0)
+        'En az ₺${coupon.minimumOrderAmount.toStringAsFixed(0)} sepet',
+      if (coupon.maximumDiscount > 0)
+        'En fazla ₺${coupon.maximumDiscount.toStringAsFixed(0)} indirim',
+      if (coupon.deliveryPoints.isNotEmpty) 'Teslimat noktasına özel',
+      if (coupon.firstOrderOnly) 'İlk siparişe özel',
+      if (coupon.newUsersOnly) 'Yeni kullanıcılara özel',
+    ];
+    final globalUse = coupon.remainingGlobalUses == null
+        ? 'Sınırsız kullanım'
+        : '${coupon.remainingGlobalUses} kullanım kaldı';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDDE8E0)),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x0C000000), blurRadius: 18, offset: Offset(0, 8))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Text(coupon.discountText,
+                  style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.successGreen)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F7ED),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(coupon.code,
+                  style: GoogleFonts.spaceMono(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.successGreen)),
+            ),
+          ]),
+          if (coupon.description.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(coupon.description,
+                style:
+                    GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _couponInfoChip(Icons.event_outlined, 'Son gün $expiry'),
+              _couponInfoChip(Icons.people_outline, globalUse),
+              _couponInfoChip(
+                  Icons.person_outline, 'Kişisel ${coupon.remainingUses} hak'),
+              ...conditions.map(
+                  (text) => _couponInfoChip(Icons.check_circle_outline, text)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: cart.isValidatingCoupon
+                  ? null
+                  : () async {
+                      final success = await cart.applyCoupon(coupon.code);
+                      if (success && context.mounted) Navigator.pop(context);
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.successGreen,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13)),
+              ),
+              child: Text('Kuponu uygula',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _couponInfoChip(IconData icon, String text) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF2F5F2),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: const Color(0xFF63756A)),
+            const SizedBox(width: 5),
+            Text(text,
+                style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF4D5F54))),
+          ],
+        ),
+      );
+
   // Kullanılabilir Kupon Banner'ı
-  Widget _buildAvailableCouponBanner(BuildContext context, CartViewModel cartViewModel) {
+  Widget _buildAvailableCouponBanner(
+      BuildContext context, CartViewModel cartViewModel) {
     // Eğer zaten kupon uygulanmışsa gösterme
     if (cartViewModel.appliedCouponCode != null) {
       return const SizedBox.shrink();
     }
 
+    final recommended = cartViewModel.recommendedCoupon;
+    if (recommended != null) {
+      final discount =
+          (recommended['calculatedDiscount'] as num?)?.toDouble() ?? 0;
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [
+            AppColors.successGreen.withOpacity(.16),
+            Colors.lime.withOpacity(.08)
+          ]),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.successGreen.withOpacity(.35)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.auto_awesome_rounded, color: AppColors.successGreen),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Sepetin için en iyi kupon',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.successGreen)),
+                Text(
+                    '${recommended['code']} • ₺${discount.toStringAsFixed(2)} kazanç',
+                    style: GoogleFonts.poppins(
+                        fontSize: 14, fontWeight: FontWeight.w700)),
+              ])),
+          TextButton(
+              onPressed: () => cartViewModel.applyCoupon(recommended['code']),
+              child: const Text('Uygula')),
+        ]),
+      );
+    }
+
     return Consumer<ReferralViewModel>(
       builder: (context, referralViewModel, child) {
         // Kuponları yükle (eğer yüklenmemişse)
-        if (referralViewModel.coupons.isEmpty && !referralViewModel.isLoading) {
+        if (!referralViewModel.couponsLoaded && !referralViewModel.isLoading) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             referralViewModel.loadCoupons();
           });
@@ -811,7 +1189,8 @@ class CartPage extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
                             decoration: BoxDecoration(
                               color: Colors.purple,
                               borderRadius: BorderRadius.circular(6),
@@ -847,7 +1226,8 @@ class CartPage extends StatelessWidget {
                   cartViewModel.applyCoupon(coupon.code);
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppColors.successGreen,
                     borderRadius: BorderRadius.circular(10),
@@ -869,4 +1249,3 @@ class CartPage extends StatelessWidget {
     );
   }
 }
-

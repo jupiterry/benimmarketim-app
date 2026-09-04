@@ -70,11 +70,14 @@ class DatabaseService {
       );
     } else {
       // Insert new item
-      await db.insert('cart_items', {
-        'product_id': item.product.id,
-        'quantity': item.quantity,
-        'product_json': jsonEncode(item.product.toJson()),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+          'cart_items',
+          {
+            'product_id': item.product.id,
+            'quantity': item.quantity,
+            'product_json': jsonEncode(item.product.toJson()),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
@@ -90,6 +93,19 @@ class DatabaseService {
         whereArgs: [productId],
       );
     }
+  }
+
+  Future<void> saveCartItem(CartItem item) async {
+    final db = await database;
+    await db.update(
+      'cart_items',
+      {
+        'quantity': item.quantity,
+        'product_json': jsonEncode(item.product.toJson()),
+      },
+      where: 'product_id = ?',
+      whereArgs: [item.product.id],
+    );
   }
 
   Future<void> removeFromCart(String productId) async {
@@ -121,10 +137,13 @@ class DatabaseService {
 
   Future<void> addToFavorites(Product product) async {
     final db = await database;
-    await db.insert('favorites', {
-      'product_id': product.id,
-      'product_json': jsonEncode(product.toJson()),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+        'favorites',
+        {
+          'product_id': product.id,
+          'product_json': jsonEncode(product.toJson()),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> removeFromFavorites(String productId) async {

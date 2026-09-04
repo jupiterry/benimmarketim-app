@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/photocopy.dart';
 import '../services/photocopy_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/file_picker_widget.dart';
@@ -131,16 +130,16 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF5F8F5),
       appBar: AppBar(
         title: Text(
           'Fotokopi Hizmeti',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
-            color: Colors.black87,
+            color: Colors.white,
           ),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF075B39),
         elevation: 0,
         centerTitle: true,
         leading: InkWell(
@@ -149,14 +148,14 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: Colors.white.withValues(alpha: .12),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
+              border: Border.all(color: Colors.white.withValues(alpha: .18)),
             ),
             child: const Icon(
               Icons.arrow_back_ios_new,
               size: 16,
-              color: Colors.black87,
+              color: Colors.white,
             ),
           ),
         ),
@@ -209,6 +208,8 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildServiceHero(),
+                  const SizedBox(height: 20),
                   _buildFileSelectionCard(),
                   const SizedBox(height: 24),
                   _buildOptionsCard(),
@@ -227,6 +228,48 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
       ),
     );
   }
+
+  Widget _buildServiceHero() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF063F2B), Color(0xFF0E7A4A)],
+          ),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFB9EB67),
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: const Icon(Icons.print_rounded,
+                  color: Color(0xFF063F2B), size: 29),
+            ),
+            const SizedBox(width: 15),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Dosyanı gönder, biz hazırlayalım',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  Text(
+                      'PDF veya belgeni yükle; renk, boyut ve adet seçeneklerini belirle.',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white70, fontSize: 10, height: 1.45)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _buildFileSelectionCard() {
     return Container(

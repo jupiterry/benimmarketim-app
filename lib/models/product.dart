@@ -39,16 +39,20 @@ class Product {
 
   factory Product.fromJson(Map<String, dynamic> json) {
     final price = (json['price'] ?? 0.0).toDouble();
-    final discountedPrice = json['discountedPrice']?.toDouble();
-    final isDiscounted = json['isDiscounted'] ?? false;
-    
+    final apiActualPrice = (json['actualPrice'] as num?)?.toDouble();
+    final rawDiscountedPrice = (json['discountedPrice'] as num?)?.toDouble();
+    final actualPrice = apiActualPrice ?? rawDiscountedPrice ?? price;
+    final isDiscounted = (json['isDiscounted'] ?? false) || actualPrice < price;
+    final discountedPrice =
+        rawDiscountedPrice ?? (actualPrice < price ? actualPrice : null);
+
     return Product(
       id: json['_id'] ?? '',
       name: json['name'] ?? '',
       description: json['description'] ?? '',
       price: price,
-      originalPrice: isDiscounted && discountedPrice != null ? price : price,
-      actualPrice: isDiscounted && discountedPrice != null ? discountedPrice : price,
+      originalPrice: (json['originalPrice'] as num?)?.toDouble() ?? price,
+      actualPrice: actualPrice,
       image: json['image'] ?? '',
       category: json['category'] ?? '',
       categoryId: json['categoryId'] ?? json['category'] ?? '',
@@ -58,8 +62,10 @@ class Product {
       isFeatured: json['isFeatured'] ?? false,
       isHidden: json['isHidden'] ?? false,
       order: json['order'] ?? 0,
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      updatedAt: DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
+      createdAt:
+          DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
+      updatedAt:
+          DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
     );
   }
 
@@ -69,6 +75,8 @@ class Product {
       'name': name,
       'description': description,
       'price': price,
+      'originalPrice': originalPrice,
+      'actualPrice': actualPrice,
       'image': image,
       'category': category,
       'isDiscounted': isDiscounted,
@@ -82,7 +90,6 @@ class Product {
     };
   }
 
-  
   // İndirim yüzdesi hesapla
   double get discountPercentage {
     if (!isDiscounted || discountedPrice == null) return 0.0;

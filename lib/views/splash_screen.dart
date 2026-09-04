@@ -1,353 +1,199 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/version_check_service.dart';
-import 'widgets/update_dialog.dart';
-import 'widgets/custom_dialog.dart';
 import 'whats_new_screen.dart';
+import 'widgets/custom_dialog.dart';
+import 'widgets/update_dialog.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
-
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _logoScaleAnimation;
-  late Animation<double> _logoFadeAnimation;
-  late Animation<double> _textFadeAnimation;
-  late Animation<Offset> _textSlideAnimation;
-  late Animation<double> _circleScaleAnimation;
-
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation;
   String _version = '';
 
   @override
   void initState() {
     super.initState();
-    _getVersionInfo();
-
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 2500),
+    _animation = AnimationController(
       vsync: this,
-    );
-
-    // 1. Circle Expansion (Background reveal)
-    _circleScaleAnimation = Tween<double>(begin: 0.0, end: 20.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
-      ),
-    );
-
-    // 2. Logo Pop-in
-    _logoScaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.4, 0.7, curve: Curves.elasticOut),
-      ),
-    );
-
-    _logoFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.4, 0.6, curve: Curves.easeIn),
-      ),
-    );
-
-    // 3. Text Slide & Fade
-    _textFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.6, 0.9, curve: Curves.easeIn),
-      ),
-    );
-
-    _textSlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.5),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.6, 0.9, curve: Curves.easeOutCubic),
-      ),
-    );
-
-    _controller.forward();
-
-    // Navigate after checks
-    _checkVersionAndNavigate();
+      duration: const Duration(milliseconds: 1400),
+    )..forward();
+    _start();
   }
 
-  Future<void> _getVersionInfo() async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    if (mounted) {
-      setState(() {
-        _version = packageInfo.version;
-      });
-    }
-  }
-
-  Future<void> _checkVersionAndNavigate() async {
+  Future<void> _start() async {
+    final package = await PackageInfo.fromPlatform();
+    if (mounted) setState(() => _version = package.version);
     try {
-      final versionService = VersionCheckService();
-      // Servisten null dönmesi hata/internet yok demektir.
-      final result = await versionService.checkVersion();
-
+      final result = await VersionCheckService().checkVersion();
+      if (!mounted) return;
       if (result == null) {
-        // Hata durumu: İnternet yok veya sunucuya ulaşılamadı.
-        // KULLANICI İSTEĞİ: "kullanıcının interneti yoksa içeriğe erişemesin"
-        if (mounted) {
-          await CustomDialog.show(
-            context: context,
-            title: 'Bağlantı Hatası',
-            message: 'Uygulamayı kullanabilmek için internet bağlantısı ve sürüm kontrolü gereklidir. Lütfen internetinizi kontrol edip tekrar deneyin.',
-            confirmButtonText: 'Tekrar Dene',
-            showCancelButton: false, // Kapatılamaz
-            icon: Icons.wifi_off_rounded,
-            isDestructive: true,
-            onConfirm: () {
-              Navigator.pop(context); // Dialogu kapat
-              _checkVersionAndNavigate(); // Tekrar dene
-            },
-          );
-        }
-        return; // Akışı durdur, auth kontrolüne geçme (Tekrar dene ile loop olur)
+        await CustomDialog.show(
+          context: context,
+          title: 'Bağlantı kurulamadı',
+          message:
+              'Market bilgilerine ulaşamadık. İnternet bağlantınızı kontrol edip yeniden deneyin.',
+          confirmButtonText: 'Yeniden dene',
+          showCancelButton: false,
+          icon: Icons.wifi_off_rounded,
+          isDestructive: true,
+          onConfirm: () {
+            Navigator.pop(context);
+            _start();
+          },
+        );
+        return;
       }
-
       if (result.isUpdateRequired) {
-        if (mounted) {
-          showUpdateDialog(
-            context,
-            isMandatory: result.isMandatory && true,
-            storeUrl: result.storeUrl,
-            latestVersion: result.latestVersion,
-          );
-        }
-        
-        if (result.isMandatory) {
-          return; 
-        }
+        showUpdateDialog(
+          context,
+          isMandatory: result.isMandatory,
+          storeUrl: result.storeUrl,
+          latestVersion: result.latestVersion,
+        );
+        if (result.isMandatory) return;
       }
-      
-      _checkAuthAndNavigate();
-    } catch (e) {
-      debugPrint('Sürüm kontrolü hatası: $e');
-      // Beklenmedik hata (try-catch dışı) olsa bile güvenli tarafta kalıp tekrar ettirebiliriz
-      // Ancak sonsuz döngüden kaçınmak için burada da dialog göstermek en iyisi.
-      if (mounted) {
-          await CustomDialog.show(
-            context: context,
-            title: 'Hata',
-            message: 'Bir sorun oluştu. Lütfen tekrar deneyin.',
-            confirmButtonText: 'Tekrar Dene',
-            showCancelButton: false,
-            icon: Icons.error_outline_rounded,
-            isDestructive: true,
-            onConfirm: () {
-              Navigator.pop(context);
-              _checkVersionAndNavigate();
-            },
-          );
-      }
+      await _navigate();
+    } catch (_) {
+      if (mounted) await _navigate();
     }
   }
 
-  Future<void> _checkAuthAndNavigate() async {
+  Future<void> _navigate() async {
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final isFirstTime = prefs.getBool('isFirstTime') ?? true;
-
-      if (mounted) {
-        if (isFirstTime) {
-          context.go('/onboarding');
-        } else {
-          // What's New ekranı kontrolü
-          final shouldShowWhatsNew = await WhatsNewScreen.shouldShow(_version);
-          
-          if (shouldShowWhatsNew && mounted) {
-            // What's New ekranını modal olarak göster
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => WhatsNewScreen(
-                  currentVersion: _version,
-                  onComplete: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ),
-            );
-          }
-          
-          if (mounted) {
-            context.go('/home');
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error checking first time: $e');
-      if (mounted) {
-        context.go('/home');
-      }
+    if (prefs.getBool('isFirstTime') ?? true) {
+      context.go('/onboarding');
+      return;
     }
+    if (await WhatsNewScreen.shouldShow(_version) && mounted) {
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => WhatsNewScreen(
+          currentVersion: _version,
+          onComplete: () => Navigator.of(context).pop(),
+        ),
+      ));
+    }
+    if (mounted) context.go('/home');
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _animation.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Using a dark, premium background color initially
+    final fade = CurvedAnimation(parent: _animation, curve: Curves.easeOut);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A), // Dark background
+      backgroundColor: const Color(0xFF053D2A),
       body: Stack(
-        alignment: Alignment.center,
         children: [
-          // Expanding Circle Reveal (Vibrant Green)
-          AnimatedBuilder(
-            animation: _circleScaleAnimation,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _circleScaleAnimation.value,
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF00C639), // AppColors.successGreen
-                        Color(0xFF007022),
-                      ],
+          const Positioned.fill(child: _SplashBackdrop()),
+          SafeArea(
+            child: FadeTransition(
+              opacity: fade,
+              child: Stack(
+                children: [
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 0, 28, 58),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ScaleTransition(
+                            scale: Tween<double>(begin: .72, end: 1).animate(
+                              CurvedAnimation(
+                                parent: _animation,
+                                curve: Curves.easeOutBack,
+                              ),
+                            ),
+                            child: Container(
+                              width: 118,
+                              height: 118,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFB9EB67),
+                                borderRadius: BorderRadius.circular(36),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x55000000),
+                                    blurRadius: 38,
+                                    offset: Offset(0, 18),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.storefront_rounded,
+                                size: 58,
+                                color: Color(0xFF06452E),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          Text(
+                            'BENİM MARKETİM',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.manrope(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 9),
+                          Text(
+                            'İhtiyacın olan her şey, birkaç dokunuş uzağında.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              color: Colors.white.withValues(alpha: .7),
+                              fontSize: 13,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-
-          // Content
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Logo
-                AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _logoScaleAnimation.value,
-                      child: Opacity(
-                        opacity: _logoFadeAnimation.value,
-                        child: Container(
-                          width: 150,
-                          height: 150,
-                          padding: const EdgeInsets.all(25),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 30,
-                                spreadRadius: 5,
-                                offset: const Offset(0, 15),
-                              ),
-                            ],
-                          ),
-                          child: Image.asset(
-                            'assets/logo.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 40),
-
-                // Text
-                SlideTransition(
-                  position: _textSlideAnimation,
-                  child: FadeTransition(
-                    opacity: _textFadeAnimation,
+                  Positioned(
+                    bottom: 22,
+                    left: 0,
+                    right: 0,
                     child: Column(
                       children: [
-                        Text(
-                          'Benim Marketim',
-                          style: GoogleFonts.poppins(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 1.0,
-                            shadows: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 10,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
+                        const SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: Color(0xFFB9EB67),
+                            backgroundColor: Color(0x22FFFFFF),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(30),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            'Bir sipariş kadar yakınız.',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.white.withOpacity(0.9),
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 0.5,
-                            ),
+                        const SizedBox(height: 14),
+                        Text(
+                          _version.isEmpty
+                              ? 'Market hazırlanıyor'
+                              : 'v$_version',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: .45),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // Version Info
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: FadeTransition(
-              opacity: _textFadeAnimation,
-              child: Center(
-                child: Text(
-                  'v$_version',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.white.withOpacity(0.5),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+                ],
               ),
             ),
           ),
@@ -355,4 +201,27 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
   }
+}
+
+class _SplashBackdrop extends StatelessWidget {
+  const _SplashBackdrop();
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(painter: _BackdropPainter());
+}
+
+class _BackdropPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lime = Paint()
+      ..color = const Color(0xFFB9EB67).withValues(alpha: .09);
+    final green = Paint()
+      ..color = const Color(0xFF15965C).withValues(alpha: .25);
+    canvas.drawCircle(Offset(size.width * .9, size.height * .08), 150, lime);
+    canvas.drawCircle(Offset(size.width * .05, size.height * .78), 210, green);
+    canvas.drawCircle(Offset(size.width * .85, size.height * .7), 70, lime);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

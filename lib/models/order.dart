@@ -1,11 +1,10 @@
-import 'product.dart';
-
 class Order {
   final String id;
   final String userId;
   final List<OrderProduct> products;
   final double totalAmount;
-  final String status; // 'Hazırlanıyor', 'Yolda', 'Teslim Edildi', 'İptal Edildi'
+  final String
+      status; // 'Hazırlanıyor', 'Yolda', 'Teslim Edildi', 'İptal Edildi'
   final String note;
   final String city;
   final String deliveryPoint;
@@ -31,11 +30,12 @@ class Order {
 
   factory Order.fromJson(Map<String, dynamic> json) {
     return Order(
-      id: json['_id'] ?? json['id'] ?? '',
+      id: (json['_id'] ?? json['id'] ?? json['orderId'] ?? '').toString(),
       userId: json['userId'] ?? '',
       products: (json['products'] as List<dynamic>?)
-          ?.map((product) => OrderProduct.fromJson(product))
-          .toList() ?? [],
+              ?.map((product) => OrderProduct.fromJson(product))
+              .toList() ??
+          [],
       totalAmount: (json['totalAmount'] ?? 0.0).toDouble(),
       status: json['status'] ?? 'Hazırlanıyor',
       note: json['note'] ?? '',
@@ -43,10 +43,10 @@ class Order {
       deliveryPoint: json['deliveryPoint'] ?? '',
       deliveryPointName: json['deliveryPointName'] ?? '',
       phone: json['phone'] ?? '',
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      updatedAt: json['updatedAt'] != null 
-          ? DateTime.parse(json['updatedAt']) 
-          : null,
+      createdAt:
+          DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
+      updatedAt:
+          json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
     );
   }
 
@@ -173,22 +173,23 @@ class CreateOrderRequest {
       'deliveryPointName': deliveryPointName,
       'note': note,
     };
-    
+
     // Kupon bilgisi varsa ekle
     if (couponCode != null && couponCode!.isNotEmpty) {
       json['couponCode'] = couponCode!;
     }
     if (discountAmount != null && discountAmount! > 0) {
-      json['couponDiscount'] = discountAmount!; // Backend 'couponDiscount' bekliyor
-      json['subtotalAmount'] = totalAmount + discountAmount!; // İndirim öncesi ara toplam
+      json['couponDiscount'] =
+          discountAmount!; // Backend 'couponDiscount' bekliyor
+      json['subtotalAmount'] =
+          totalAmount + discountAmount!; // İndirim öncesi ara toplam
     }
-    
+
     // Cihaz bilgisi varsa ekle
     if (device != null) {
       json['device'] = device;
     }
-    
+
     return json;
   }
 }
-

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/theme_service.dart';
-import '../models/search_result.dart';
 import '../views/widgets/product_card.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AdvancedSearchPage extends StatefulWidget {
   const AdvancedSearchPage({super.key});
@@ -26,11 +26,41 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   double _minPrice = 0;
   double _maxPrice = 1000;
   String _sortBy = 'createdAt';
+  Timer? _debounce;
+  List<String> _recentSearches = [];
 
   @override
   void initState() {
     super.initState();
     _loadSuggestions();
+    _loadRecentSearches();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted)
+      setState(() => _recentSearches =
+          prefs.getStringList('recent_product_searches') ?? []);
+  }
+
+  Future<void> _saveRecentSearch(String query) async {
+    final normalized = query.trim();
+    if (normalized.isEmpty) return;
+    final updated = [
+      normalized,
+      ..._recentSearches
+          .where((item) => item.toLowerCase() != normalized.toLowerCase())
+    ].take(6).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('recent_product_searches', updated);
+    if (mounted) setState(() => _recentSearches = updated);
   }
 
   // Arama önerileri yükle
@@ -79,6 +109,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
         _searchResults = products;
         _isLoading = false;
       });
+      await _saveRecentSearch(query);
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -179,8 +210,11 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       child: TextField(
         controller: _searchController,
         onChanged: (value) {
-          if (value.length >= 2) {
-            _performSearch(value);
+          setState(() {});
+          _debounce?.cancel();
+          if (value.trim().length >= 2) {
+            _debounce = Timer(
+                const Duration(milliseconds: 380), () => _performSearch(value));
           }
         },
         onSubmitted: (value) {
@@ -241,6 +275,22 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Kategori Filtresi
+          Row(
+            children: [
+              Text('Aramayı daralt',
+                  style: GoogleFonts.poppins(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _resetFilters,
+                icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                label: const Text('Sıfırla'),
+                style: TextButton.styleFrom(
+                    foregroundColor: AppColors.successGreen),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Icon(Icons.category_outlined,
@@ -493,9 +543,9 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
 
     if (_searchResults.isEmpty) {
       return SliverFillRemaining(
-        child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(28, 65, 28, 32),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(20),
@@ -508,7 +558,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Gelişmiş Arama',
+                'Aradığını kolayca bul',
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -517,38 +567,112 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Detaylı filtreleme ile aradığınızı bulun',
+                'Ürün, marka veya kategori yaz; filtrelerle sonucu anında daralt.',
                 style:
                     GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
               ),
+              const SizedBox(height: 34),
+              if (_recentSearches.isNotEmpty) ...[
+                Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Son aramaların',
+                        style: GoogleFonts.poppins(
+                            fontSize: 14, fontWeight: FontWeight.w700))),
+                const SizedBox(height: 10),
+                Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _recentSearches.map(_buildSearchChip).toList()),
+              ],
+              if (_suggestions.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Kategorilerde keşfet',
+                        style: GoogleFonts.poppins(
+                            fontSize: 14, fontWeight: FontWeight.w700))),
+                const SizedBox(height: 10),
+                Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children:
+                        _suggestions.take(8).map(_buildCategoryChip).toList()),
+              ],
             ],
           ),
         ),
       );
     }
 
-    return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.62,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-        ),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final product = _searchResults[index];
-            return ProductCard(
-              product: product,
-              onTap: () {
-                context.push('/product', extra: product);
-              },
-            );
-          },
-          childCount: _searchResults.length,
+    return SliverMainAxisGroup(slivers: [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 10, 22, 12),
+          child: Text('${_searchResults.length} ürün bulundu',
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600])),
         ),
       ),
-    );
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.62,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final product = _searchResults[index];
+              return ProductCard(
+                product: product,
+                onTap: () {
+                  context.push('/product', extra: product);
+                },
+              );
+            },
+            childCount: _searchResults.length,
+          ),
+        ),
+      ),
+    ]);
   }
+
+  void _resetFilters() {
+    setState(() {
+      _selectedCategory = '';
+      _minPrice = 0;
+      _maxPrice = 1000;
+      _sortBy = 'createdAt';
+    });
+    if (_searchController.text.trim().isNotEmpty)
+      _performSearch(_searchController.text);
+  }
+
+  Widget _buildSearchChip(String text) => ActionChip(
+        avatar: const Icon(Icons.history_rounded, size: 16),
+        label: Text(text,
+            style:
+                GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
+        onPressed: () {
+          _searchController.text = text;
+          _performSearch(text);
+          setState(() {});
+        },
+      );
+
+  Widget _buildCategoryChip(String text) => ActionChip(
+        avatar: const Icon(Icons.grid_view_rounded, size: 15),
+        label: Text(text,
+            style:
+                GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600)),
+        onPressed: () {
+          setState(() => _selectedCategory = text);
+          _searchController.text = text;
+          _performSearch(text);
+        },
+      );
 }

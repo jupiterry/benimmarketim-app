@@ -1,175 +1,223 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/theme_service.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key});
-
   @override
   State<OnboardingPage> createState() => _OnboardingPageState();
 }
 
 class _OnboardingPageState extends State<OnboardingPage> {
-  final PageController _pageController = PageController();
-  int _currentPage = 0;
-
-  final List<OnboardingItem> _items = [
-    OnboardingItem(
-      title: 'Hızlı Teslimat',
+  final _controller = PageController();
+  int _page = 0;
+  static const _items = [
+    (
+      icon: Icons.shopping_basket_rounded,
+      eyebrow: 'KOLAY ALIŞVERİŞ',
+      title: 'Marketin artık cebinde',
       description:
-          'Siparişleriniz dakikalar içinde kapınızda. Beklemek yok, zaman kaybetmek yok.',
-      icon: Icons.rocket_launch_rounded,
-      color: const Color(0xFF00C639),
+          'Aradığını hızla bul, sepetini kolayca hazırla ve siparişini birkaç dokunuşla tamamla.',
+      color: Color(0xFFB9EB67),
     ),
-    OnboardingItem(
-      title: 'Taze Ürünler',
+    (
+      icon: Icons.local_shipping_rounded,
+      eyebrow: 'HIZLI TESLİMAT',
+      title: 'Siparişini anlık takip et',
       description:
-          'Her gün yenilenen stoklarımızla en taze meyve, sebze ve ürünler sizi bekliyor.',
-      icon: Icons.eco_rounded,
-      color: const Color(0xFF009E2D),
+          'Siparişinin alındığı andan teslimata kadar tüm adımları tek ekrandan gör.',
+      color: Color(0xFFFFA14A),
     ),
-    OnboardingItem(
-      title: 'Güvenli Ödeme',
-      description: 'Kapıda/ Nakit, ödeme seçenekleriyle güvenli alışveriş.',
-      icon: Icons.security_rounded,
-      color: const Color(0xFF007022),
+    (
+      icon: Icons.support_agent_rounded,
+      eyebrow: 'YANINDAYIZ',
+      title: 'İhtiyacında bize yaz',
+      description:
+          'Canlı destek, fotokopi hizmeti ve sana özel fırsatlar her zaman kolayca ulaşabileceğin yerde.',
+      color: Color(0xFF75D7C1),
     ),
   ];
+
+  Future<void> _finish() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isFirstTime', false);
+    if (mounted) context.go('/home');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF6F8F4),
       body: SafeArea(
         child: Column(
           children: [
-            // Skip Button
-            Align(
-              alignment: Alignment.topRight,
-              child: TextButton(
-                onPressed: _finishOnboarding,
-                child: Text(
-                  'Atla',
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w600,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 12, 14, 0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0B6541),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.storefront_rounded,
+                        color: Colors.white, size: 22),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Text('Benim Marketim',
+                      style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF153126))),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _finish,
+                    child: Text('Atla',
+                        style: GoogleFonts.inter(
+                            color: const Color(0xFF557064),
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ],
               ),
             ),
-
-            // PageView
             Expanded(
               child: PageView.builder(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentPage = index;
-                  });
-                },
+                controller: _controller,
                 itemCount: _items.length,
-                itemBuilder: (context, index) {
+                onPageChanged: (value) => setState(() => _page = value),
+                itemBuilder: (_, index) {
                   final item = _items[index];
                   return Padding(
-                    padding: const EdgeInsets.all(32.0),
+                    padding: const EdgeInsets.fromLTRB(24, 30, 24, 16),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Icon Circle
-                        Container(
-                          padding: const EdgeInsets.all(32),
-                          decoration: BoxDecoration(
-                            color: item.color.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            item.icon,
-                            size: 80,
-                            color: item.color,
+                        Expanded(
+                          child: Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF073F2C),
+                              borderRadius: BorderRadius.circular(34),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x180A3F2B),
+                                  blurRadius: 30,
+                                  offset: Offset(0, 16),
+                                ),
+                              ],
+                            ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Positioned(
+                                  right: -65,
+                                  top: -55,
+                                  child: Container(
+                                    width: 210,
+                                    height: 210,
+                                    decoration: BoxDecoration(
+                                      color: item.color.withValues(alpha: .14),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: 174,
+                                  height: 174,
+                                  decoration: BoxDecoration(
+                                    color: item.color,
+                                    borderRadius: BorderRadius.circular(52),
+                                  ),
+                                  child: Icon(item.icon,
+                                      size: 82, color: const Color(0xFF073F2C)),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 48),
-                        Text(
-                          item.title,
-                          style: GoogleFonts.poppins(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          item.description,
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                            height: 1.5,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
+                        const SizedBox(height: 32),
+                        Text(item.eyebrow,
+                            style: GoogleFonts.inter(
+                                color: const Color(0xFF168454),
+                                fontSize: 11,
+                                letterSpacing: 1.5,
+                                fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 10),
+                        Text(item.title,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.manrope(
+                                color: const Color(0xFF12271E),
+                                fontSize: 29,
+                                height: 1.1,
+                                fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 12),
+                        Text(item.description,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                                color: const Color(0xFF718078),
+                                fontSize: 14,
+                                height: 1.55)),
                       ],
                     ),
                   );
                 },
               ),
             ),
-
-            // Bottom Controls
             Padding(
-              padding: const EdgeInsets.all(32.0),
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Dots Indicator
-                  Row(
-                    children: List.generate(
-                      _items.length,
-                      (index) => AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: const EdgeInsets.only(right: 8),
-                        height: 8,
-                        width: _currentPage == index ? 24 : 8,
-                        decoration: BoxDecoration(
-                          color: _currentPage == index
-                              ? AppColors.successGreen
-                              : Colors.grey[300],
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+                  ...List.generate(
+                    _items.length,
+                    (index) => AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      width: index == _page ? 28 : 8,
+                      height: 8,
+                      margin: const EdgeInsets.only(right: 7),
+                      decoration: BoxDecoration(
+                        color: index == _page
+                            ? const Color(0xFF0B7549)
+                            : const Color(0xFFD5DDD8),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
-
-                  // Next/Finish Button
-                  ElevatedButton(
+                  const Spacer(),
+                  FilledButton(
                     onPressed: () {
-                      if (_currentPage == _items.length - 1) {
-                        _finishOnboarding();
+                      if (_page == _items.length - 1) {
+                        _finish();
                       } else {
-                        _pageController.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
+                        _controller.nextPage(
+                          duration: const Duration(milliseconds: 350),
+                          curve: Curves.easeOutCubic,
                         );
                       }
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.successGreen,
-                      foregroundColor: Colors.white,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF0B7549),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 16,
-                      ),
+                          horizontal: 24, vertical: 15),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
+                          borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: Text(
-                      _currentPage == _items.length - 1 ? 'Başla' : 'İleri',
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Row(
+                      children: [
+                        Text(
+                            _page == _items.length - 1
+                                ? 'Alışverişe başla'
+                                : 'Devam',
+                            style:
+                                GoogleFonts.inter(fontWeight: FontWeight.w800)),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, size: 18),
+                      ],
                     ),
                   ),
                 ],
@@ -180,26 +228,4 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ),
     );
   }
-
-  Future<void> _finishOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isFirstTime', false);
-    if (mounted) {
-      context.go('/home');
-    }
-  }
-}
-
-class OnboardingItem {
-  final String title;
-  final String description;
-  final IconData icon;
-  final Color color;
-
-  OnboardingItem({
-    required this.title,
-    required this.description,
-    required this.icon,
-    required this.color,
-  });
 }

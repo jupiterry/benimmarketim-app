@@ -12,6 +12,20 @@ class Coupon {
   final bool isReferralCoupon;
   final String? userId;
   final bool isUsed;
+  final int remainingUses;
+  final int expiresInSeconds;
+  final int? usageLimit;
+  final int usageCount;
+  final int userUsageLimit;
+  final int? remainingGlobalUses;
+  final List<String> deliveryPoints;
+  final List<String> channels;
+  final List<String> applicableCategories;
+  final List<int> validDays;
+  final String startTime;
+  final String endTime;
+  final bool firstOrderOnly;
+  final bool newUsersOnly;
 
   Coupon({
     required this.id,
@@ -26,6 +40,20 @@ class Coupon {
     required this.isReferralCoupon,
     this.userId,
     this.isUsed = false,
+    this.remainingUses = 1,
+    this.expiresInSeconds = 0,
+    this.usageLimit,
+    this.usageCount = 0,
+    this.userUsageLimit = 1,
+    this.remainingGlobalUses,
+    this.deliveryPoints = const [],
+    this.channels = const [],
+    this.applicableCategories = const [],
+    this.validDays = const [],
+    this.startTime = '00:00',
+    this.endTime = '23:59',
+    this.firstOrderOnly = false,
+    this.newUsersOnly = false,
   });
 
   factory Coupon.fromJson(Map<String, dynamic> json) {
@@ -44,6 +72,23 @@ class Coupon {
       isReferralCoupon: json['isReferralCoupon'] ?? false,
       userId: json['userId'],
       isUsed: json['isUsed'] ?? false,
+      remainingUses: (json['remainingUses'] as num?)?.toInt() ?? 1,
+      expiresInSeconds: (json['expiresInSeconds'] as num?)?.toInt() ?? 0,
+      usageLimit: (json['usageLimit'] as num?)?.toInt(),
+      usageCount: (json['usageCount'] as num?)?.toInt() ?? 0,
+      userUsageLimit: (json['userUsageLimit'] as num?)?.toInt() ?? 1,
+      remainingGlobalUses: (json['remainingGlobalUses'] as num?)?.toInt(),
+      deliveryPoints: List<String>.from(json['deliveryPoints'] ?? const []),
+      channels: List<String>.from(json['channels'] ?? const []),
+      applicableCategories:
+          List<String>.from(json['applicableCategories'] ?? const []),
+      validDays: (json['validDays'] as List<dynamic>? ?? const [])
+          .map((day) => (day as num).toInt())
+          .toList(),
+      startTime: json['startTime'] ?? '00:00',
+      endTime: json['endTime'] ?? '23:59',
+      firstOrderOnly: json['firstOrderOnly'] ?? false,
+      newUsersOnly: json['newUsersOnly'] ?? false,
     );
   }
 
@@ -61,6 +106,20 @@ class Coupon {
       'isReferralCoupon': isReferralCoupon,
       'userId': userId,
       'isUsed': isUsed,
+      'remainingUses': remainingUses,
+      'expiresInSeconds': expiresInSeconds,
+      'usageLimit': usageLimit,
+      'usageCount': usageCount,
+      'userUsageLimit': userUsageLimit,
+      'remainingGlobalUses': remainingGlobalUses,
+      'deliveryPoints': deliveryPoints,
+      'channels': channels,
+      'applicableCategories': applicableCategories,
+      'validDays': validDays,
+      'startTime': startTime,
+      'endTime': endTime,
+      'firstOrderOnly': firstOrderOnly,
+      'newUsersOnly': newUsersOnly,
     };
   }
 

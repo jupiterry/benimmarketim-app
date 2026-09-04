@@ -1,11 +1,13 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart';
-import '../viewmodels/chat_viewmodel.dart';
-import '../models/chat_model.dart';
-import '../services/theme_service.dart';
 import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import '../models/chat_model.dart';
+import '../viewmodels/chat_viewmodel.dart';
+import 'widgets/market_palette.dart';
 
 class ChatDetailPage extends StatefulWidget {
   final String chatId;
@@ -21,35 +23,40 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   Timer? _typingTimer;
+  ChatViewModel? _chatViewModel;
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
     _messageController.addListener(_onMessageChanged);
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final viewModel = context.read<ChatViewModel>();
-      viewModel.connectSocket();
-      _loadChatAndJoin(viewModel);
+      _chatViewModel = viewModel;
+      await viewModel.connectSocket();
+      await _loadChatAndJoin(viewModel);
     });
   }
-  
+
   Future<void> _loadChatAndJoin(ChatViewModel viewModel) async {
-    if (viewModel.activeChat?.id != widget.chatId || viewModel.messages.isEmpty) {
-      final chat = viewModel.chats.firstWhere(
-        (c) => c.id == widget.chatId,
-        orElse: () => ChatModel(
-          id: widget.chatId,
-          type: 'general',
-          status: 'active',
-          lastMessage: '',
-          lastMessageAt: DateTime.now(),
-          lastMessageSender: '',
-          userUnreadCount: 0,
-        ),
-      );
-      await viewModel.openChat(chat);
+    if (viewModel.activeChat?.id == widget.chatId &&
+        viewModel.messages.isNotEmpty) {
+      return;
     }
+
+    final chat = viewModel.chats.firstWhere(
+      (item) => item.id == widget.chatId,
+      orElse: () => ChatModel(
+        id: widget.chatId,
+        type: 'general',
+        status: 'active',
+        lastMessage: '',
+        lastMessageAt: DateTime.now(),
+        lastMessageSender: '',
+        userUnreadCount: 0,
+      ),
+    );
+    await viewModel.openChat(chat);
   }
 
   @override
@@ -59,81 +66,81 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     _scrollController.dispose();
     _focusNode.dispose();
     _typingTimer?.cancel();
-    
-    // Admin'e kullanıcının çıktığını bildir (context.read dispose'da güvenilmez olabilir)
-    try {
-      context.read<ChatViewModel>().closeActiveChat();
-    } catch (e) {
-      print('ChatDetailPage: dispose error: $e');
-    }
-    
+    _chatViewModel?.closeActiveChat();
     super.dispose();
   }
 
   void _onMessageChanged() {
-    final viewModel = context.read<ChatViewModel>();
-    
-    if (_messageController.text.isNotEmpty) {
-      viewModel.sendTyping();
-      
-      _typingTimer?.cancel();
-      _typingTimer = Timer(const Duration(seconds: 2), () {
-        viewModel.sendStopTyping();
-      });
+    final viewModel = _chatViewModel;
+    if (viewModel == null) return;
+
+    if (_messageController.text.trim().isEmpty) {
+      viewModel.sendStopTyping();
+      return;
     }
+
+    viewModel.sendTyping();
+    _typingTimer?.cancel();
+    _typingTimer = Timer(
+      const Duration(seconds: 2),
+      viewModel.sendStopTyping,
+    );
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      });
-    }
+  void _scheduleScrollToBottom(int messageCount) {
+    if (messageCount == _lastMessageCount) return;
+    _lastMessageCount = messageCount;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: _buildModernAppBar(),
+      backgroundColor: MarketPalette.canvas,
+      appBar: _buildAppBar(),
       body: Column(
         children: [
           Expanded(
             child: Consumer<ChatViewModel>(
               builder: (context, viewModel, _) {
                 if (viewModel.isLoading && viewModel.messages.isEmpty) {
-                  return _buildLoadingState();
+                  return const _MessagesLoading();
                 }
-
                 if (viewModel.messages.isEmpty) {
-                  return _buildEmptyMessagesState();
+                  return const _EmptyConversation();
                 }
 
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _scrollToBottom();
-                });
+                _scheduleScrollToBottom(
+                  viewModel.messages.length + (viewModel.isTyping ? 1 : 0),
+                );
 
                 return ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: viewModel.messages.length + (viewModel.isTyping ? 1 : 0),
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
+                  itemCount:
+                      viewModel.messages.length + (viewModel.isTyping ? 1 : 0),
                   itemBuilder: (context, index) {
-                    if (index == viewModel.messages.length && viewModel.isTyping) {
-                      return _buildTypingIndicator();
+                    if (index == viewModel.messages.length) {
+                      return const _TypingIndicator();
                     }
-                    
+
                     final message = viewModel.messages[index];
                     final showDate = index == 0 ||
-                        !_isSameDay(message.createdAt, viewModel.messages[index - 1].createdAt);
-                    
+                        !_isSameDay(
+                          message.createdAt,
+                          viewModel.messages[index - 1].createdAt,
+                        );
                     return Column(
                       children: [
-                        if (showDate) _buildDateDivider(message.createdAt),
-                        _ModernMessageBubble(message: message),
+                        if (showDate) _DateDivider(date: message.createdAt),
+                        _MessageBubble(message: message),
                       ],
                     );
                   },
@@ -141,13 +148,12 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               },
             ),
           ),
-
           Consumer<ChatViewModel>(
             builder: (context, viewModel, _) {
               if (viewModel.activeChat?.status == 'closed') {
-                return _buildClosedChatBar();
+                return const _ClosedChatBar();
               }
-              return _buildModernMessageInput(context, viewModel);
+              return _buildMessageInput(viewModel);
             },
           ),
         ],
@@ -155,372 +161,189 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     );
   }
 
-  PreferredSizeWidget _buildModernAppBar() {
+  PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: Colors.white,
+      toolbarHeight: 76,
+      backgroundColor: MarketPalette.greenDeep,
+      surfaceTintColor: MarketPalette.greenDeep,
       elevation: 0,
-      leading: GestureDetector(
-        onTap: () => context.pop(),
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            size: 18,
-            color: Colors.black87,
+      leadingWidth: 62,
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 14),
+        child: Material(
+          color: Colors.white.withValues(alpha: .11),
+          borderRadius: BorderRadius.circular(15),
+          child: InkWell(
+            onTap: () => context.pop(),
+            borderRadius: BorderRadius.circular(15),
+            child: const Icon(
+              Icons.arrow_back_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
           ),
         ),
       ),
+      titleSpacing: 10,
       title: Consumer<ChatViewModel>(
         builder: (context, viewModel, _) {
           final chat = viewModel.activeChat;
-          final isTyping = viewModel.isTyping;
-          
+          final isClosed = chat?.status == 'closed';
           return Row(
             children: [
               Container(
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.successGreen.withOpacity(0.2),
-                      AppColors.successGreen.withOpacity(0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
+                  color: MarketPalette.lime,
+                  borderRadius: BorderRadius.circular(15),
                 ),
                 child: const Icon(
                   Icons.support_agent_rounded,
-                  color: AppColors.successGreen,
+                  color: MarketPalette.greenDeep,
                   size: 24,
                 ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    chat?.type == 'order' ? 'Sipariş Desteği' : 'Canlı Destek',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      chat?.type == 'order'
+                          ? 'Sipariş Desteği'
+                          : 'Canlı Destek',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.manrope(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: isTyping 
-                              ? Colors.orange
-                              : chat?.status == 'closed' 
-                                  ? Colors.grey 
-                                  : AppColors.successGreen,
-                          shape: BoxShape.circle,
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: viewModel.isTyping
+                                ? MarketPalette.orange
+                                : isClosed
+                                    ? const Color(0xFFA8B1AB)
+                                    : MarketPalette.lime,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        isTyping
-                            ? 'Yazıyor...'
-                            : chat?.status == 'closed' 
-                                ? 'Sohbet kapatıldı' 
-                                : 'Çevrimiçi',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: isTyping 
-                              ? Colors.orange
-                              : chat?.status == 'closed' 
-                                  ? Colors.grey 
-                                  : AppColors.successGreen,
-                          fontWeight: FontWeight.w500,
+                        const SizedBox(width: 6),
+                        Text(
+                          viewModel.isTyping
+                              ? 'Yanıt yazılıyor...'
+                              : isClosed
+                                  ? 'Görüşme kapatıldı'
+                                  : 'Destek görüşmesi açık',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: .68),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           );
         },
       ),
-      centerTitle: false,
     );
   }
 
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.successGreen),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Mesajlar yükleniyor...',
-            style: GoogleFonts.poppins(color: Colors.grey[500]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyMessagesState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppColors.successGreen.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 48,
-                color: AppColors.successGreen,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Sohbeti Başlatın!',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Sorularınızı yazarak\ndestek ekibimize ulaşın.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[500],
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDateDivider(DateTime date) {
-    final now = DateTime.now();
-    final isToday = date.day == now.day && date.month == now.month && date.year == now.year;
-    final yesterday = now.subtract(const Duration(days: 1));
-    final isYesterday = date.day == yesterday.day && date.month == yesterday.month && date.year == yesterday.year;
-    
-    String dateText;
-    if (isToday) {
-      dateText = 'Bugün';
-    } else if (isYesterday) {
-      dateText = 'Dün';
-    } else {
-      dateText = '${date.day}/${date.month}/${date.year}';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: Colors.grey[300])),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              dateText,
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey[500],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(child: Divider(color: Colors.grey[300])),
-        ],
-      ),
-    );
-  }
-
-  bool _isSameDay(DateTime a, DateTime b) {
-    return a.day == b.day && a.month == b.month && a.year == b.year;
-  }
-
-  Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8, bottom: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.successGreen.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.support_agent_rounded,
-              color: AppColors.successGreen,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (index) => _buildDot(index)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDot(int index) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.3, end: 1.0),
-        duration: Duration(milliseconds: 400 + (index * 150)),
-        curve: Curves.easeInOut,
-        builder: (context, value, child) {
-          return Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: Colors.grey[500]?.withOpacity(value),
-              shape: BoxShape.circle,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildClosedChatBar() {
+  Widget _buildMessageInput(ChatViewModel viewModel) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        border: Border(top: BorderSide(color: Colors.grey[300]!)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.lock_outline_rounded, size: 18, color: Colors.grey[500]),
-          const SizedBox(width: 8),
-          Text(
-            'Bu sohbet kapatılmış',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[500],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModernMessageInput(BuildContext context, ChatViewModel viewModel) {
-    return Container(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 12,
-        bottom: MediaQuery.of(context).padding.bottom + 12,
+      padding: EdgeInsets.fromLTRB(
+        14,
+        11,
+        14,
+        MediaQuery.paddingOf(context).bottom + 11,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[200]!)),
+        border: const Border(top: BorderSide(color: MarketPalette.line)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
+            color: MarketPalette.ink.withValues(alpha: .06),
+            blurRadius: 20,
+            offset: const Offset(0, -7),
           ),
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
             child: Container(
+              constraints: const BoxConstraints(minHeight: 52),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(24),
+                color: MarketPalette.canvas,
+                border: Border.all(color: MarketPalette.line),
+                borderRadius: BorderRadius.circular(18),
               ),
               child: TextField(
                 controller: _messageController,
                 focusNode: _focusNode,
-                textCapitalization: TextCapitalization.sentences,
-                maxLines: 4,
                 minLines: 1,
-                style: GoogleFonts.poppins(fontSize: 15),
+                maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.newline,
+                style: GoogleFonts.inter(
+                  color: MarketPalette.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
                 decoration: InputDecoration(
-                  hintText: 'Mesajınızı yazın...',
-                  hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
+                  hintText: 'Mesajını yaz...',
+                  hintStyle: GoogleFonts.inter(
+                    color: MarketPalette.muted.withValues(alpha: .65),
+                    fontSize: 13,
                   ),
                   border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                 ),
-                onSubmitted: (_) => _sendMessage(viewModel),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: viewModel.isSending ? null : () => _sendMessage(viewModel),
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: viewModel.isSending 
-                      ? [Colors.grey[400]!, Colors.grey[500]!]
-                      : [AppColors.successGreen, const Color(0xFF1DB954)],
-                ),
-                borderRadius: BorderRadius.circular(25),
-                boxShadow: viewModel.isSending ? null : [
-                  BoxShadow(
-                    color: AppColors.successGreen.withOpacity(0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: viewModel.isSending
-                  ? const Padding(
-                      padding: EdgeInsets.all(15),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+          const SizedBox(width: 10),
+          Material(
+            color: viewModel.isSending
+                ? const Color(0xFFAAB5AE)
+                : MarketPalette.green,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              onTap: viewModel.isSending ? null : () => _sendMessage(viewModel),
+              borderRadius: BorderRadius.circular(18),
+              child: SizedBox(
+                width: 54,
+                height: 54,
+                child: viewModel.isSending
+                    ? const Padding(
+                        padding: EdgeInsets.all(17),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.arrow_upward_rounded,
                         color: Colors.white,
+                        size: 23,
                       ),
-                    )
-                  : const Icon(
-                      Icons.send_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+              ),
             ),
           ),
         ],
@@ -534,27 +357,38 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
 
     _messageController.clear();
     viewModel.sendStopTyping();
-    
     final success = await viewModel.sendMessage(content);
-    
-    if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    if (!mounted || success) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
         SnackBar(
-          content: Text('Mesaj gönderilemedi', style: GoogleFonts.poppins()),
-          backgroundColor: Colors.red[400],
+          content: Text(
+            'Mesaj gönderilemedi. Tekrar deneyebilirsin.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: MarketPalette.red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          margin: const EdgeInsets.all(18),
         ),
       );
-    }
+  }
+
+  bool _isSameDay(DateTime first, DateTime second) {
+    return first.year == second.year &&
+        first.month == second.month &&
+        first.day == second.day;
   }
 }
 
-// Modern Message Bubble
-class _ModernMessageBubble extends StatelessWidget {
+class _MessageBubble extends StatelessWidget {
   final MessageModel message;
 
-  const _ModernMessageBubble({required this.message});
+  const _MessageBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -566,16 +400,18 @@ class _ModernMessageBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
             decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(20),
+              color: const Color(0xFFE9EEE9),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               message.content,
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.grey[600],
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: MarketPalette.muted,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -585,98 +421,91 @@ class _ModernMessageBubble extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.only(
-        left: isUser ? 60 : 0,
-        right: isUser ? 0 : 60,
-        bottom: 8,
+        left: isUser ? 58 : 0,
+        right: isUser ? 0 : 58,
+        bottom: 10,
       ),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser) ...[
             Container(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: AppColors.successGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+                color: MarketPalette.greenSoft,
+                borderRadius: BorderRadius.circular(11),
               ),
               child: const Icon(
                 Icons.support_agent_rounded,
-                size: 20,
-                color: AppColors.successGreen,
+                color: MarketPalette.greenDark,
+                size: 18,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
           ],
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(14, 11, 14, 8),
               decoration: BoxDecoration(
-                gradient: isUser
-                    ? const LinearGradient(
-                        colors: [AppColors.successGreen, Color(0xFF1DB954)],
-                      )
-                    : null,
-                color: isUser ? null : Colors.white,
+                color: isUser ? MarketPalette.greenDark : Colors.white,
+                border: isUser ? null : Border.all(color: MarketPalette.line),
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(isUser ? 20 : 6),
-                  bottomRight: Radius.circular(isUser ? 6 : 20),
+                  topLeft: const Radius.circular(19),
+                  topRight: const Radius.circular(19),
+                  bottomLeft: Radius.circular(isUser ? 19 : 5),
+                  bottomRight: Radius.circular(isUser ? 5 : 19),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (!isUser && message.senderName.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        message.senderName,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.successGreen,
-                        ),
+                  if (!isUser && message.senderName.isNotEmpty) ...[
+                    Text(
+                      message.senderName,
+                      style: GoogleFonts.inter(
+                        color: MarketPalette.green,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                  ],
                   Text(
                     message.content,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: isUser ? Colors.white : Colors.black87,
-                      height: 1.4,
+                    style: GoogleFonts.inter(
+                      color: isUser ? Colors.white : MarketPalette.ink,
+                      fontSize: 13,
+                      height: 1.42,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         _formatTime(message.createdAt),
-                        style: GoogleFonts.poppins(
-                          fontSize: 10,
-                          color: isUser 
-                              ? Colors.white.withOpacity(0.7) 
-                              : Colors.grey[400],
+                        style: GoogleFonts.inter(
+                          color: isUser
+                              ? Colors.white.withValues(alpha: .62)
+                              : MarketPalette.muted,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       if (isUser) ...[
                         const SizedBox(width: 4),
                         Icon(
-                          message.isRead ? Icons.done_all_rounded : Icons.done_rounded,
-                          size: 14,
-                          color: message.isRead 
-                              ? Colors.lightBlue[200] 
-                              : Colors.white.withOpacity(0.7),
+                          message.isRead
+                              ? Icons.done_all_rounded
+                              : Icons.done_rounded,
+                          size: 13,
+                          color: message.isRead
+                              ? const Color(0xFF9DDCFF)
+                              : Colors.white.withValues(alpha: .62),
                         ),
                       ],
                     ],
@@ -690,9 +519,254 @@ class _ModernMessageBubble extends StatelessWidget {
     );
   }
 
-  String _formatTime(DateTime dateTime) {
-    final hour = dateTime.hour.toString().padLeft(2, '0');
-    final minute = dateTime.minute.toString().padLeft(2, '0');
+  String _formatTime(DateTime date) {
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+class _DateDivider extends StatelessWidget {
+  final DateTime date;
+
+  const _DateDivider({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
+    final text = _sameDay(date, now)
+        ? 'Bugün'
+        : _sameDay(date, yesterday)
+            ? 'Dün'
+            : '${date.day}.${date.month}.${date.year}';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9EEE9),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Text(
+            text,
+            style: GoogleFonts.inter(
+              color: MarketPalette.muted,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _sameDay(DateTime first, DateTime second) {
+    return first.year == second.year &&
+        first.month == second.month &&
+        first.day == second.day;
+  }
+}
+
+class _TypingIndicator extends StatelessWidget {
+  const _TypingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: MarketPalette.greenSoft,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.support_agent_rounded,
+              color: MarketPalette.greenDark,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: MarketPalette.line),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(19),
+                topRight: Radius.circular(19),
+                bottomRight: Radius.circular(19),
+                bottomLeft: Radius.circular(5),
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _TypingDot(delay: 0),
+                SizedBox(width: 4),
+                _TypingDot(delay: 130),
+                SizedBox(width: 4),
+                _TypingDot(delay: 260),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypingDot extends StatefulWidget {
+  final int delay;
+
+  const _TypingDot({required this.delay});
+
+  @override
+  State<_TypingDot> createState() => _TypingDotState();
+}
+
+class _TypingDotState extends State<_TypingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
+    _animation = Tween<double>(begin: .35, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    Future<void>.delayed(Duration(milliseconds: widget.delay), () {
+      if (mounted) _controller.repeat(reverse: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _animation,
+      child: const DecoratedBox(
+        decoration: BoxDecoration(
+          color: MarketPalette.muted,
+          shape: BoxShape.circle,
+        ),
+        child: SizedBox(width: 7, height: 7),
+      ),
+    );
+  }
+}
+
+class _EmptyConversation extends StatelessWidget {
+  const _EmptyConversation();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(34),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 94,
+              height: 94,
+              decoration: BoxDecoration(
+                color: MarketPalette.greenSoft,
+                borderRadius: BorderRadius.circular(31),
+              ),
+              child: const Icon(
+                Icons.waving_hand_rounded,
+                color: MarketPalette.green,
+                size: 43,
+              ),
+            ),
+            const SizedBox(height: 22),
+            Text(
+              'Sohbeti başlat',
+              style: GoogleFonts.manrope(
+                color: MarketPalette.ink,
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sorunu veya merak ettiğin konuyu aşağıya yaz. Destek ekibimiz buradan yanıtlasın.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: MarketPalette.muted,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MessagesLoading extends StatelessWidget {
+  const _MessagesLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: CircularProgressIndicator(color: MarketPalette.green),
+    );
+  }
+}
+
+class _ClosedChatBar extends StatelessWidget {
+  const _ClosedChatBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(17),
+        decoration: const BoxDecoration(
+          color: Color(0xFFE9EEE9),
+          border: Border(top: BorderSide(color: MarketPalette.line)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.lock_outline_rounded,
+              color: MarketPalette.muted,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Bu destek görüşmesi kapatılmış',
+              style: GoogleFonts.inter(
+                color: MarketPalette.muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

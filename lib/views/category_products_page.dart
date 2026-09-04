@@ -6,6 +6,7 @@ import '../models/category.dart';
 import '../views/widgets/product_card.dart';
 import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
+import 'widgets/category_presentation.dart';
 
 class CategoryProductsPage extends StatefulWidget {
   final Category category;
@@ -19,6 +20,7 @@ class CategoryProductsPage extends StatefulWidget {
 class _CategoryProductsPageState extends State<CategoryProductsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String get _categoryTitle => categoryDisplayName(widget.category.name);
 
   @override
   void initState() {
@@ -66,7 +68,7 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
           ),
         ),
         title: Text(
-          widget.category.name,
+          _categoryTitle,
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
             fontSize: 20,
@@ -95,7 +97,7 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
                   });
                 },
                 decoration: InputDecoration(
-                  hintText: '${widget.category.name} içinde ara...',
+                  hintText: '$_categoryTitle içinde ara...',
                   hintStyle: GoogleFonts.poppins(
                     color: Colors.grey[400],
                     fontSize: 14,

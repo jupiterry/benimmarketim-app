@@ -1,8 +1,8 @@
 /// Referral status enum
 enum ReferralStatus {
-  pending,    // Kayıt oldu, sipariş vermedi
-  completed,  // İlk siparişini verdi
-  rewarded,   // Ödül verildi (kod devre dışı oldu)
+  pending, // Kayıt oldu, sipariş vermedi
+  completed, // İlk siparişini verdi
+  rewarded, // Ödül verildi (kod devre dışı oldu)
 }
 
 /// Extension to convert string to ReferralStatus
@@ -81,6 +81,12 @@ class Referral {
   final int successfulReferrals;
   final int totalRewardsEarned;
   final List<ReferredUser> referredUsers;
+  final bool active;
+  final int maxReferrals;
+  final int remainingInvites;
+  final int inviteeDiscountPercent;
+  final int rewardDiscountPercent;
+  final int rewardExpiresInDays;
 
   Referral({
     required this.code,
@@ -89,6 +95,12 @@ class Referral {
     required this.successfulReferrals,
     required this.totalRewardsEarned,
     required this.referredUsers,
+    this.active = true,
+    this.maxReferrals = 1,
+    this.remainingInvites = 1,
+    this.inviteeDiscountPercent = 5,
+    this.rewardDiscountPercent = 5,
+    this.rewardExpiresInDays = 30,
   });
 
   factory Referral.fromJson(Map<String, dynamic> json) {
@@ -102,11 +114,19 @@ class Referral {
               ?.map((user) => ReferredUser.fromJson(user))
               .toList() ??
           [],
+      active: json['isActive'] ?? true,
+      maxReferrals: (json['maxReferrals'] as num?)?.toInt() ?? 1,
+      remainingInvites: (json['remainingInvites'] as num?)?.toInt() ?? 1,
+      inviteeDiscountPercent:
+          (json['inviteeDiscountPercent'] as num?)?.toInt() ?? 5,
+      rewardDiscountPercent:
+          (json['rewardDiscountPercent'] as num?)?.toInt() ?? 5,
+      rewardExpiresInDays: (json['rewardExpiresInDays'] as num?)?.toInt() ?? 30,
     );
   }
 
   /// Check if referral code is still active (not yet used successfully)
-  bool get isActive => successfulReferrals == 0;
+  bool get isActive => active && remainingInvites > 0;
 }
 
 /// Referral code check response
