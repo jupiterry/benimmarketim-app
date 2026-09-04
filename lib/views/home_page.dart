@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -26,7 +27,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late int _selectedIndex;
-  int _previousIndex = 0;
 
   @override
   void initState() {
@@ -56,7 +56,6 @@ class _HomePageState extends State<HomePage> {
     if (oldWidget.initialTabIndex != widget.initialTabIndex) {
       final nextIndex = _safeIndex(widget.initialTabIndex);
       setState(() {
-        _previousIndex = _selectedIndex;
         _selectedIndex = nextIndex;
       });
     }
@@ -71,44 +70,55 @@ class _HomePageState extends State<HomePage> {
   void _selectPage(int index) {
     if (_selectedIndex == index) return;
     setState(() {
-      _previousIndex = _selectedIndex;
       _selectedIndex = index;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final movingRight = _selectedIndex > _previousIndex;
-
-    return Scaffold(
-      backgroundColor: MarketPalette.canvas,
-      extendBody: true,
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 280),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: Offset(movingRight ? .035 : -.035, 0),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: MarketPalette.greenDeep,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: MarketPalette.canvas,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: MarketPalette.greenDeep,
+        extendBody: true,
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          reverseDuration: const Duration(milliseconds: 160),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            fit: StackFit.expand,
+            children: [
+              ...previousChildren,
+              if (currentChild != null) currentChild
+            ],
+          ),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: .985, end: 1).animate(animation),
+              child: child,
+            ),
+          ),
+          child: KeyedSubtree(
+            key: ValueKey(_selectedIndex),
+            child: switch (_selectedIndex) {
+              1 => CartPage(onExplore: () => _selectPage(0)),
+              2 => const ProfilePage(),
+              _ => const ModernMarketHome(),
+            },
           ),
         ),
-        child: KeyedSubtree(
-          key: ValueKey(_selectedIndex),
-          child: switch (_selectedIndex) {
-            1 => CartPage(onExplore: () => _selectPage(0)),
-            2 => const ProfilePage(),
-            _ => const ModernMarketHome(),
-          },
+        bottomNavigationBar: MarketBottomNavigation(
+          selectedIndex: _selectedIndex,
+          onSelected: _selectPage,
         ),
-      ),
-      bottomNavigationBar: MarketBottomNavigation(
-        selectedIndex: _selectedIndex,
-        onSelected: _selectPage,
       ),
     );
   }
