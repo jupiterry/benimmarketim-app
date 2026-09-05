@@ -117,7 +117,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Arama hatası: $e'),
+            content: Text('Arama yapılamadı. Lütfen tekrar deneyin.'),
             backgroundColor: Colors.red[600],
           ),
         );
