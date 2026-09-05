@@ -129,9 +129,38 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        leading: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 17),
+            color: Colors.black87,
+            onPressed: () => context.pop(),
+          ),
+        ),
+        title: Text('Gelişmiş Arama', style: GoogleFonts.poppins(
+          fontSize: 20, fontWeight: FontWeight.w600, color: Colors.black87,
+        )),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'Filtreleri sıfırla',
+            icon: const Icon(Icons.tune_rounded, color: AppColors.successGreen),
+            onPressed: _resetFilters,
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: CustomScrollView(
         slivers: [
-          _buildSliverAppBar(),
           SliverToBoxAdapter(
             child: Column(
               children: [
@@ -194,16 +223,17 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
 
   Widget _buildSearchBar() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      height: 55,
+      margin: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      height: 58,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey[200]!),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: Colors.black.withOpacity(0.04), blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -225,7 +255,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
           color: Colors.black87,
         ),
         decoration: InputDecoration(
-          hintText: 'Ne aramıştınız?',
+          hintText: 'Ürün, kategori veya marka ara...',
           hintStyle: GoogleFonts.poppins(
             color: Colors.grey[400],
             fontSize: 15,
@@ -247,10 +277,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
-          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
       ),
     );
@@ -258,11 +285,12 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
 
   Widget _buildFilters() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      margin: const EdgeInsets.fromLTRB(20, 16, 20, 10),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.grey[200]!),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
