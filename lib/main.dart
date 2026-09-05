@@ -19,6 +19,7 @@ import 'services/theme_service.dart';
 import 'services/token_manager.dart';
 import 'services/notification_service.dart';
 import 'router/app_router.dart';
+import 'views/widgets/market_system_frame.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,7 +46,6 @@ void main() async {
   }
 
   // Notification Service başlat
-
 
   // Global error handler - Flutter hatalarını yakala
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -167,7 +167,7 @@ class _MyAppState extends State<MyApp> {
                   FocusManager.instance.primaryFocus?.unfocus();
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 },
-                child: child!,
+                child: MarketSystemFrame(child: child!),
               );
             },
           );
@@ -176,4 +176,3 @@ class _MyAppState extends State<MyApp> {
     );
   }
 }
-

@@ -5,12 +5,17 @@ import '../services/api_service.dart';
 
 /// ViewModel for referral system
 class ReferralViewModel extends ChangeNotifier {
-  final ApiService _apiService = ApiService();
+  final ApiService _apiService;
+
+  ReferralViewModel({ApiService? apiService})
+      : _apiService = apiService ?? ApiService();
 
   Referral? _referral;
   List<Coupon> _coupons = [];
   bool _isLoading = false;
   bool _couponsLoaded = false;
+  bool _couponsLoading = false;
+  int _couponRequestId = 0;
   String? _error;
 
   // For code checking on register page
@@ -121,21 +126,36 @@ class ReferralViewModel extends ChangeNotifier {
 
   /// Load user's coupons
   Future<void> loadCoupons({bool force = false}) async {
-    if (_isLoading || (_couponsLoaded && !force)) return;
-    _isLoading = true;
+    if (!force && (_couponsLoading || _couponsLoaded)) return;
+    final requestId = ++_couponRequestId;
+    _couponsLoading = true;
     try {
-      _coupons = await _apiService.getUserCoupons();
+      final coupons = await _apiService.getUserCoupons();
+      if (requestId != _couponRequestId) return;
+      _coupons = coupons;
+      _couponsLoaded = true;
     } catch (e) {
       print('ReferralViewModel loadCoupons error: $e');
     } finally {
-      _isLoading = false;
-      _couponsLoaded = true;
-      notifyListeners();
+      if (requestId == _couponRequestId) {
+        _couponsLoading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  /// Drop pre-order data immediately, even when the refresh is offline.
+  Future<void> refreshCouponsAfterOrder() async {
+    _coupons = [];
+    _couponsLoaded = false;
+    notifyListeners();
+    await loadCoupons(force: true);
   }
 
   /// Clear all data (on logout)
   void clear() {
+    ++_couponRequestId;
+    _couponsLoading = false;
     _referral = null;
     _coupons = [];
     _couponsLoaded = false;

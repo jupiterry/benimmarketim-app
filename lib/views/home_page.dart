@@ -10,6 +10,7 @@ import '../viewmodels/home_page_viewmodel.dart';
 import 'cart_page.dart';
 import 'profile_page.dart';
 import 'widgets/market_home_widgets.dart';
+import 'widgets/market_tab_stack.dart';
 
 class HomePage extends StatefulWidget {
   final int initialTabIndex;
@@ -69,6 +70,7 @@ class _HomePageState extends State<HomePage> {
 
   void _selectPage(int index) {
     if (_selectedIndex == index) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _selectedIndex = index;
     });
@@ -87,33 +89,13 @@ class _HomePageState extends State<HomePage> {
       child: Scaffold(
         backgroundColor: MarketPalette.greenDeep,
         extendBody: true,
-        body: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          reverseDuration: const Duration(milliseconds: 160),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          layoutBuilder: (currentChild, previousChildren) => Stack(
-            fit: StackFit.expand,
-            children: [
-              ...previousChildren,
-              if (currentChild != null) currentChild
-            ],
-          ),
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: .985, end: 1).animate(animation),
-              child: child,
-            ),
-          ),
-          child: KeyedSubtree(
-            key: ValueKey(_selectedIndex),
-            child: switch (_selectedIndex) {
-              1 => CartPage(onExplore: () => _selectPage(0)),
-              2 => const ProfilePage(),
-              _ => const ModernMarketHome(),
-            },
-          ),
+        body: MarketTabStack(
+          index: _selectedIndex,
+          children: [
+            const ModernMarketHome(),
+            CartPage(onExplore: () => _selectPage(0)),
+            const ProfilePage(),
+          ],
         ),
         bottomNavigationBar: MarketBottomNavigation(
           selectedIndex: _selectedIndex,

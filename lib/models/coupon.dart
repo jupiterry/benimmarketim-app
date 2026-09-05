@@ -127,7 +127,9 @@ class Coupon {
   bool get isExpired => DateTime.now().isAfter(expirationDate);
 
   /// Check if coupon is valid for use
-  bool get isValid => !isExpired && !isUsed;
+  bool get isValid =>
+      !isExpired && !isUsed && remainingUses > 0 &&
+      (remainingGlobalUses == null || remainingGlobalUses! > 0);
 
   /// Get discount display text
   String get discountText {

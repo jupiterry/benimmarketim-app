@@ -111,10 +111,10 @@ class MarketBottomNavigation extends StatelessWidget {
           top: false,
           minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
           child: Container(
-            height: 70,
+            height: 76,
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .97),
+              color: Colors.white,
               border: Border.all(color: MarketPalette.line),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
@@ -125,27 +125,47 @@ class MarketBottomNavigation extends StatelessWidget {
                 ),
               ],
             ),
-            child: Row(
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                _NavigationItem(
-                  icon: Icons.home_rounded,
-                  label: 'Ana Sayfa',
-                  selected: selectedIndex == 0,
-                  onTap: () => onSelected(0),
+                AnimatedAlign(
+                  alignment: Alignment(-1 + selectedIndex.toDouble(), 0),
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 280),
+                  curve: Curves.easeInOutCubic,
+                  child: FractionallySizedBox(
+                    widthFactor: 1 / 3,
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: MarketPalette.greenSoft,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                  ),
                 ),
-                _NavigationItem(
-                  icon: Icons.shopping_bag_rounded,
-                  label: 'Sepet',
-                  badgeCount: cart.totalItems,
-                  selected: selectedIndex == 1,
-                  onTap: () => onSelected(1),
-                ),
-                _NavigationItem(
-                  icon: Icons.person_rounded,
-                  label: 'Hesabım',
-                  selected: selectedIndex == 2,
-                  onTap: () => onSelected(2),
-                ),
+                Row(children: [
+                  _NavigationItem(
+                    icon: Icons.home_rounded,
+                    label: 'Ana Sayfa',
+                    selected: selectedIndex == 0,
+                    onTap: () => onSelected(0),
+                  ),
+                  _NavigationItem(
+                    icon: Icons.shopping_bag_rounded,
+                    label: 'Sepet',
+                    badgeCount: cart.totalItems,
+                    selected: selectedIndex == 1,
+                    onTap: () => onSelected(1),
+                  ),
+                  _NavigationItem(
+                    icon: Icons.person_rounded,
+                    label: 'Hesabım',
+                    selected: selectedIndex == 2,
+                    onTap: () => onSelected(2),
+                  ),
+                ]),
               ],
             ),
           ),
@@ -173,77 +193,85 @@ class _NavigationItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            decoration: BoxDecoration(
-              color: selected ? MarketPalette.greenSoft : Colors.transparent,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
+      child: Semantics(
+        selected: selected,
+        button: true,
+        onTap: onTap,
+        label: badgeCount > 0 ? '$label, $badgeCount ürün' : label,
+        excludeSemantics: true,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(18),
+            child: TweenAnimationBuilder<Color?>(
+              tween: ColorTween(
+                end: selected ? MarketPalette.greenDark : MarketPalette.muted,
+              ),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              builder: (context, color, _) => SizedBox.expand(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      icon,
-                      color: selected
-                          ? MarketPalette.greenDark
-                          : MarketPalette.muted,
-                      size: 23,
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(
+                          icon,
+                          color: color,
+                          size: 23,
+                        ),
+                        if (badgeCount > 0)
+                          Positioned(
+                            right: -9,
+                            top: -8,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                color: MarketPalette.orange,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.5,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                badgeCount > 99 ? '99+' : '$badgeCount',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                    if (badgeCount > 0)
-                      Positioned(
-                        right: -9,
-                        top: -8,
-                        child: Container(
-                          constraints: const BoxConstraints(
-                            minWidth: 18,
-                            minHeight: 18,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: MarketPalette.orange,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 1.5,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            badgeCount > 99 ? '99+' : '$badgeCount',
-                            style: GoogleFonts.inter(
-                              color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: color,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
+                    ),
                   ],
                 ),
-                if (selected) ...[
-                  const SizedBox(width: 7),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        color: MarketPalette.greenDark,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),

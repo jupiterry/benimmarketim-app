@@ -713,16 +713,20 @@ class _OrderPageState extends State<OrderPage> {
       // Başarılı sipariş
       // Başarılı sipariş - SnackBar kaldırıldı
 
-      // In-app review - sipariş tamamlandığında değerlendirme iste (koşullar sağlanıyorsa)
-      await ReviewService.instance.onOrderCompleted();
-
       // Sepeti temizle
       cartViewModel.clearCart();
 
       // Kupon, sipariş başarıyla kaydedildiğinde sunucuda atomik olarak
       // tüketilir. Cüzdanı zorla yenilemek eski kuponun ana sayfa/sepet
       // bannerında yeniden görünmesini engeller.
-      await referralViewModel.loadCoupons(force: true);
+      await referralViewModel.refreshCouponsAfterOrder();
+
+      // Değerlendirme servisi hatası başarılı siparişi başarısız göstermemeli.
+      try {
+        await ReviewService.instance.onOrderCompleted();
+      } catch (e) {
+        debugPrint('Order review unavailable: $e');
+      }
 
       // Sipariş onay sayfasına yönlendir
       print('=== NAVIGATING TO ORDER CONFIRMATION ===');
