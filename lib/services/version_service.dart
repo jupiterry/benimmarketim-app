@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:io';
 import 'package:go_router/go_router.dart';
+import 'app_logger.dart';
 
 class VersionService {
   static const String _playStoreUrl =
@@ -25,13 +26,13 @@ class VersionService {
       final packageInfo = await PackageInfo.fromPlatform();
       _currentVersion = packageInfo.version;
 
-      print('Mevcut sürüm: $_currentVersion');
+      AppLogger.debug('Mevcut sürüm: $_currentVersion');
 
       // Backend'den minimum sürüm bilgisini al
       await _fetchVersionInfo();
 
       if (_minimumVersion == null) {
-        print('Sürüm bilgisi alınamadı, uygulama çalışmaya devam ediyor');
+        AppLogger.debug('Sürüm bilgisi alınamadı, uygulama çalışmaya devam ediyor');
         return true; // Sürüm kontrolü yapılamadı, uygulamaya izin ver
       }
 
@@ -49,7 +50,7 @@ class VersionService {
       // Sadece versiyon kontrolü (eski mantık)
       return isSupported;
     } catch (e) {
-      print('Sürüm kontrolü hatası: $e');
+      AppLogger.debug('Sürüm kontrolü hatası: $e');
       return true; // Hata durumunda uygulamaya izin ver
     }
   }
@@ -79,15 +80,15 @@ class VersionService {
         _updateMessage = data['updateMessage'];
         _storeUrl = data['storeUrl'];
 
-        print('Backend\'den sürüm bilgileri alındı:');
-        print('Minimum sürüm: $_minimumVersion');
-        print('En son sürüm: $_latestVersion');
-        print('Zorunlu güncelleme: $_forceUpdate');
+        AppLogger.debug('Backend\'den sürüm bilgileri alındı:');
+        AppLogger.debug('Minimum sürüm: $_minimumVersion');
+        AppLogger.debug('En son sürüm: $_latestVersion');
+        AppLogger.debug('Zorunlu güncelleme: $_forceUpdate');
       } else {
         throw Exception('Sürüm bilgisi alınamadı: ${response.statusCode}');
       }
     } catch (e) {
-      print('Backend sürüm kontrolü hatası: $e');
+      AppLogger.debug('Backend sürüm kontrolü hatası: $e');
       // API henüz hazır değilse veya hata varsa varsayılan değerler
       // Bu kısım API hazır olduğunda kaldırılabilir veya loglanabilir
     }
@@ -113,7 +114,7 @@ class VersionService {
 
       return true; // Sürümler eşit
     } catch (e) {
-      print('Versiyon karşılaştırma hatası: $e');
+      AppLogger.debug('Versiyon karşılaştırma hatası: $e');
       return true; // Hata durumunda destekleniyor say
     }
   }
@@ -146,9 +147,9 @@ class VersionService {
       await Clipboard.setData(ClipboardData(text: url));
 
       // Kullanıcıya bilgi ver
-      print('Play Store URL\'si clipboard\'a kopyalandı: $url');
+      AppLogger.debug('Play Store URL\'si clipboard\'a kopyalandı: $url');
     } catch (e) {
-      print('Play Store URL kopyalama hatası: $e');
+      AppLogger.debug('Play Store URL kopyalama hatası: $e');
     }
   }
 
@@ -162,7 +163,7 @@ class VersionService {
         child: AlertDialog(
           title: Text(
             'Güncelleme Gerekli',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.inter(
               fontWeight: FontWeight.w700,
               fontSize: 20,
             ),
@@ -175,7 +176,7 @@ class VersionService {
               Text(
                 _updateMessage ??
                     'Uygulamanızın yeni sürümü mevcut. En iyi deneyim için lütfen güncelleyin.',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontSize: 16,
                   color: Colors.grey[700],
                 ),
@@ -196,14 +197,14 @@ class VersionService {
                       children: [
                         Text(
                           'Mevcut Sürüm:',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         Text(
                           _currentVersion ?? 'Bilinmiyor',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontSize: 14,
                             color: Colors.red[600],
                           ),
@@ -216,14 +217,14 @@ class VersionService {
                       children: [
                         Text(
                           'Gerekli Sürüm:',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         Text(
                           _minimumVersion ?? 'Bilinmiyor',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontSize: 14,
                             color: Colors.green[600],
                           ),
@@ -247,7 +248,7 @@ class VersionService {
               },
               child: Text(
                 'Çıkış',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   color: Colors.grey[600],
                   fontWeight: FontWeight.w600,
                 ),
@@ -277,7 +278,7 @@ class VersionService {
               ),
               child: Text(
                 'Güncelle',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -293,7 +294,7 @@ class VersionService {
       builder: (context) => AlertDialog(
         title: Text(
           'Güncelleme Mevcut',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 20),
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -302,7 +303,7 @@ class VersionService {
             const SizedBox(height: 16),
             Text(
               'Uygulamanızın yeni sürümü ($_latestVersion) mevcut. Güncellemek ister misiniz?',
-              style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[700]),
+              style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[700]),
               textAlign: TextAlign.center,
             ),
           ],
@@ -312,7 +313,7 @@ class VersionService {
             onPressed: () => context.pop(),
             child: Text(
               'Daha Sonra',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.inter(
                 color: Colors.grey[600],
                 fontWeight: FontWeight.w600,
               ),
@@ -340,7 +341,7 @@ class VersionService {
             ),
             child: Text(
               'Güncelle',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
           ),
         ],

@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/auth_ui.dart';
 import 'widgets/custom_dialog.dart';
-import 'widgets/market_palette.dart';
+import 'widgets/market_ui.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -88,7 +87,7 @@ class _LoginPageState extends State<LoginPage> {
                           height: 38,
                           decoration: BoxDecoration(
                             color: MarketPalette.greenSoft,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(MarketRadius.sm),
                           ),
                           child: const Icon(
                             Icons.lock_open_rounded,
@@ -103,19 +102,11 @@ class _LoginPageState extends State<LoginPage> {
                             children: [
                               Text(
                                 'Hesabına giriş yap',
-                                style: GoogleFonts.manrope(
-                                  color: MarketPalette.ink,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                style: MarketText.heading(size: 18),
                               ),
                               Text(
                                 'Bilgilerin güvenli şekilde korunur.',
-                                style: GoogleFonts.inter(
-                                  color: MarketPalette.muted,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                style: MarketText.caption(),
                               ),
                             ],
                           ),
@@ -168,7 +159,7 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 24),
                     Consumer<AuthViewModel>(
                       builder: (context, auth, _) => AuthPrimaryButton(
-                        label: 'Giriş Yap',
+                        label: 'Giriş yap',
                         icon: Icons.arrow_forward_rounded,
                         isLoading: auth.isLoading,
                         onPressed: _login,
@@ -180,22 +171,11 @@ class _LoginPageState extends State<LoginPage> {
                       children: [
                         Text(
                           'Henüz hesabın yok mu?',
-                          style: GoogleFonts.inter(
-                            color: MarketPalette.muted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: MarketText.caption(size: 13),
                         ),
                         TextButton(
                           onPressed: () => context.push('/register'),
-                          child: Text(
-                            'Kayıt ol',
-                            style: GoogleFonts.inter(
-                              color: MarketPalette.greenDark,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                          child: const Text('Kayıt ol'),
                         ),
                       ],
                     ),
@@ -210,13 +190,7 @@ class _LoginPageState extends State<LoginPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 icon: const Icon(Icons.explore_outlined, size: 19),
-                label: Text(
-                  'Giriş yapmadan ürünleri keşfet',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                label: const Text('Giriş yapmadan ürünleri keşfet'),
               ),
             ],
           ),

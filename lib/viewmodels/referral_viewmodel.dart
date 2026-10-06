@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/referral.dart';
 import '../models/coupon.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 /// ViewModel for referral system
 class ReferralViewModel extends ChangeNotifier {
@@ -45,7 +46,7 @@ class ReferralViewModel extends ChangeNotifier {
       _error = null;
     } catch (e) {
       _error = e.toString().replaceAll('Exception: ', '');
-      print('ReferralViewModel loadReferralInfo error: $e');
+      AppLogger.debug('ReferralViewModel loadReferralInfo error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -116,7 +117,7 @@ class ReferralViewModel extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = e.toString().replaceAll('Exception: ', '');
-      print('ReferralViewModel regenerateCode error: $e');
+      AppLogger.debug('ReferralViewModel regenerateCode error: $e');
       return false;
     } finally {
       _isLoading = false;
@@ -135,7 +136,7 @@ class ReferralViewModel extends ChangeNotifier {
       _coupons = coupons;
       _couponsLoaded = true;
     } catch (e) {
-      print('ReferralViewModel loadCoupons error: $e');
+      AppLogger.debug('ReferralViewModel loadCoupons error: $e');
     } finally {
       if (requestId == _couponRequestId) {
         _couponsLoading = false;

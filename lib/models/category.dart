@@ -1,3 +1,4 @@
+import '../services/app_logger.dart';
 class Category {
   final String id;
   final String name;
@@ -22,7 +23,7 @@ class Category {
   });
 
   factory Category.fromJson(Map<String, dynamic> json) {
-    print('Category JSON: $json');
+    AppLogger.debug('Category JSON: $json');
     
     return Category(
       id: json['_id'] ?? json['id'] ?? '',

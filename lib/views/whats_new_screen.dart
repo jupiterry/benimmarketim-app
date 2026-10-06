@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/theme_service.dart';
+
+import 'widgets/market_ui.dart';
 
 class WhatsNewScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -17,7 +17,7 @@ class WhatsNewScreen extends StatefulWidget {
   static Future<bool> shouldShow(String currentVersion) async {
     final prefs = await SharedPreferences.getInstance();
     final lastSeenVersion = prefs.getString('last_seen_version');
-    
+
     // Eğer daha önce hiç görülmemişse veya versiyon farklıysa göster
     return lastSeenVersion != currentVersion;
   }
@@ -33,27 +33,35 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
   final List<WhatsNewItem> _items = [
     WhatsNewItem(
       emoji: '💬',
-      title: 'Canlı Destek',
-      description: 'Siparişinizle ilgili soru mu var? Tek tıkla destek ekibimize ulaşın! Sipariş durumu, teslimat saati veya özel istekleriniz için 7/24 yanınızdayız.',
-      color: Colors.blue,
+      title: 'Canlı destek',
+      description:
+          'Siparişinle ilgili bir sorun mu var? Sipariş saatlerinde tek dokunuşla destek ekibimize yaz, hemen ilgilenelim.',
+      color: MarketPalette.blue,
+      background: MarketPalette.blueSoft,
     ),
     WhatsNewItem(
       emoji: '🎁',
-      title: 'Akıllı Kupon Sistemi',
-      description: 'Kazandığınız kuponlar artık sepetinizde otomatik görünüyor! Hangi kuponu kullanacağınızı seçin, indiriminizi anında görün. Hiçbir fırsat kaçmaz!',
-      color: Colors.purple,
+      title: 'Akıllı kupon sistemi',
+      description:
+          'Kazandığın kuponlar sepetinde otomatik görünür. Sepetine en uygun kuponu öneriyoruz, indirimini anında görürsün.',
+      color: MarketPalette.orangeInk,
+      background: MarketPalette.orangeSoft,
     ),
     WhatsNewItem(
       emoji: '👥',
-      title: 'Arkadaşını Getir, Kazan',
-      description: 'Arkadaşınızı davet edin, o %5 hoş geldin indirimi kazansın, siz de %5 ödül kuponu alın! Paylaştıkça kazanın, dostluk büyüsün.',
-      color: Colors.orange,
+      title: 'Arkadaşını getir, kazan',
+      description:
+          'Davet kodunu paylaş; arkadaşın ilk siparişinde indirim kazansın, sen de ödül kuponu al.',
+      color: MarketPalette.pink,
+      background: MarketPalette.pinkSoft,
     ),
     WhatsNewItem(
       emoji: '✨',
-      title: 'Yepyeni Tasarım',
-      description: 'Daha hızlı, daha akıcı, göze daha hoş! Tüm sayfalar baştan aşağı yenilendi. Alışveriş deneyiminiz artık çok daha keyifli.',
-      color: AppColors.successGreen,
+      title: 'Yepyeni tasarım',
+      description:
+          'Daha okunaklı, daha hızlı ve daha tutarlı. Sepetten hesabına kadar tüm ekranlar baştan yenilendi.',
+      color: MarketPalette.greenDark,
+      background: MarketPalette.greenSoft,
     ),
   ];
 
@@ -82,85 +90,67 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final last = _currentPage == _items.length - 1;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: MarketPalette.canvas,
       body: SafeArea(
         child: Column(
           children: [
-            // Skip button
-            Align(
-              alignment: Alignment.topRight,
-              child: TextButton(
-                onPressed: _completeOnboarding,
-                child: Text(
-                  'Geç',
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w500,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+              child: Row(
+                children: [
+                  MarketPill(
+                    label: 'Sürüm ${widget.currentVersion} ile gelenler',
+                    icon: Icons.auto_awesome_rounded,
                   ),
-                ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _completeOnboarding,
+                    style: TextButton.styleFrom(foregroundColor: MarketPalette.muted),
+                    child: const Text('Geç'),
+                  ),
+                ],
               ),
             ),
-
-            // Page View
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
                 onPageChanged: (index) => setState(() => _currentPage = index),
                 itemCount: _items.length,
-                itemBuilder: (context, index) {
-                  final item = _items[index];
-                  return _buildPage(item);
-                },
+                itemBuilder: (context, index) => _buildPage(_items[index]),
               ),
             ),
-
-            // Page Indicator
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  _items.length,
-                  (index) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    height: 8,
-                    width: _currentPage == index ? 24 : 8,
-                    decoration: BoxDecoration(
-                      color: _currentPage == index
-                          ? _items[_currentPage].color
-                          : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _items.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  height: 8,
+                  width: _currentPage == index ? 24 : 8,
+                  decoration: BoxDecoration(
+                    color: _currentPage == index
+                        ? MarketPalette.green
+                        : MarketPalette.lineStrong,
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
             ),
-
-            // Next/Complete Button
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _nextPage,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _items[_currentPage].color,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    _currentPage == _items.length - 1 ? 'Başla!' : 'Sonraki',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              child: FilledButton(
+                onPressed: _nextPage,
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(last ? 'Alışverişe başla' : 'Sonraki'),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_forward_rounded, size: 20),
+                  ],
                 ),
               ),
             ),
@@ -176,58 +166,36 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Emoji with animated background
           TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.8, end: 1.0),
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.elasticOut,
-            builder: (context, value, child) {
-              return Transform.scale(
-                scale: value,
-                child: Container(
-                  width: 140,
-                  height: 140,
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      colors: [
-                        item.color.withOpacity(0.2),
-                        item.color.withOpacity(0.05),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      item.emoji,
-                      style: const TextStyle(fontSize: 64),
-                    ),
-                  ),
-                ),
-              );
-            },
+            tween: Tween(begin: 0.85, end: 1.0),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 500),
+            curve: Curves.easeOutBack,
+            builder: (context, value, child) =>
+                Transform.scale(scale: value, child: child),
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                color: item.background,
+                borderRadius: BorderRadius.circular(MarketRadius.xl),
+              ),
+              child: Center(
+                child: Text(item.emoji, style: const TextStyle(fontSize: 64)),
+              ),
+            ),
           ),
-          const SizedBox(height: 48),
-
-          // Title
+          const SizedBox(height: 40),
           Text(
             item.title,
-            style: GoogleFonts.poppins(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
-            ),
+            style: MarketText.display(),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
-
-          // Description
+          const SizedBox(height: 14),
           Text(
             item.description,
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              color: Colors.grey[600],
-              height: 1.5,
-            ),
+            style: MarketText.body(color: MarketPalette.muted, size: 16, height: 1.55),
             textAlign: TextAlign.center,
           ),
         ],
@@ -241,11 +209,13 @@ class WhatsNewItem {
   final String title;
   final String description;
   final Color color;
+  final Color background;
 
   WhatsNewItem({
     required this.emoji,
     required this.title,
     required this.description,
     required this.color,
+    required this.background,
   });
 }

@@ -73,12 +73,12 @@ class MarketProductsSection extends StatelessWidget {
                   subtitle: discounted.isNotEmpty
                       ? 'Sepetine iyi gelecek fırsatları kaçırma'
                       : 'Senin için özenle seçtik',
-                  actionLabel: 'Tümünü gör',
+                  actionLabel: 'Tümü',
                   onAction: () => context.push('/search'),
                 ),
               ),
               SizedBox(
-                height: 304,
+                height: marketProductCardHeight,
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   scrollDirection: Axis.horizontal,
@@ -86,7 +86,7 @@ class MarketProductsSection extends StatelessWidget {
                   itemCount: spotlight.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 13),
                   itemBuilder: (context, index) => SizedBox(
-                    width: 176,
+                    width: 172,
                     child: MarketProductCard(product: spotlight[index]),
                   ),
                 ),
@@ -120,7 +120,7 @@ class MarketProductsSection extends StatelessWidget {
                     itemCount: shelfProducts.length,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: columns,
-                      mainAxisExtent: 304,
+                      mainAxisExtent: marketProductCardHeight,
                       crossAxisSpacing: 13,
                       mainAxisSpacing: 13,
                     ),
@@ -152,8 +152,8 @@ class _ProductsLoadingState extends StatelessWidget {
             width: 180,
             height: 20,
             decoration: BoxDecoration(
-              color: const Color(0xFFE2E7E3),
-              borderRadius: BorderRadius.circular(8),
+              color: MarketPalette.fill,
+              borderRadius: BorderRadius.circular(MarketRadius.xs),
             ),
           ),
           const SizedBox(height: 16),
@@ -161,16 +161,16 @@ class _ProductsLoadingState extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: 4,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              mainAxisExtent: 304,
+              mainAxisExtent: marketProductCardHeight,
               crossAxisSpacing: 13,
               mainAxisSpacing: 13,
             ),
             itemBuilder: (_, __) => Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(23),
+                borderRadius: BorderRadius.circular(MarketRadius.lg),
                 border: Border.all(color: MarketPalette.line),
               ),
             ),

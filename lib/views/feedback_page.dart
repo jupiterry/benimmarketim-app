@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../viewmodels/auth_viewmodel.dart';
-import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../services/api_service.dart';
+import '../viewmodels/auth_viewmodel.dart';
+import 'widgets/market_ui.dart';
 
 class FeedbackPage extends StatefulWidget {
   const FeedbackPage({super.key});
@@ -15,8 +16,10 @@ class FeedbackPage extends StatefulWidget {
 class _FeedbackPageState extends State<FeedbackPage> {
   final _formKey = GlobalKey<FormState>();
   final _messageController = TextEditingController();
-  double _rating = 0;
+  int _rating = 0;
   bool _isSubmitting = false;
+
+  static const _ratingTexts = ['Çok kötü', 'Kötü', 'Orta', 'İyi', 'Mükemmel'];
 
   @override
   void dispose() {
@@ -27,318 +30,169 @@ class _FeedbackPageState extends State<FeedbackPage> {
   Future<void> _submitFeedback() async {
     if (!_formKey.currentState!.validate()) return;
     if (_rating == 0) {
-      _showSnackBar('Lütfen bir puan verin', isError: true);
+      showMarketSnack(context, 'Lütfen bir puan ver', error: true);
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    // Simulating API call
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
-      setState(() {
-        _isSubmitting = false;
-        _messageController.clear();
-        _rating = 0;
-      });
-      _showSnackBar('Geri bildiriminiz için teşekkürler!', isError: false);
+    setState(() => _isSubmitting = true);
+    try {
+      // Önceden yalnızca bekleme simüle ediliyordu; artık sunucuya gönderilir.
+      await ApiService().createFeedback(
+        rating: _rating,
+        ratings: {'overall': _rating},
+        title: 'Genel Değerlendirme',
+        message: _messageController.text.trim(),
+        category: 'Genel',
+      );
+      if (!mounted) return;
+      showMarketSnack(context, 'Geri bildirimin için teşekkürler!');
       context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      final text = e.toString();
+      showMarketSnack(
+        context,
+        text.startsWith('Exception: ')
+            ? text.replaceFirst('Exception: ', '')
+            : 'Geri bildirim gönderilemedi. Lütfen tekrar dene.',
+        error: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  void _showSnackBar(String message, {required bool isError}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.poppins()),
-        backgroundColor: isError ? AppColors.errorRed : AppColors.successGreen,
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = context.select<AuthViewModel, bool>((a) => a.isLoggedIn);
+
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(
-          'Geri Bildirim',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: InkWell(
-          onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ),
-      body: Consumer<AuthViewModel>(
-        builder: (context, authViewModel, child) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeaderCard(),
-                  const SizedBox(height: 24),
-                  _buildRatingCard(),
-                  const SizedBox(height: 24),
-                  _buildMessageCard(),
-                  const SizedBox(height: 32),
-                  _buildSubmitButton(),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildHeaderCard() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
+      backgroundColor: MarketPalette.canvas,
+      body: ListView(
+        padding: EdgeInsets.zero,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.successGreen.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.rate_review_rounded,
-              size: 40,
-              color: AppColors.successGreen,
-            ),
+          const MarketHeader(
+            title: 'Geri bildirim',
+            subtitle: 'Görüşlerin Benim Marketim\'i daha iyi yapıyor',
+            icon: Icons.rate_review_rounded,
+            compact: true,
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Düşünceleriniz Bizim İçin Değerli',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Hizmet kalitemizi artırmak için görüş ve önerilerinizi bekliyoruz.',
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: Colors.grey[600],
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRatingCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Puanınız',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (index) {
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _rating = index + 1.0;
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Icon(
-                    index < _rating
-                        ? Icons.star_rounded
-                        : Icons.star_outline_rounded,
-                    color: Colors.amber,
-                    size: 40,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
+            child: !loggedIn
+                ? MarketCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Önce giriş yap', style: MarketText.title(size: 22)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Geri bildirimini hesabınla ilişkilendirebilmemiz için giriş yapman gerekiyor.',
+                          style: MarketText.body(color: MarketPalette.muted, size: 14),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () => context.push('/login'),
+                          child: const Text('Giriş yap'),
+                        ),
+                      ],
+                    ),
+                  )
+                : Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        MarketCard(
+                          child: Column(
+                            children: [
+                              Text('Deneyimini nasıl değerlendirirsin?',
+                                  textAlign: TextAlign.center,
+                                  style: MarketText.heading(size: 16)),
+                              const SizedBox(height: 14),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(5, (index) {
+                                  final selected = index < _rating;
+                                  return IconButton(
+                                    tooltip: _ratingTexts[index],
+                                    iconSize: 40,
+                                    onPressed: () => setState(() => _rating = index + 1),
+                                    icon: Icon(
+                                      selected ? Icons.star_rounded : Icons.star_outline_rounded,
+                                      color: selected
+                                          ? MarketPalette.orange
+                                          : MarketPalette.lineStrong,
+                                    ),
+                                  );
+                                }),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _rating == 0
+                                    ? 'Puan vermek için yıldızlara dokun'
+                                    : _ratingTexts[_rating - 1],
+                                style: MarketText.label(
+                                  color: _rating == 0
+                                      ? MarketPalette.muted
+                                      : MarketPalette.orangeInk,
+                                  size: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        MarketCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Mesajın', style: MarketText.heading(size: 16)),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _messageController,
+                                style: MarketText.body(size: 14),
+                                decoration: const InputDecoration(
+                                  hintText: 'Neyi sevdin, neyi geliştirelim?',
+                                  fillColor: MarketPalette.canvas,
+                                ),
+                                minLines: 5,
+                                maxLines: 8,
+                                maxLength: 500,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Lütfen bir mesaj yaz';
+                                  }
+                                  if (value.trim().length < 10) {
+                                    return 'Mesajın en az 10 karakter olmalı';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        FilledButton(
+                          onPressed: _isSubmitting ? null : _submitFeedback,
+                          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+                          child: _isSubmitting
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Gönder'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              _getRatingText(),
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.amber[800],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
           ),
         ],
-      ),
-    );
-  }
-
-  String _getRatingText() {
-    if (_rating == 0) return 'Puan vermek için yıldızlara dokunun';
-    if (_rating == 1) return 'Çok Kötü';
-    if (_rating == 2) return 'Kötü';
-    if (_rating == 3) return 'Orta';
-    if (_rating == 4) return 'İyi';
-    return 'Mükemmel';
-  }
-
-  Widget _buildMessageCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Mesajınız',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _messageController,
-            style: GoogleFonts.poppins(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Görüş ve önerilerinizi buraya yazabilirsiniz...',
-              hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-              filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.grey[200]!),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.successGreen),
-              ),
-              contentPadding: const EdgeInsets.all(16),
-            ),
-            maxLines: 5,
-            maxLength: 500,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Lütfen bir mesaj yazın';
-              }
-              if (value.length < 10) {
-                return 'Mesajınız en az 10 karakter olmalıdır';
-              }
-              return null;
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: _isSubmitting ? null : _submitFeedback,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.successGreen,
-          foregroundColor: Colors.white,
-          elevation: 4,
-          shadowColor: AppColors.successGreen.withOpacity(0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: _isSubmitting
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Text(
-                'Gönder',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class CategoryProductsViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -20,13 +21,13 @@ class CategoryProductsViewModel extends ChangeNotifier {
   Future<void> loadCategoryProducts(String categoryId) async {
     // Eğer aynı kategori zaten yüklüyse tekrar yükleme
     if (_currentCategoryId == categoryId && _products.isNotEmpty) {
-      print(
+      AppLogger.debug(
         'CategoryProductsViewModel: Using cached products for category $categoryId',
       );
       return;
     }
 
-    print(
+    AppLogger.debug(
       'CategoryProductsViewModel: Loading products for category: $categoryId',
     );
     _currentCategoryId = categoryId;
@@ -40,13 +41,13 @@ class CategoryProductsViewModel extends ChangeNotifier {
       // Gizli ürünleri filtrele (isHidden: false olanları al)
       _products = allProducts.where((product) => !product.isHidden).toList();
 
-      print(
+      AppLogger.debug(
         'CategoryProductsViewModel: Loaded ${_products.length} visible products (filtered ${allProducts.length - _products.length} hidden)',
       );
       notifyListeners();
     } catch (e) {
-      print('CategoryProductsViewModel: Error loading products: $e');
-      _error = e.toString();
+      AppLogger.debug('CategoryProductsViewModel: Error loading products: $e');
+      _error = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     } finally {
       _setLoading(false);

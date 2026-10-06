@@ -16,7 +16,7 @@ class SpecialProducts extends StatelessWidget {
             children: [
               Text(
                 "Günün Özel Ürünleri",
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,
@@ -24,7 +24,7 @@ class SpecialProducts extends StatelessWidget {
               ),
               Text(
                 'Tümünü Gör',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontSize: 14,
                   color: Colors.green[600],
                   fontWeight: FontWeight.w500,
@@ -155,8 +155,8 @@ class SpecialProductCard extends StatelessWidget {
                   const SizedBox(width: 2),
                   Text(
                     rating,
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w600,
                       color: Colors.black87,
                     ),
@@ -176,7 +176,7 @@ class SpecialProductCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -185,7 +185,7 @@ class SpecialProductCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 12,
                     color: Colors.grey[600],
                   ),
@@ -196,7 +196,7 @@ class SpecialProductCard extends StatelessWidget {
                   children: [
                     Text(
                       price,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: Colors.green[600],

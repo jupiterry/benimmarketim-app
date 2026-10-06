@@ -71,7 +71,6 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
-		
 		<!-- App Transport Security (ATS) Settings -->
 		<key>NSAppTransportSecurity</key>
 		<dict>
@@ -96,7 +95,6 @@
 				</dict>
 			</dict>
 		</dict>
-		
 		<!-- Network permissions -->
 	</dict>
 </plist>

@@ -1,12 +1,14 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+import '../services/app_logger.dart';
 import '../services/photocopy_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/file_picker_widget.dart';
-import '../services/theme_service.dart';
-import 'package:go_router/go_router.dart';
+import 'widgets/market_ui.dart';
 
 class PhotocopyUploadPage extends StatefulWidget {
   const PhotocopyUploadPage({super.key});
@@ -16,27 +18,21 @@ class PhotocopyUploadPage extends StatefulWidget {
 }
 
 class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _copiesController = TextEditingController(text: '1');
   final _notesController = TextEditingController();
 
   File? _selectedFile;
+  int _copies = 1;
   String _selectedColor = 'black_white';
   String _selectedPaperSize = 'A4';
   bool _isUploading = false;
   Map<String, dynamic>? _pricing;
 
-  final List<Map<String, String>> _colorOptions = [
-    {'value': 'black_white', 'label': 'Siyah-Beyaz'},
-    {'value': 'color', 'label': 'Renkli'},
-  ];
+  static const _colorOptions = {
+    'black_white': 'Siyah-beyaz',
+    'color': 'Renkli',
+  };
 
-  final List<Map<String, String>> _paperSizeOptions = [
-    {'value': 'A4', 'label': 'A4'},
-    {'value': 'A3', 'label': 'A3'},
-    {'value': 'A5', 'label': 'A5'},
-    {'value': 'Letter', 'label': 'Letter'},
-  ];
+  static const _paperSizeOptions = ['A4', 'A3', 'A5', 'Letter'];
 
   @override
   void initState() {
@@ -46,7 +42,6 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
 
   @override
   void dispose() {
-    _copiesController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -54,6 +49,7 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
   Future<void> _loadPricing() async {
     try {
       final pricing = await PhotocopyService.getPhotocopyPricing();
+      if (!mounted) return;
       setState(() {
         _pricing = pricing;
       });
@@ -62,644 +58,263 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
     }
   }
 
-  void _onFileSelected(File file) {
-    setState(() {
-      _selectedFile = file;
-    });
-  }
-
   double _calculatePrice() {
-    if (_pricing == null) return 0.0;
-
-    final copies = int.tryParse(_copiesController.text) ?? 1;
     final colorMultiplier = _selectedColor == 'color' ? 2.0 : 1.0;
-    final basePrice = _pricing!['basePrice'] ?? 0.5;
-
-    return copies * basePrice * colorMultiplier;
+    final basePrice = (_pricing?['basePrice'] as num?)?.toDouble() ?? 0.5;
+    return _copies * basePrice * colorMultiplier;
   }
 
   Future<void> _uploadFile() async {
-    if (!_formKey.currentState!.validate()) return;
     if (_selectedFile == null) {
-      _showSnackBar('Lütfen bir dosya seçin', isError: true);
+      showMarketSnack(context, 'Lütfen bir dosya seç', error: true);
       return;
     }
 
-    setState(() {
-      _isUploading = true;
-    });
+    setState(() => _isUploading = true);
 
     try {
-      final copies = int.parse(_copiesController.text);
-
       final photocopy = await PhotocopyService.uploadFile(
         file: _selectedFile!,
-        copies: copies,
+        copies: _copies,
         color: _selectedColor,
         paperSize: _selectedPaperSize,
         notes: _notesController.text,
       );
 
       if (mounted) {
-        _showSnackBar('Dosya başarıyla yüklendi!', isError: false);
+        showMarketSnack(context, 'Fotokopi isteğin alındı!');
         context.pop(photocopy);
       }
     } catch (e) {
+      AppLogger.debug('Fotokopi yükleme hatası: $e');
       if (mounted) {
-        _showSnackBar('Yükleme hatası: $e', isError: true);
+        showMarketSnack(
+          context,
+          'Dosya yüklenemedi. Bağlantını kontrol edip tekrar dene.',
+          error: true,
+        );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-        });
-      }
+      if (mounted) setState(() => _isUploading = false);
     }
-  }
-
-  void _showSnackBar(String message, {required bool isError}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.poppins()),
-        backgroundColor: isError ? AppColors.errorRed : AppColors.successGreen,
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = context.select<AuthViewModel, bool>((a) => a.isLoggedIn);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F8F5),
-      appBar: AppBar(
-        title: Text(
-          'Fotokopi Hizmeti',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: const Color(0xFF075B39),
-        elevation: 0,
-        centerTitle: true,
-        leading: InkWell(
-          onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: .18)),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
-      body: Consumer<AuthViewModel>(
-        builder: (context, authViewModel, child) {
-          if (!authViewModel.isLoggedIn) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.lock_outline,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Giriş Yapın',
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Fotokopi hizmeti için giriş yapmanız gerekiyor',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildServiceHero(),
-                  const SizedBox(height: 20),
-                  _buildFileSelectionCard(),
-                  const SizedBox(height: 24),
-                  _buildOptionsCard(),
-                  const SizedBox(height: 24),
-                  _buildNotesCard(),
-                  const SizedBox(height: 24),
-                  _buildPricingCard(),
-                  const SizedBox(height: 32),
-                  _buildUploadButton(),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildServiceHero() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF063F2B), Color(0xFF0E7A4A)],
-          ),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFB9EB67),
-                borderRadius: BorderRadius.circular(17),
-              ),
-              child: const Icon(Icons.print_rounded,
-                  color: Color(0xFF063F2B), size: 29),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Dosyanı gönder, biz hazırlayalım',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 4),
-                  Text(
-                      'PDF veya belgeni yükle; renk, boyut ve adet seçeneklerini belirle.',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white70, fontSize: 10, height: 1.45)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _buildFileSelectionCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: MarketPalette.canvas,
+      body: Column(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.upload_file_rounded,
-                  color: Colors.blue[600],
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Dosya Seçimi',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          FilePickerWidget(
-            onFileSelected: _onFileSelected,
-            selectedFileName: _selectedFile?.path.split('/').last,
-          ),
-          if (_selectedFile != null) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.successGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.successGreen.withOpacity(0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: AppColors.successGreen,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Dosya seçildi: ${_selectedFile!.path.split('/').last}',
-                      style: GoogleFonts.poppins(
-                        color: AppColors.successGreen,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOptionsCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange[50],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.tune_rounded,
-                  color: Colors.orange[600],
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Fotokopi Ayarları',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          TextFormField(
-            controller: _copiesController,
-            style: GoogleFonts.poppins(fontSize: 14),
-            decoration: InputDecoration(
-              labelText: 'Kopya Sayısı',
-              labelStyle: GoogleFonts.poppins(color: Colors.grey[600]),
-              prefixIcon: Icon(Icons.copy_rounded, color: Colors.grey[400]),
-              filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[200]!),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.successGreen),
-              ),
-            ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value == null || value.isEmpty) return 'Kopya sayısı gerekli';
-              final copies = int.tryParse(value);
-              if (copies == null || copies < 1 || copies > 100)
-                return '1-100 arası bir sayı girin';
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          Column(
-            children: [
-              DropdownButtonFormField<String>(
-                value: _selectedColor,
-                style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
-                decoration: InputDecoration(
-                  labelText: 'Renk',
-                  labelStyle: GoogleFonts.poppins(color: Colors.grey[600]),
-                  prefixIcon: Icon(
-                    Icons.palette_rounded,
-                    color: Colors.grey[400],
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey[200]!),
-                  ),
-                ),
-                items: _colorOptions.map((option) {
-                  return DropdownMenuItem<String>(
-                    value: option['value'],
-                    child: Text(option['label']!),
-                  );
-                }).toList(),
-                onChanged: (value) => setState(() => _selectedColor = value!),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedPaperSize,
-                style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
-                decoration: InputDecoration(
-                  labelText: 'Kağıt Boyutu',
-                  labelStyle: GoogleFonts.poppins(color: Colors.grey[600]),
-                  prefixIcon: Icon(
-                    Icons.aspect_ratio_rounded,
-                    color: Colors.grey[400],
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey[200]!),
-                  ),
-                ),
-                items: _paperSizeOptions.map((option) {
-                  return DropdownMenuItem<String>(
-                    value: option['value'],
-                    child: Text(option['label']!),
-                  );
-                }).toList(),
-                onChanged: (value) =>
-                    setState(() => _selectedPaperSize = value!),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotesCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.purple[50],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.note_alt_rounded,
-                  color: Colors.purple[600],
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Notlar (İsteğe Bağlı)',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          TextFormField(
-            controller: _notesController,
-            style: GoogleFonts.poppins(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Özel isteklerinizi buraya yazabilirsiniz...',
-              hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
-              filled: true,
-              fillColor: Colors.grey[50],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey[200]!),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.successGreen),
-              ),
-            ),
-            maxLines: 3,
-            maxLength: 200,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPricingCard() {
-    final price = _calculatePrice();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.successGreen.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.payments_rounded,
-                  color: AppColors.successGreen,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Fiyatlandırma',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.successGreen.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppColors.successGreen.withOpacity(0.2),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               children: [
-                Text(
-                  'Tahmini Tutar',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
+                const MarketHeader(
+                  title: 'Fotokopi hizmeti',
+                  subtitle: 'Belgeni yükle, siparişinle birlikte hazırlayıp getirelim',
+                  icon: Icons.print_rounded,
+                  compact: true,
                 ),
-                Text(
-                  '₺${price.toStringAsFixed(2)}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.successGreen,
+                if (!loggedIn)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 40),
+                    child: MarketEmptyState(
+                      icon: Icons.lock_outline_rounded,
+                      title: 'Giriş yapman gerekiyor',
+                      message: 'Fotokopi isteği oluşturmak için hesabına giriş yap.',
+                      actionLabel: 'Giriş yap',
+                      actionIcon: Icons.login_rounded,
+                      onAction: () => context.push('/login'),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _section(
+                          step: '1',
+                          title: 'Belgeni ekle',
+                          child: FilePickerWidget(
+                            onFileSelected: (file) => setState(() => _selectedFile = file),
+                            onFileRemoved: () => setState(() => _selectedFile = null),
+                            selectedFileName: _selectedFile?.path.split('/').last,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        _section(
+                          step: '2',
+                          title: 'Baskı ayarları',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text('Kopya sayısı',
+                                        style: MarketText.label(size: 14, weight: FontWeight.w600)),
+                                  ),
+                                  MarketStepper(
+                                    quantity: _copies,
+                                    onMinus: () {
+                                      if (_copies > 1) setState(() => _copies--);
+                                    },
+                                    onPlus: () {
+                                      if (_copies < 100) setState(() => _copies++);
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+                              Text('Renk', style: MarketText.label(size: 14, weight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: SegmentedButton<String>(
+                                  showSelectedIcon: false,
+                                  segments: [
+                                    for (final entry in _colorOptions.entries)
+                                      ButtonSegment(
+                                        value: entry.key,
+                                        label: Text(entry.value),
+                                        icon: Icon(entry.key == 'color'
+                                            ? Icons.palette_outlined
+                                            : Icons.contrast_rounded),
+                                      ),
+                                  ],
+                                  selected: {_selectedColor},
+                                  onSelectionChanged: (value) =>
+                                      setState(() => _selectedColor = value.first),
+                                  style: SegmentedButton.styleFrom(
+                                    selectedBackgroundColor: MarketPalette.greenSoft,
+                                    selectedForegroundColor: MarketPalette.greenDeep,
+                                    side: const BorderSide(color: MarketPalette.line),
+                                    textStyle: MarketText.label(size: 13, weight: FontWeight.w600),
+                                    minimumSize: const Size(0, 46),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Text('Kağıt boyutu', style: MarketText.label(size: 14, weight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  for (final size in _paperSizeOptions)
+                                    ChoiceChip(
+                                      label: Text(size),
+                                      selected: _selectedPaperSize == size,
+                                      showCheckmark: false,
+                                      onSelected: (_) =>
+                                          setState(() => _selectedPaperSize = size),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        _section(
+                          step: '3',
+                          title: 'Not ekle (isteğe bağlı)',
+                          child: TextField(
+                            controller: _notesController,
+                            style: MarketText.body(size: 14),
+                            decoration: const InputDecoration(
+                              hintText: 'Örn. çift taraflı, zımbalı olsun',
+                              fillColor: MarketPalette.canvas,
+                            ),
+                            minLines: 2,
+                            maxLines: 4,
+                            maxLength: 200,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        const MarketNotice(
+                          icon: Icons.info_outline_rounded,
+                          text: 'Siyah-beyaz ₺0,50 / kopya • Renkli ₺1,00 / kopya. Kesin tutar hazırlandığında netleşir.',
+                        ),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            '• Siyah-beyaz: ₺0.50/kopya\n• Renkli: ₺1.00/kopya',
-            style: GoogleFonts.poppins(
-              color: Colors.grey[600],
-              fontSize: 12,
-              height: 1.5,
+          if (loggedIn)
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: MarketPalette.line)),
+                ),
+                child: Row(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Tahmini tutar', style: MarketText.caption()),
+                        Text(formatTl(_calculatePrice()), style: MarketText.price(size: 22)),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _isUploading ? null : _uploadFile,
+                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+                        icon: _isUploading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                              )
+                            : const Icon(Icons.cloud_upload_rounded),
+                        label: Text(_isUploading ? 'Yükleniyor…' : 'İsteği gönder'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildUploadButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: _isUploading ? null : _uploadFile,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.successGreen,
-          foregroundColor: Colors.white,
-          elevation: 4,
-          shadowColor: AppColors.successGreen.withOpacity(0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: _isUploading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+  Widget _section({
+    required String step,
+    required String title,
+    required Widget child,
+  }) {
+    return MarketCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: MarketPalette.greenDeep,
+                  shape: BoxShape.circle,
                 ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.cloud_upload_rounded),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Fotokopi İsteği Gönder',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+                child: Text(step, style: MarketText.label(color: Colors.white, size: 12)),
               ),
+              const SizedBox(width: 10),
+              Text(title, style: MarketText.heading(size: 16)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
       ),
     );
   }

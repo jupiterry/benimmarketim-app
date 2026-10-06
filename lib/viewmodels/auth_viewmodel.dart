@@ -3,6 +3,8 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/token_manager.dart';
 import '../services/network_service.dart';
+import '../services/app_logger.dart';
+import '../services/notification_service.dart';
 
 
 class AuthViewModel extends ChangeNotifier {
@@ -27,7 +29,7 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       // Çoklu internet kontrolü
-      print('İnternet bağlantısı kontrol ediliyor...');
+      AppLogger.debug('İnternet bağlantısı kontrol ediliyor...');
       final hasInternet = await NetworkService.hasInternetConnection();
       if (!hasInternet) {
         _error =
@@ -36,7 +38,7 @@ class AuthViewModel extends ChangeNotifier {
         return false;
       }
 
-      print('İnternet bağlantısı başarılı, API denemesi yapılıyor...');
+      AppLogger.debug('İnternet bağlantısı başarılı, API denemesi yapılıyor...');
 
       final request = LoginRequest(
         email: email,
@@ -55,7 +57,8 @@ class AuthViewModel extends ChangeNotifier {
       );
       await TokenManager.saveRefreshToken(response.refreshToken);
 
-      print('Giriş başarılı - 10 günlük otomatik giriş aktif');
+      AppLogger.debug('Giriş başarılı - 10 günlük otomatik giriş aktif');
+      NotificationService.instance.identifyUser(response.user.id);
 
 
 
@@ -103,7 +106,8 @@ class AuthViewModel extends ChangeNotifier {
       );
       await TokenManager.saveRefreshToken(response.refreshToken);
 
-      print('Telefon ile kayıt yapıldı - 10 günlük otomatik giriş aktif');
+      AppLogger.debug('Telefon ile kayıt yapıldı - 10 günlük otomatik giriş aktif');
+      NotificationService.instance.identifyUser(response.user.id);
 
 
 
@@ -129,6 +133,7 @@ class AuthViewModel extends ChangeNotifier {
     _user = null;
     _isLoggedIn = false;
     await TokenManager.clearAllTokens();
+    NotificationService.instance.clearUser();
 
 
 
@@ -145,6 +150,7 @@ class AuthViewModel extends ChangeNotifier {
       _user = null;
       _isLoggedIn = false;
       await TokenManager.clearAllTokens();
+      NotificationService.instance.clearUser();
 
 
       notifyListeners();
@@ -161,19 +167,19 @@ class AuthViewModel extends ChangeNotifier {
   // Token yenileme (web projesindeki refresh token sistemi)
   Future<bool> refreshToken() async {
     try {
-      print('Token yenileniyor...');
+      AppLogger.debug('Token yenileniyor...');
       final newToken = await _apiService.refreshToken();
 
       if (newToken != null) {
-        print('Token başarıyla yenilendi');
+        AppLogger.debug('Token başarıyla yenilendi');
         return true;
       } else {
-        print('Token yenilenemedi, logout yapılıyor');
+        AppLogger.debug('Token yenilenemedi, logout yapılıyor');
         await logout();
         return false;
       }
     } catch (e) {
-      print('Token yenileme hatası: $e');
+      AppLogger.debug('Token yenileme hatası: $e');
       await logout();
       return false;
     }
@@ -182,17 +188,17 @@ class AuthViewModel extends ChangeNotifier {
   // Profil bilgilerini güncelle
   Future<void> updateProfile() async {
     if (!_isLoggedIn) {
-      print('updateProfile: Kullanıcı giriş yapmamış');
+      AppLogger.debug('updateProfile: Kullanıcı giriş yapmamış');
       return;
     }
 
     try {
-      print('updateProfile: Profil bilgileri yükleniyor...');
+      AppLogger.debug('updateProfile: Profil bilgileri yükleniyor...');
       _user = await _apiService.getProfile();
-      print('updateProfile: Profil bilgileri yüklendi: ${_user?.name}');
+      AppLogger.debug('updateProfile: Profil bilgileri yüklendi');
       notifyListeners();
     } catch (e) {
-      print('updateProfile: Hata: $e');
+      AppLogger.debug('updateProfile: Hata: $e');
       _error = e.toString();
       notifyListeners();
     }
@@ -207,7 +213,7 @@ class AuthViewModel extends ChangeNotifier {
         final isValid = await TokenManager.isTokenValid();
         if (!isValid) {
           // Token süresi dolmuş, temizle
-          print('Token süresi dolmuş, temizleniyor...');
+          AppLogger.debug('Token süresi dolmuş, temizleniyor...');
           await TokenManager.clearAllTokens();
           _isLoggedIn = false;
           _user = null;
@@ -215,23 +221,22 @@ class AuthViewModel extends ChangeNotifier {
           return;
         }
 
-        print('checkAuthStatus: Profil bilgileri yükleniyor...');
+        AppLogger.debug('checkAuthStatus: Profil bilgileri yükleniyor...');
         _user = await _apiService.getProfile();
         _isLoggedIn = true;
-        print(
-          'checkAuthStatus: Otomatik giriş başarılı - User: ${_user?.name}',
-        );
+        AppLogger.debug('checkAuthStatus: Otomatik giriş başarılı');
+        NotificationService.instance.identifyUser(_user!.id);
         notifyListeners();
       } catch (e) {
         // Token geçersiz veya API hatası, logout yap
-        print('checkAuthStatus: Token kontrolü hatası: $e');
+        AppLogger.debug('checkAuthStatus: Token kontrolü hatası: $e');
         await TokenManager.clearAllTokens();
         _isLoggedIn = false;
         _user = null;
         notifyListeners();
       }
     } else {
-      print('checkAuthStatus: Token bulunamadı veya geçersiz');
+      AppLogger.debug('checkAuthStatus: Token bulunamadı veya geçersiz');
       _isLoggedIn = false;
       _user = null;
     }

@@ -42,7 +42,7 @@ class ModernSectionHeader extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF17221B),
@@ -53,7 +53,7 @@ class ModernSectionHeader extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle!,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 12,
                     color: Colors.black45,
                     fontWeight: FontWeight.w500,
@@ -74,7 +74,7 @@ class ModernSectionHeader extends StatelessWidget {
             ),
             child: Text(
               actionLabel!,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -154,9 +154,9 @@ class ModernBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.poppins(
+        style: GoogleFonts.inter(
           color: color,
-          fontSize: 10,
+          fontSize: 11.5,
           fontWeight: FontWeight.w700,
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/category.dart' as models;
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class CategoryViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -24,7 +25,7 @@ class CategoryViewModel extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       if (kDebugMode) {
-        print('Category loading error: $e');
+        AppLogger.debug('Category loading error: $e');
       }
     } finally {
       _isLoading = false;

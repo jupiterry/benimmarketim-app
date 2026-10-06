@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/banner.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class BannerViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -21,10 +22,10 @@ class BannerViewModel extends ChangeNotifier {
     try {
       _banners = await _apiService.getBanners();
       _error = null;
-      print('BannerViewModel: Loaded ${_banners.length} banners');
+      AppLogger.debug('BannerViewModel: Loaded ${_banners.length} banners');
     } catch (e) {
       _error = e.toString();
-      print('BannerViewModel: Error loading banners: $e');
+      AppLogger.debug('BannerViewModel: Error loading banners: $e');
     } finally {
       _isLoading = false;
       notifyListeners();

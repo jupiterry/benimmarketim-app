@@ -1,0 +1,4 @@
+storeFile=release-key.keystore
+storePassword=YOUR_EXISTING_UPLOAD_KEY_PASSWORD
+keyAlias=benimmarketim
+keyPassword=YOUR_EXISTING_KEY_PASSWORD

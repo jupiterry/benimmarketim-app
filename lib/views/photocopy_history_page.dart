@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import '../models/photocopy.dart';
+import '../services/app_logger.dart';
 import '../services/photocopy_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
-import '../services/theme_service.dart';
-import 'package:go_router/go_router.dart';
+import 'widgets/market_ui.dart';
 
 class PhotocopyHistoryPage extends StatefulWidget {
   const PhotocopyHistoryPage({super.key});
@@ -17,7 +18,7 @@ class PhotocopyHistoryPage extends StatefulWidget {
 class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
   List<Photocopy> _photocopies = [];
   bool _isLoading = true;
-  String? _error;
+  bool _failed = false;
 
   @override
   void initState() {
@@ -28,18 +29,21 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
   Future<void> _loadPhotocopyHistory() async {
     setState(() {
       _isLoading = true;
-      _error = null;
+      _failed = false;
     });
 
     try {
       final photocopies = await PhotocopyService.getPhotocopyHistory();
+      if (!mounted) return;
       setState(() {
         _photocopies = photocopies;
         _isLoading = false;
       });
     } catch (e) {
+      AppLogger.debug('Fotokopi geçmişi yüklenemedi: $e');
+      if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _failed = true;
         _isLoading = false;
       });
     }
@@ -50,500 +54,265 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
   }
 
   Future<void> _cancelPhotocopy(Photocopy photocopy) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('İstek iptal edilsin mi?'),
+        content: Text('"${photocopy.originalName}" için fotokopi isteği iptal edilecek.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: MarketPalette.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('İptal et'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     try {
       await PhotocopyService.cancelPhotocopy(photocopy.id);
-      _showSnackBar('Fotokopi iptal edildi', isError: false);
+      if (!mounted) return;
+      showMarketSnack(context, 'Fotokopi isteği iptal edildi');
       _refreshHistory();
     } catch (e) {
-      _showSnackBar('İptal hatası: $e', isError: true);
+      AppLogger.debug('Fotokopi iptal hatası: $e');
+      if (!mounted) return;
+      showMarketSnack(context, 'İstek iptal edilemedi. Lütfen tekrar dene.', error: true);
     }
   }
 
   Future<void> _downloadPhotocopy(Photocopy photocopy) async {
     try {
       final filePath = await PhotocopyService.downloadPhotocopy(photocopy.id);
-      _showSnackBar('Dosya indirildi: $filePath', isError: false);
+      if (!mounted) return;
+      showMarketSnack(context, 'Dosya indirildi: $filePath');
     } catch (e) {
-      _showSnackBar('İndirme hatası: $e', isError: true);
+      AppLogger.debug('Fotokopi indirme hatası: $e');
+      if (!mounted) return;
+      showMarketSnack(context, 'Dosya indirilemedi. Lütfen tekrar dene.', error: true);
     }
-  }
-
-  void _showSnackBar(String message, {required bool isError}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.poppins()),
-        backgroundColor: isError ? AppColors.errorRed : AppColors.successGreen,
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = context.select<AuthViewModel, bool>((a) => a.isLoggedIn);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F8F5),
-      appBar: AppBar(
-        title: Text(
-          'Fotokopi Geçmişi',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+      backgroundColor: MarketPalette.canvas,
+      body: Column(
+        children: [
+          MarketHeader(
+            title: 'Fotokopi geçmişi',
+            subtitle: 'İsteklerinin durumunu buradan takip et',
+            icon: Icons.history_rounded,
+            compact: true,
+            actions: [
+              if (loggedIn)
+                MarketHeaderButton(
+                  icon: Icons.refresh_rounded,
+                  tooltip: 'Yenile',
+                  onTap: _refreshHistory,
+                ),
+            ],
           ),
-        ),
-        backgroundColor: const Color(0xFF075B39),
-        elevation: 0,
-        centerTitle: true,
-        leading: InkWell(
-          onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: .18)),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: Colors.white,
-            ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _refreshHistory,
-            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-            tooltip: 'Yenile',
-          ),
+          Expanded(child: _buildBody(loggedIn)),
         ],
       ),
-      body: Consumer<AuthViewModel>(
-        builder: (context, authViewModel, child) {
-          if (!authViewModel.isLoggedIn) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.lock_outline,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Giriş Yapın',
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Fotokopi geçmişi için giriş yapmanız gerekiyor',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (_isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  AppColors.successGreen,
-                ),
-              ),
-            );
-          }
-
-          if (_error != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.error_outline_rounded,
-                    size: 64,
-                    color: AppColors.errorRed,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Hata: $_error',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: AppColors.errorRed,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _refreshHistory,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.successGreen,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      'Tekrar Dene',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (_photocopies.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.history_rounded,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Henüz fotokopi isteğiniz bulunmuyor',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Yeni bir fotokopi isteği oluşturmak için + butonuna basın',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: _refreshHistory,
-            color: AppColors.successGreen,
-            child: ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: _photocopies.length,
-              itemBuilder: (context, index) {
-                final photocopy = _photocopies[index];
-                return _buildPhotocopyCard(photocopy);
+      floatingActionButton: loggedIn
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                context
+                    .push<Photocopy>('/photocopy-upload')
+                    .then((_) => _refreshHistory());
               },
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          context
-              .push<Photocopy>('/photocopy-upload')
-              .then((_) => _refreshHistory());
-        },
-        backgroundColor: AppColors.successGreen,
-        foregroundColor: Colors.white,
-        elevation: 4,
-        child: const Icon(Icons.add_rounded),
-        tooltip: 'Yeni Fotokopi İsteği',
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Yeni istek'),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildBody(bool loggedIn) {
+    if (!loggedIn) {
+      return MarketEmptyState(
+        icon: Icons.lock_outline_rounded,
+        title: 'Giriş yapman gerekiyor',
+        message: 'Fotokopi isteklerini görmek için hesabına giriş yap.',
+        actionLabel: 'Giriş yap',
+        actionIcon: Icons.login_rounded,
+        onAction: () => context.push('/login'),
+      );
+    }
+
+    if (_isLoading) {
+      return const SingleChildScrollView(
+        physics: NeverScrollableScrollPhysics(),
+        child: MarketListSkeleton(),
+      );
+    }
+
+    if (_failed) {
+      return MarketEmptyState(
+        icon: Icons.cloud_off_rounded,
+        title: 'Geçmiş yüklenemedi',
+        message: 'Bağlantını kontrol edip tekrar dene.',
+        actionLabel: 'Tekrar dene',
+        actionIcon: Icons.refresh_rounded,
+        onAction: _refreshHistory,
+        tint: MarketPalette.red,
+        tintSoft: MarketPalette.redSoft,
+      );
+    }
+
+    if (_photocopies.isEmpty) {
+      return MarketEmptyState(
+        icon: Icons.print_outlined,
+        title: 'Henüz fotokopi isteğin yok',
+        message: 'Belgeni yükle, siparişinle birlikte hazırlayıp getirelim.',
+        actionLabel: 'İlk isteği oluştur',
+        actionIcon: Icons.upload_file_rounded,
+        onAction: () => context
+            .push<Photocopy>('/photocopy-upload')
+            .then((_) => _refreshHistory()),
+        tint: MarketPalette.blue,
+        tintSoft: MarketPalette.blueSoft,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshHistory,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+        itemCount: _photocopies.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) => _buildPhotocopyCard(_photocopies[index]),
       ),
     );
   }
 
   Widget _buildPhotocopyCard(Photocopy photocopy) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _buildStatusChip(photocopy.status),
-                const Spacer(),
-                Text(
-                  photocopy.createdAt.toString().split(' ')[0],
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[500],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    _getFileIcon(photocopy.fileType),
-                    color: Colors.blue[600],
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        photocopy.originalName,
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        photocopy.fileSizeText,
-                        style: GoogleFonts.poppins(
-                          color: Colors.grey[500],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[100]!),
+    final date = photocopy.createdAt;
+    final dateText =
+        '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+
+    return MarketCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              MarketIconTile(
+                icon: _getFileIcon(photocopy.fileType),
+                size: 44,
+                background: MarketPalette.blueSoft,
+                foreground: MarketPalette.blue,
               ),
-              child: Column(
-                children: [
-                  _buildInfoRow('Kopya Sayısı', '${photocopy.copies}'),
-                  const SizedBox(height: 8),
-                  _buildInfoRow('Renk', photocopy.colorText),
-                  const SizedBox(height: 8),
-                  _buildInfoRow('Kağıt Boyutu', photocopy.paperSize),
-                  if (photocopy.price != null) ...[
-                    const SizedBox(height: 8),
-                    _buildInfoRow(
-                      'Fiyat',
-                      '₺${photocopy.price!.toStringAsFixed(2)}',
-                      isPrice: true,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (photocopy.notes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.amber[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber[100]!),
-                ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Not:',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.amber[800],
-                      ),
+                      photocopy.originalName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MarketText.label(size: 14),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
-                      photocopy.notes,
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.amber[900],
-                      ),
+                      '${photocopy.fileSizeText} • $dateText',
+                      style: MarketText.caption(),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _buildStatusChip(photocopy.status),
             ],
-            const SizedBox(height: 16),
-            _buildActionButtons(photocopy),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              MarketPill(
+                icon: Icons.copy_all_rounded,
+                label: '${photocopy.copies} kopya',
+                background: MarketPalette.surfaceMuted,
+                foreground: MarketPalette.inkSoft,
+              ),
+              MarketPill(
+                icon: Icons.palette_outlined,
+                label: photocopy.colorText,
+                background: MarketPalette.surfaceMuted,
+                foreground: MarketPalette.inkSoft,
+              ),
+              MarketPill(
+                icon: Icons.description_outlined,
+                label: photocopy.paperSize,
+                background: MarketPalette.surfaceMuted,
+                foreground: MarketPalette.inkSoft,
+              ),
+              if (photocopy.price != null)
+                MarketPill(
+                  icon: Icons.sell_outlined,
+                  label: formatTl(photocopy.price!),
+                ),
+            ],
+          ),
+          if (photocopy.notes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            MarketNotice.warning(
+              icon: Icons.sticky_note_2_outlined,
+              text: photocopy.notes,
+            ),
           ],
-        ),
+          _buildActionButtons(photocopy),
+        ],
       ),
     );
   }
 
   Widget _buildStatusChip(String status) {
-    Color color;
-    Color bgColor;
-    String text;
-
-    switch (status) {
-      case 'pending':
-        color = Colors.orange[700]!;
-        bgColor = Colors.orange[50]!;
-        text = 'Beklemede';
-        break;
-      case 'processing':
-        color = Colors.blue[700]!;
-        bgColor = Colors.blue[50]!;
-        text = 'İşleniyor';
-        break;
-      case 'completed':
-        color = AppColors.successGreen;
-        bgColor = AppColors.successGreen.withOpacity(0.1);
-        text = 'Tamamlandı';
-        break;
-      case 'failed':
-        color = AppColors.errorRed;
-        bgColor = AppColors.errorRed.withOpacity(0.1);
-        text = 'Başarısız';
-        break;
-      default:
-        color = Colors.grey[700]!;
-        bgColor = Colors.grey[100]!;
-        text = 'Bilinmiyor';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: GoogleFonts.poppins(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value, {bool isPrice = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 13),
-        ),
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isPrice ? AppColors.successGreen : Colors.black87,
-          ),
-        ),
-      ],
-    );
+    final (Color fg, Color bg, String text) = switch (status) {
+      'pending' => (MarketPalette.orangeInk, MarketPalette.orangeSoft, 'Beklemede'),
+      'processing' => (MarketPalette.blue, MarketPalette.blueSoft, 'Hazırlanıyor'),
+      'completed' => (MarketPalette.greenDark, MarketPalette.greenSoft, 'Tamamlandı'),
+      'failed' => (MarketPalette.red, MarketPalette.redSoft, 'Başarısız'),
+      _ => (MarketPalette.muted, MarketPalette.surfaceMuted, 'Bilinmiyor'),
+    };
+    return MarketPill(label: text, background: bg, foreground: fg);
   }
 
   Widget _buildActionButtons(Photocopy photocopy) {
     if (photocopy.status == 'pending') {
-      return SizedBox(
-        width: double.infinity,
+      return Padding(
+        padding: const EdgeInsets.only(top: 14),
         child: OutlinedButton.icon(
           onPressed: () => _cancelPhotocopy(photocopy),
-          icon: const Icon(Icons.cancel_outlined, size: 18),
-          label: Text(
-            'İptal Et',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-          ),
+          icon: const Icon(Icons.close_rounded, size: 19),
+          label: const Text('İsteği iptal et'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.errorRed,
-            side: const BorderSide(color: AppColors.errorRed),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            foregroundColor: MarketPalette.red,
+            side: const BorderSide(color: MarketPalette.redLine),
+            minimumSize: const Size.fromHeight(46),
           ),
         ),
       );
     }
 
     if (photocopy.status == 'completed') {
-      final hasUrl = photocopy.downloadUrl != null;
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
+      return Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: FilledButton.icon(
           onPressed: () => _downloadPhotocopy(photocopy),
-          icon: const Icon(Icons.download_rounded, size: 18),
-          label: Text(
-            'Dosyayı İndir',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: hasUrl ? AppColors.successGreen : Colors.blue,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
+          icon: const Icon(Icons.download_rounded, size: 19),
+          label: const Text('Dosyayı indir'),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
         ),
       );
     }

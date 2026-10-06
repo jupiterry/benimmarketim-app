@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import 'widgets/auth_ui.dart';
-import 'widgets/market_palette.dart';
+import 'widgets/legal_links.dart';
+import 'widgets/market_ui.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -32,6 +32,8 @@ class _RegisterPageState extends State<RegisterPage> {
   bool? _isReferralCodeValid;
   String? _referralMessage;
   bool _isCheckingReferralCode = false;
+  bool _acceptedTerms = false;
+  bool _showTermsError = false;
 
   @override
   void dispose() {
@@ -74,7 +76,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _register() async {
     FocusScope.of(context).unfocus();
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final formValid = _formKey.currentState?.validate() ?? false;
+    if (!_acceptedTerms) setState(() => _showTermsError = true);
+    if (!formValid || !_acceptedTerms) return;
 
     final auth = context.read<AuthViewModel>();
     final referralCode = _referralCodeController.text.trim();
@@ -95,12 +99,12 @@ class _RegisterPageState extends State<RegisterPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MarketRadius.lg)),
         icon: Container(
           width: 52,
           height: 52,
           decoration: const BoxDecoration(
-            color: Color(0xFFFFE9E9),
+            color: MarketPalette.redSoft,
             shape: BoxShape.circle,
           ),
           child: const Icon(
@@ -108,22 +112,13 @@ class _RegisterPageState extends State<RegisterPage> {
             color: MarketPalette.red,
           ),
         ),
-        title: Text(
+        title: const Text(
           'Kayıt tamamlanamadı',
           textAlign: TextAlign.center,
-          style: GoogleFonts.manrope(
-            color: MarketPalette.ink,
-            fontWeight: FontWeight.w800,
-          ),
         ),
         content: Text(
           auth.error ?? 'Bilgilerini kontrol edip tekrar deneyebilirsin.',
           textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
-            color: MarketPalette.muted,
-            fontSize: 13,
-            height: 1.45,
-          ),
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
@@ -287,7 +282,9 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                     const SizedBox(height: 22),
                     _buildReferralField(),
-                    const SizedBox(height: 25),
+                    const SizedBox(height: 18),
+                    _buildConsent(),
+                    const SizedBox(height: 20),
                     Consumer<AuthViewModel>(
                       builder: (context, auth, _) => AuthPrimaryButton(
                         label: 'Hesabımı Oluştur',
@@ -302,21 +299,13 @@ class _RegisterPageState extends State<RegisterPage> {
                       children: [
                         Text(
                           'Zaten hesabın var mı?',
-                          style: GoogleFonts.inter(
-                            color: MarketPalette.muted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: MarketText.caption(),
                         ),
                         TextButton(
                           onPressed: _openLogin,
                           child: Text(
                             'Giriş yap',
-                            style: GoogleFonts.inter(
-                              color: MarketPalette.greenDark,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
+                            style: MarketText.label(color: MarketPalette.greenDark, size: 12, weight: FontWeight.w800),
                           ),
                         ),
                       ],
@@ -328,6 +317,76 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildConsent() {
+    void toggle() => setState(() {
+          _acceptedTerms = !_acceptedTerms;
+          if (_acceptedTerms) _showTermsError = false;
+        });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: toggle,
+          borderRadius: BorderRadius.circular(MarketRadius.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: Checkbox(
+                  value: _acceptedTerms,
+                  onChanged: (_) => toggle(),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    "Kullanım Koşulları'nı kabul ediyorum ve KVKK Aydınlatma Metni'ni okudum.",
+                    style: MarketText.body(size: 13, height: 1.4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_showTermsError && !_acceptedTerms)
+          Padding(
+            padding: const EdgeInsets.only(left: 44, top: 2),
+            child: Text(
+              'Hesap oluşturmak için onay kutusunu işaretle',
+              style: MarketText.caption(
+                color: MarketPalette.red,
+                weight: FontWeight.w600,
+              ),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(left: 32),
+          child: Wrap(
+            children: [
+              TextButton(
+                onPressed: () => LegalLinks.open(context, LegalLinks.terms),
+                child: const Text('Kullanım Koşulları'),
+              ),
+              TextButton(
+                onPressed: () => LegalLinks.open(context, LegalLinks.kvkk),
+                child: const Text('KVKK Aydınlatma Metni'),
+              ),
+              TextButton(
+                onPressed: () => LegalLinks.open(context, LegalLinks.privacy),
+                child: const Text('Gizlilik Politikası'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -345,26 +404,18 @@ class _RegisterPageState extends State<RegisterPage> {
           children: [
             Text(
               'Davet kodu',
-              style: GoogleFonts.inter(
-                color: MarketPalette.ink,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+              style: MarketText.label(size: 12),
             ),
             const SizedBox(width: 7),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFFEDF0FF),
-                borderRadius: BorderRadius.circular(8),
+                color: MarketPalette.blueSoft,
+                borderRadius: BorderRadius.circular(MarketRadius.xs),
               ),
               child: Text(
                 'İsteğe bağlı',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF4C6FFF),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: MarketText.label(color: MarketPalette.blue, size: 11),
               ),
             ),
           ],
@@ -387,7 +438,7 @@ class _RegisterPageState extends State<RegisterPage> {
             padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(
               color: validationColor.withValues(alpha: .09),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(MarketRadius.sm),
             ),
             child: Row(
               children: [
@@ -402,11 +453,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 Expanded(
                   child: Text(
                     _referralMessage!,
-                    style: GoogleFonts.inter(
-                      color: validationColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: MarketText.label(color: validationColor, size: 12),
                   ),
                 ),
               ],
@@ -426,7 +473,7 @@ class _RegisterPageState extends State<RegisterPage> {
           height: 18,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: Color(0xFF4C6FFF),
+            color: MarketPalette.blue,
           ),
         ),
       );
@@ -454,7 +501,7 @@ class _FormIntro extends StatelessWidget {
           height: 38,
           decoration: BoxDecoration(
             color: MarketPalette.greenSoft,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(MarketRadius.sm),
           ),
           child: const Icon(
             Icons.person_add_alt_rounded,
@@ -469,19 +516,11 @@ class _FormIntro extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: GoogleFonts.manrope(
-                  color: MarketPalette.ink,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: MarketText.heading(size: 18),
               ),
               Text(
                 subtitle,
-                style: GoogleFonts.inter(
-                  color: MarketPalette.muted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: MarketText.caption(size: 12),
               ),
             ],
           ),

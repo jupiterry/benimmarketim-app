@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'app_logger.dart';
 
 class TokenManager {
   static const String _accessTokenKey = 'access_token';
@@ -11,7 +12,7 @@ class TokenManager {
 
   // SharedPreferences'ı başlat (Artık kullanılmıyor ama uyumluluk için boş bırakıyoruz)
   static Future<void> init() async {
-    print('TokenManager başlatıldı (Secure Storage)');
+    AppLogger.debug('TokenManager başlatıldı (Secure Storage)');
   }
 
   // Access token kaydetme (Secure Storage)
@@ -28,7 +29,7 @@ class TokenManager {
         key: _tokenSavedDateKey,
         value: DateTime.now().toIso8601String(),
       );
-      print('Token kayıt tarihi saklandı: ${DateTime.now()}');
+      AppLogger.debug('Token kayıt tarihi saklandı: ${DateTime.now()}');
     } else {
       // Her girişte tarihi güncelle (10 gün kuralı için)
       await _secureStorage.write(
@@ -60,7 +61,7 @@ class TokenManager {
       try {
         return DateTime.parse(dateString);
       } catch (e) {
-        print('Token kayıt tarihi parse edilemedi: $e');
+        AppLogger.debug('Token kayıt tarihi parse edilemedi: $e');
         return null;
       }
     }
@@ -81,18 +82,21 @@ class TokenManager {
 
     // 10 günden fazla geçmişse token geçersiz
     if (difference.inDays > _tokenValidityDays) {
-      print('Token süresi dolmuş: ${difference.inDays} gün geçmiş');
+      AppLogger.debug('Token süresi dolmuş: ${difference.inDays} gün geçmiş');
       return false;
     }
 
-    print('Token geçerli: ${difference.inDays} gün kaldı');
+    AppLogger.debug('Token geçerli: ${difference.inDays} gün kaldı');
     return true;
   }
 
   // Tüm token'ları temizle
   static Future<void> clearAllTokens() async {
-    await _secureStorage.deleteAll();
-    print('Tüm token\'lar Secure Storage\'dan temizlendi');
+    // Yalnızca bu sınıfın yazdığı anahtarları sil.
+    await _secureStorage.delete(key: _accessTokenKey);
+    await _secureStorage.delete(key: _refreshTokenKey);
+    await _secureStorage.delete(key: _tokenSavedDateKey);
+    AppLogger.debug('Tüm token\'lar Secure Storage\'dan temizlendi');
   }
 
   // Token var mı kontrol et (10 günlük kontrol ile)
@@ -117,13 +121,13 @@ class TokenManager {
     final hasAccess = await _secureStorage.containsKey(key: _accessTokenKey);
     final hasRefresh = await _secureStorage.containsKey(key: _refreshTokenKey);
 
-    print('=== Token Debug (Secure Storage) ===');
-    print('Access Token: ${hasAccess ? "Var" : "Yok"}');
-    print('Refresh Token: ${hasRefresh ? "Var" : "Yok"}');
-    print('Token Kayıt Tarihi: $savedDate');
-    print('Token Geçerli: $isValid');
-    print('Kalan Gün: $daysLeft');
-    print('Has Token: ${await hasToken()}');
-    print('==================');
+    AppLogger.debug('=== Token Debug (Secure Storage) ===');
+    AppLogger.debug('Access Token: ${hasAccess ? "Var" : "Yok"}');
+    AppLogger.debug('Refresh Token: ${hasRefresh ? "Var" : "Yok"}');
+    AppLogger.debug('Token Kayıt Tarihi: $savedDate');
+    AppLogger.debug('Token Geçerli: $isValid');
+    AppLogger.debug('Kalan Gün: $daysLeft');
+    AppLogger.debug('Has Token: ${await hasToken()}');
+    AppLogger.debug('==================');
   }
 }

@@ -7,6 +7,7 @@ import '../../viewmodels/favorites_viewmodel.dart';
 import '../../viewmodels/cart_viewmodel.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import 'package:go_router/go_router.dart';
+import 'market_ui.dart';
 
 class ProductCard extends StatelessWidget {
   final Product product;
@@ -103,20 +104,20 @@ class ProductCard extends StatelessWidget {
                                   builder: (context) => AlertDialog(
                                     title: Text(
                                       'Giriş Yapın',
-                                      style: GoogleFonts.poppins(
+                                      style: GoogleFonts.inter(
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     content: Text(
                                       'Favorilere eklemek için giriş yapmalısınız.',
-                                      style: GoogleFonts.poppins(),
+                                      style: GoogleFonts.inter(),
                                     ),
                                     actions: [
                                       TextButton(
                                         onPressed: () => Navigator.pop(context),
                                         child: Text(
                                           'İptal',
-                                          style: GoogleFonts.poppins(
+                                          style: GoogleFonts.inter(
                                             color: Colors.grey,
                                           ),
                                         ),
@@ -128,7 +129,7 @@ class ProductCard extends StatelessWidget {
                                         },
                                         child: Text(
                                           'Giriş Yap',
-                                          style: GoogleFonts.poppins(
+                                          style: GoogleFonts.inter(
                                             color: AppColors.successGreen,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -185,8 +186,8 @@ class ProductCard extends StatelessWidget {
                           ),
                           child: Text(
                             '%${product.discountPercentage.toInt()}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10,
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
                               fontWeight: FontWeight.w700,
                               color: Colors.red[400],
                             ),
@@ -223,7 +224,7 @@ class ProductCard extends StatelessWidget {
                               ),
                               child: Text(
                                 'TÜKENDİ',
-                                style: GoogleFonts.poppins(
+                                style: GoogleFonts.inter(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
@@ -248,7 +249,7 @@ class ProductCard extends StatelessWidget {
                       product.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
@@ -265,16 +266,16 @@ class ProductCard extends StatelessWidget {
                           children: [
                             if (product.isDiscounted)
                               Text(
-                                '₺${product.originalPrice.toStringAsFixed(2)}',
-                                style: GoogleFonts.poppins(
+                                '${formatTl(product.originalPrice)}',
+                                style: GoogleFonts.inter(
                                   fontSize: 11,
                                   color: Colors.grey[400],
                                   decoration: TextDecoration.lineThrough,
                                 ),
                               ),
                             Text(
-                              '₺${product.actualPrice.toStringAsFixed(2)}',
-                              style: GoogleFonts.poppins(
+                              '${formatTl(product.actualPrice)}',
+                              style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.successGreen,
@@ -314,7 +315,7 @@ class ProductCard extends StatelessWidget {
                                               Expanded(
                                                 child: Text(
                                                   '${product.name} sepete eklendi',
-                                                  style: GoogleFonts.poppins(
+                                                  style: GoogleFonts.inter(
                                                     color: Colors.white,
                                                     fontWeight: FontWeight.w600,
                                                   ),
@@ -347,8 +348,8 @@ class ProductCard extends StatelessWidget {
                                 child: product.isOutOfStock
                                     ? Text(
                                         'Stokta Yok',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 10,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11.5,
                                           fontWeight: FontWeight.w700,
                                           color: Colors.grey[700],
                                           height: 1.0,

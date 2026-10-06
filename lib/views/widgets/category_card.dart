@@ -96,7 +96,7 @@ class CategoryCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               category.name,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: color,

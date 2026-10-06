@@ -107,12 +107,15 @@ class OrderItem {
 }
 
 class OrderProduct {
+  /// Ürün silinmişse veya eski backend sürümünde boş gelir.
+  final String? productId;
   final String name;
   final int quantity;
   final double price;
   final String? image;
 
   OrderProduct({
+    this.productId,
     required this.name,
     required this.quantity,
     required this.price,
@@ -120,7 +123,11 @@ class OrderProduct {
   });
 
   factory OrderProduct.fromJson(Map<String, dynamic> json) {
+    final rawId = json['productId'];
     return OrderProduct(
+      productId: rawId == null || rawId.toString().isEmpty
+          ? null
+          : rawId.toString(),
       name: json['name'] ?? '',
       quantity: json['quantity'] ?? 0,
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
@@ -130,6 +137,7 @@ class OrderProduct {
 
   Map<String, dynamic> toJson() {
     return {
+      'productId': productId,
       'name': name,
       'quantity': quantity,
       'price': price,

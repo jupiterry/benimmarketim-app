@@ -36,9 +36,9 @@ class CartBadge extends StatelessWidget {
                   ),
                   child: Text(
                     cartViewModel.itemCount.toString(),
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.inter(
                       color: Colors.white,
-                      fontSize: 10,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,

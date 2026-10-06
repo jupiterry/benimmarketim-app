@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import '../models/chat_model.dart';
 import 'api_service.dart';
 import 'token_manager.dart';
+import 'app_logger.dart';
 
 class ChatService {
   static const String baseUrl = ApiService.baseUrl;
@@ -34,15 +35,12 @@ class ChatService {
   /// Yeni sohbet başlat veya mevcut aktif sohbeti getir
   Future<ChatResponse> createChat({String? orderId, String type = 'general'}) async {
     try {
-      print('ChatService: Creating chat - orderId: $orderId, type: $type');
+      AppLogger.debug('ChatService: Creating chat - orderId: $orderId, type: $type');
       
       final response = await _dio.post('/chat/create', data: {
         'orderId': orderId,
         'type': orderId != null ? 'order' : type,
       });
-
-      print('ChatService: Create response: ${response.data}');
-
       if (response.data['success'] == true) {
         final chat = ChatModel.fromJson(response.data['chat']);
         final isNew = response.data['isNew'] ?? false;
@@ -62,7 +60,7 @@ class ChatService {
 
       throw Exception('Sohbet oluşturulamadı');
     } catch (e) {
-      print('ChatService: Create chat error: $e');
+      AppLogger.debug('ChatService: Create chat error: $e');
       rethrow;
     }
   }
@@ -70,12 +68,9 @@ class ChatService {
   /// Kullanıcının sohbetlerini getir
   Future<List<ChatModel>> getMyChats() async {
     try {
-      print('ChatService: Getting my chats...');
+      AppLogger.debug('ChatService: Getting my chats...');
       
       final response = await _dio.get('/chat/my-chats');
-
-      print('ChatService: My chats response: ${response.data}');
-
       if (response.data['success'] == true && response.data['chats'] != null) {
         final List<dynamic> chatsData = response.data['chats'];
         return chatsData.map((json) => ChatModel.fromJson(json)).toList();
@@ -83,7 +78,7 @@ class ChatService {
 
       return [];
     } catch (e) {
-      print('ChatService: Get my chats error: $e');
+      AppLogger.debug('ChatService: Get my chats error: $e');
       return [];
     }
   }
@@ -91,15 +86,12 @@ class ChatService {
   /// Sohbet mesajlarını getir
   Future<MessagesResponse> getChatMessages(String chatId, {int page = 1, int limit = 50}) async {
     try {
-      print('ChatService: Getting messages for chat: $chatId');
+      AppLogger.debug('ChatService: Getting messages for chat: $chatId');
       
       final response = await _dio.get(
         '/chat/$chatId',
         queryParameters: {'page': page, 'limit': limit},
       );
-
-      print('ChatService: Messages response: ${response.data}');
-
       if (response.data['success'] == true) {
         final List<dynamic> messagesData = response.data['messages'] ?? [];
         final messages = messagesData.map((json) => MessageModel.fromJson(json)).toList();
@@ -118,7 +110,7 @@ class ChatService {
 
       throw Exception('Mesajlar alınamadı');
     } catch (e) {
-      print('ChatService: Get messages error: $e');
+      AppLogger.debug('ChatService: Get messages error: $e');
       rethrow;
     }
   }
@@ -132,7 +124,7 @@ class ChatService {
     String? fileName,
   }) async {
     try {
-      print('ChatService: Sending message to chat: $chatId');
+      AppLogger.debug('ChatService: Sending message to chat: $chatId');
       
       final response = await _dio.post('/chat/$chatId/send', data: {
         'content': content,
@@ -140,16 +132,13 @@ class ChatService {
         'fileUrl': fileUrl,
         'fileName': fileName,
       });
-
-      print('ChatService: Send message response: ${response.data}');
-
       if (response.data['success'] == true && response.data['message'] != null) {
         return MessageModel.fromJson(response.data['message']);
       }
 
       throw Exception('Mesaj gönderilemedi');
     } catch (e) {
-      print('ChatService: Send message error: $e');
+      AppLogger.debug('ChatService: Send message error: $e');
       rethrow;
     }
   }
@@ -157,13 +146,13 @@ class ChatService {
   /// Mesajları okundu olarak işaretle
   Future<bool> markAsRead(String chatId) async {
     try {
-      print('ChatService: Marking messages as read for chat: $chatId');
+      AppLogger.debug('ChatService: Marking messages as read for chat: $chatId');
       
       final response = await _dio.put('/chat/$chatId/read');
 
       return response.data['success'] == true;
     } catch (e) {
-      print('ChatService: Mark as read error: $e');
+      AppLogger.debug('ChatService: Mark as read error: $e');
       return false;
     }
   }

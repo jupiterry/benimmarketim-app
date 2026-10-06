@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../viewmodels/banner_viewmodel.dart';
@@ -8,9 +7,9 @@ import '../../viewmodels/category_viewmodel.dart';
 import '../../viewmodels/home_page_viewmodel.dart';
 import 'market_discovery_section.dart';
 import 'market_home_header.dart';
-import 'market_palette.dart';
 import 'market_products_section.dart';
 import 'market_promo_section.dart';
+import 'market_ui.dart';
 
 export 'market_palette.dart';
 
@@ -19,16 +18,20 @@ class ModernMarketHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Üst kısım yeşil (aşağı çekince header rengi görünür), geri kalanı
+    // zemin rengi: bölümler arasında kesirli piksellerden çizgi sızmaz.
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF063F2B),
-            Color(0xFF075B39),
-            Color(0xFF117A48),
+            MarketPalette.greenDeep,
+            MarketPalette.greenDeep,
+            MarketPalette.canvas,
+            MarketPalette.canvas,
           ],
+          stops: [0, .3, .3, 1],
         ),
       ),
       child: RefreshIndicator(
@@ -41,41 +44,22 @@ class ModernMarketHome extends StatelessWidget {
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
+          // Tek, kesintisiz zemin: bölümler arasında piksel çizgisi oluşmaz.
           slivers: const [
             SliverToBoxAdapter(
               child: ColoredBox(
                 color: MarketPalette.canvas,
-                child: MarketHomeHeader(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: ColoredBox(
-                color: MarketPalette.canvas,
-                child: MarketPromoSection(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: ColoredBox(
-                color: MarketPalette.canvas,
-                child: MarketQuickActions(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: ColoredBox(
-                color: MarketPalette.canvas,
-                child: MarketQuickDiscovery(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: ColoredBox(
-                color: MarketPalette.canvas,
-                child: MarketProductsSection(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: ColoredBox(
-                color: MarketPalette.canvas,
-                child: SizedBox(height: 120),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    MarketHomeHeader(),
+                    MarketPromoSection(),
+                    MarketQuickActions(),
+                    MarketQuickDiscovery(),
+                    MarketProductsSection(),
+                    SizedBox(height: 120),
+                  ],
+                ),
               ),
             ),
           ],
@@ -109,19 +93,19 @@ class MarketBottomNavigation extends StatelessWidget {
       builder: (context, cart, _) {
         return SafeArea(
           top: false,
-          minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+          minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Container(
-            height: 76,
-            padding: const EdgeInsets.all(7),
+            height: 70,
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: MarketPalette.line),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(MarketRadius.lg),
               boxShadow: [
                 BoxShadow(
-                  color: MarketPalette.ink.withValues(alpha: .11),
-                  blurRadius: 28,
-                  offset: const Offset(0, 12),
+                  color: MarketPalette.greenDeep.withValues(alpha: .10),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
@@ -140,7 +124,7 @@ class MarketBottomNavigation extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: MarketPalette.greenSoft,
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(MarketRadius.md),
                       ),
                     ),
                   ),
@@ -203,7 +187,7 @@ class _NavigationItem extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(MarketRadius.md),
             child: TweenAnimationBuilder<Color?>(
               tween: ColorTween(
                 end: selected ? MarketPalette.greenDark : MarketPalette.muted,
@@ -222,37 +206,13 @@ class _NavigationItem extends StatelessWidget {
                         Icon(
                           icon,
                           color: color,
-                          size: 23,
+                          size: 24,
                         ),
                         if (badgeCount > 0)
                           Positioned(
-                            right: -9,
-                            top: -8,
-                            child: Container(
-                              constraints: const BoxConstraints(
-                                minWidth: 18,
-                                minHeight: 18,
-                              ),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 4),
-                              decoration: BoxDecoration(
-                                color: MarketPalette.orange,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 1.5,
-                                ),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                badgeCount > 99 ? '99+' : '$badgeCount',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
+                            right: -12,
+                            top: -9,
+                            child: MarketCountBadge(count: badgeCount),
                           ),
                       ],
                     ),
@@ -262,11 +222,7 @@ class _NavigationItem extends StatelessWidget {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: color,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
+                        style: MarketText.body(color: color ?? MarketPalette.muted, size: 12, weight: selected ? FontWeight.w800 : FontWeight.w600),
                       ),
                     ),
                   ],

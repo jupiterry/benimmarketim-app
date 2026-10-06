@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
+import 'app_logger.dart';
 
 class WebSocketService {
   static WebSocketService? _instance;
@@ -41,23 +42,23 @@ class WebSocketService {
             final message = json.decode(data);
             _messageController?.add(message);
           } catch (e) {
-            print('WebSocket message parse error: $e');
+            AppLogger.debug('WebSocket message parse error: $e');
           }
         },
         onError: (error) {
-          print('WebSocket error: $error');
+          AppLogger.debug('WebSocket error: $error');
           _isConnected = false;
           _scheduleReconnect();
         },
         onDone: () {
-          print('WebSocket connection closed');
+          AppLogger.debug('WebSocket connection closed');
           _isConnected = false;
           _scheduleReconnect();
         },
       );
 
       _isConnected = true;
-      print('WebSocket connected');
+      AppLogger.debug('WebSocket connected');
       
       // Kullanıcı ID'si varsa gönder
       if (_userId != null) {
@@ -67,7 +68,7 @@ class WebSocketService {
         });
       }
     } catch (e) {
-      print('WebSocket connection error: $e');
+      AppLogger.debug('WebSocket connection error: $e');
       _isConnected = false;
       _scheduleReconnect();
     }

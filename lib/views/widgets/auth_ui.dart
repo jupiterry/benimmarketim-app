@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-import 'market_palette.dart';
+import 'market_ui.dart';
 
 class AuthPageShell extends StatelessWidget {
   final Widget child;
@@ -77,7 +76,7 @@ class AuthBrandHeader extends StatelessWidget {
               height: 50,
               decoration: BoxDecoration(
                 color: MarketPalette.lime,
-                borderRadius: BorderRadius.circular(17),
+                borderRadius: BorderRadius.circular(MarketRadius.md),
               ),
               child: Icon(icon, color: MarketPalette.greenDeep, size: 26),
             ),
@@ -86,22 +85,13 @@ class AuthBrandHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'BENİM MARKETİM',
-                  style: GoogleFonts.manrope(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .5,
-                  ),
+                  'Benim Marketim',
+                  style: MarketText.heading(color: Colors.white, size: 16),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   'Devrek • Mahallenin marketi',
-                  style: GoogleFonts.inter(
-                    color: Colors.white.withValues(alpha: .64),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: MarketText.caption(color: Colors.white.withValues(alpha: .74)),
                 ),
               ],
             ),
@@ -110,23 +100,12 @@ class AuthBrandHeader extends StatelessWidget {
         const SizedBox(height: 32),
         Text(
           title,
-          style: GoogleFonts.manrope(
-            color: Colors.white,
-            fontSize: 30,
-            height: 1.08,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -.8,
-          ),
+          style: MarketText.display(color: Colors.white),
         ),
         const SizedBox(height: 9),
         Text(
           subtitle,
-          style: GoogleFonts.inter(
-            color: Colors.white.withValues(alpha: .72),
-            fontSize: 13,
-            height: 1.45,
-            fontWeight: FontWeight.w500,
-          ),
+          style: MarketText.body(color: Colors.white.withValues(alpha: .72), size: 13),
         ),
       ],
     );
@@ -144,7 +123,7 @@ class AuthFormCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(27),
+        borderRadius: BorderRadius.circular(MarketRadius.xl),
         border: Border.all(color: MarketPalette.line),
         boxShadow: [
           BoxShadow(
@@ -203,11 +182,7 @@ class AuthTextField extends StatelessWidget {
         if (showLabel) ...[
           Text(
             label,
-            style: GoogleFonts.inter(
-              color: MarketPalette.ink,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+            style: MarketText.label(size: 12),
           ),
           const SizedBox(height: 8),
         ],
@@ -221,18 +196,10 @@ class AuthTextField extends StatelessWidget {
           textCapitalization: textCapitalization,
           autofillHints: autofillHints,
           onFieldSubmitted: (_) => onSubmitted?.call(),
-          style: GoogleFonts.inter(
-            color: MarketPalette.ink,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+          style: MarketText.body(weight: FontWeight.w600),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.inter(
-              color: MarketPalette.muted.withValues(alpha: .65),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
+            hintStyle: MarketText.body(color: MarketPalette.subtle),
             prefixIcon: Icon(icon, color: MarketPalette.green, size: 21),
             suffixIcon: suffix ??
                 (onToggleVisibility == null
@@ -248,42 +215,38 @@ class AuthTextField extends StatelessWidget {
                         ),
                       )),
             filled: true,
-            fillColor: const Color(0xFFF7F9F6),
+            fillColor: MarketPalette.canvas,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 15,
               vertical: 17,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
               borderSide: const BorderSide(color: MarketPalette.line),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
               borderSide: const BorderSide(color: MarketPalette.line),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
               borderSide: const BorderSide(
                 color: MarketPalette.green,
                 width: 1.5,
               ),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
               borderSide: const BorderSide(color: MarketPalette.red),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
               borderSide: const BorderSide(
                 color: MarketPalette.red,
                 width: 1.5,
               ),
             ),
-            errorStyle: GoogleFonts.inter(
-              color: MarketPalette.red,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
+            errorStyle: MarketText.caption(color: MarketPalette.red, size: 12, weight: FontWeight.w600),
           ),
         ),
       ],
@@ -314,7 +277,7 @@ class AuthPrimaryButton extends StatelessWidget {
         backgroundColor: MarketPalette.green,
         disabledBackgroundColor: MarketPalette.green.withValues(alpha: .55),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(MarketRadius.md),
         ),
         elevation: 0,
       ),
@@ -332,11 +295,7 @@ class AuthPrimaryButton extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: MarketText.label(color: Colors.white, size: 14, weight: FontWeight.w800),
                 ),
                 const SizedBox(width: 9),
                 Icon(icon, color: Colors.white, size: 19),
@@ -353,22 +312,10 @@ class AuthBackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(15),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
-        child: const SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(
-            Icons.arrow_back_rounded,
-            color: Colors.white,
-            size: 22,
-          ),
-        ),
-      ),
+    return MarketHeaderButton(
+      icon: Icons.arrow_back_rounded,
+      tooltip: 'Geri',
+      onTap: onTap,
     );
   }
 }
@@ -384,15 +331,7 @@ class _AuthBackground extends StatelessWidget {
           flex: 5,
           child: Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF063F2B),
-                  Color(0xFF075B39),
-                  Color(0xFF117A48),
-                ],
-              ),
+              gradient: MarketPalette.headerGradient,
             ),
           ),
         ),

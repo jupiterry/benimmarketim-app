@@ -5,13 +5,15 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
-      flutter: stable
+      flutter: 3.47.2
       xcode: latest
       cocoapods: default
     scripts:
       - name: Get Flutter dependencies
         script: |
           flutter pub get
+      - name: Run tests
+        script: flutter test
       - name: Install pods
         script: |
           find . -name "Podfile" -exec dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'
@@ -20,7 +22,7 @@ workflows:
           # Hesap onayi gelene kadar imzasiz build aliyoruz
           flutter build ios --release --no-codesign
     artifacts:
-      - "build/ios/ipa/*.ipa"
+      - "build/ios/iphoneos/*.app"
       - "/tmp/xcodebuild_logs/*.log"
       - "*.dSYM.zip"
     publishing:
@@ -36,7 +38,7 @@ workflows:
     integrations:
       app_store_connect: CodeMagic2 # App Store Connect integration adı
     environment:
-      flutter: stable
+      flutter: 3.47.2
       xcode: latest
       cocoapods: default
       groups:
@@ -61,6 +63,8 @@ workflows:
       - name: Get Flutter dependencies
         script: |
           flutter pub get
+      - name: Run tests
+        script: flutter test
       - name: Install pods
         script: |
           find . -name "Podfile" -exec dirname {} \; | xargs -n1 -I % sh -c 'cd "%"; pod install'

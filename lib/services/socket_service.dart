@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'token_manager.dart';
+import 'app_logger.dart';
 
 class SocketService {
   static SocketService? _instance;
@@ -33,7 +34,7 @@ class SocketService {
   /// Socket.IO bağlantısını başlat
   Future<void> connect({String? userId}) async {
     if (_isConnected && _socket != null) {
-      print('SocketService: Already connected');
+      AppLogger.debug('SocketService: Already connected');
       return;
     }
 
@@ -56,49 +57,49 @@ class SocketService {
       );
 
       _socket!.onConnect((_) {
-        print('SocketService: ✅ Connected to server');
+        AppLogger.debug('SocketService: ✅ Connected to server');
         _isConnected = true;
 
         // Eğer aktif sohbet varsa yeniden katıl
         if (_currentChatId != null) {
           _socket!.emit('joinChat', _currentChatId);
-          print('SocketService: Reconnected, rejoined chat: $_currentChatId');
+          AppLogger.debug('SocketService: Reconnected, rejoined chat: $_currentChatId');
         }
       });
 
       _socket!.onDisconnect((_) {
-        print('SocketService: ❌ Disconnected from server');
+        AppLogger.debug('SocketService: ❌ Disconnected from server');
         _isConnected = false;
       });
 
       _socket!.onConnectError((error) {
-        print('SocketService: ⚠️ Connection error: $error');
+        AppLogger.debug('SocketService: ⚠️ Connection error: $error');
         _isConnected = false;
       });
 
       _socket!.onError((error) {
-        print('SocketService: ⚠️ Socket error: $error');
+        AppLogger.debug('SocketService: ⚠️ Socket error: $error');
       });
 
       // Yeni mesaj event'i
       _socket!.on('newMessage', (data) {
-        print('SocketService: 📩 New message received: $data');
+        AppLogger.debug('SocketService: 📩 New message received');
         try {
           if (data is Map) {
             _messageController.add(Map<String, dynamic>.from(data));
           } else if (data is Map<String, dynamic>) {
             _messageController.add(data);
           } else {
-            print('SocketService: Unknown data type: ${data.runtimeType}');
+            AppLogger.debug('SocketService: Unknown data type: ${data.runtimeType}');
           }
         } catch (e) {
-          print('SocketService: Error processing message: $e');
+          AppLogger.debug('SocketService: Error processing message: $e');
         }
       });
 
       // Mesaj okundu event'i
       _socket!.on('messagesRead', (data) {
-        print('SocketService: ✓ Messages read: $data');
+        AppLogger.debug('SocketService: ✓ Messages read');
         try {
           Map<String, dynamic> result = {};
           if (data is Map) {
@@ -107,20 +108,20 @@ class SocketService {
           result['type'] = 'messagesRead';
           _messageController.add(result);
         } catch (e) {
-          print('SocketService: Error processing messagesRead: $e');
+          AppLogger.debug('SocketService: Error processing messagesRead: $e');
         }
       });
 
       // Yazıyor göstergesi
       _socket!.on('userTyping', (data) {
-        print('SocketService: ⌨️ User typing: $data');
+        AppLogger.debug('SocketService: ⌨️ User typing');
         if (data is Map && data['chatId'] != null) {
           _typingController.add(data['chatId'].toString());
         }
       });
 
       _socket!.on('userStopTyping', (data) {
-        print('SocketService: ⌨️ User stop typing: $data');
+        AppLogger.debug('SocketService: ⌨️ User stop typing');
         if (data is Map && data['chatId'] != null) {
           _typingController.add(''); // Boş string = yazmıyor
         }
@@ -128,7 +129,7 @@ class SocketService {
 
       // Sohbet kapatıldı event'i
       _socket!.on('chatClosed', (data) {
-        print('SocketService: 🔒 Chat closed: $data');
+        AppLogger.debug('SocketService: 🔒 Chat closed');
         try {
           Map<String, dynamic> result = {};
           if (data is Map) {
@@ -137,13 +138,13 @@ class SocketService {
           result['type'] = 'chatClosed';
           _messageController.add(result);
         } catch (e) {
-          print('SocketService: Error processing chatClosed: $e');
+          AppLogger.debug('SocketService: Error processing chatClosed: $e');
         }
       });
 
       _socket!.connect();
     } catch (e) {
-      print('SocketService: ❌ Connection error: $e');
+      AppLogger.debug('SocketService: ❌ Connection error: $e');
       _isConnected = false;
     }
   }
@@ -153,9 +154,9 @@ class SocketService {
     _currentChatId = chatId;
     if (_socket != null && _isConnected) {
       _socket!.emit('joinChat', chatId);
-      print('SocketService: 🚪 Joined chat room: $chatId');
+      AppLogger.debug('SocketService: 🚪 Joined chat room: $chatId');
     } else {
-      print(
+      AppLogger.debug(
           'SocketService: ⚠️ Not connected, will join $chatId when connected');
     }
   }
@@ -164,7 +165,7 @@ class SocketService {
   void leaveChat(String chatId) {
     if (_socket != null && _isConnected) {
       _socket!.emit('leaveChat', chatId);
-      print('SocketService: 🚪 Left chat room: $chatId');
+      AppLogger.debug('SocketService: 🚪 Left chat room: $chatId');
     }
     if (_currentChatId == chatId) {
       _currentChatId = null;
@@ -205,7 +206,7 @@ class SocketService {
         'platform': platform,
         'appVersion': appVersion,
       });
-      print(
+      AppLogger.debug(
           'SocketService: 👀 User entered chat: $chatId (platform: $platform, v$appVersion)');
     }
   }
@@ -217,7 +218,7 @@ class SocketService {
         'chatId': chatId,
         'userId': userId ?? _userId,
       });
-      print('SocketService: 👋 User left chat: $chatId');
+      AppLogger.debug('SocketService: 👋 User left chat: $chatId');
     }
   }
 
@@ -232,7 +233,7 @@ class SocketService {
     _socket?.dispose();
     _socket = null;
     _isConnected = false;
-    print('SocketService: Disconnected');
+    AppLogger.debug('SocketService: Disconnected');
   }
 
   /// Servisi temizle

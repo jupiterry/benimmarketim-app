@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../viewmodels/category_products_viewmodel.dart';
+
 import '../models/category.dart';
-import '../views/widgets/product_card.dart';
-import '../services/theme_service.dart';
-import 'package:go_router/go_router.dart';
+import '../models/product.dart';
+import '../services/turkish_text.dart';
+import '../viewmodels/category_products_viewmodel.dart';
 import 'widgets/category_presentation.dart';
+import 'widgets/market_product_card.dart';
+import 'widgets/market_ui.dart';
 
 class CategoryProductsPage extends StatefulWidget {
   final Category category;
@@ -17,9 +18,20 @@ class CategoryProductsPage extends StatefulWidget {
   State<CategoryProductsPage> createState() => _CategoryProductsPageState();
 }
 
+enum _Sort { recommended, priceLow, priceHigh, discounted }
+
+const _sortLabels = {
+  _Sort.recommended: 'Önerilen',
+  _Sort.priceLow: 'En düşük fiyat',
+  _Sort.priceHigh: 'En yüksek fiyat',
+  _Sort.discounted: 'İndirimli',
+};
+
 class _CategoryProductsPageState extends State<CategoryProductsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  _Sort _sort = _Sort.recommended;
+
   String get _categoryTitle => categoryDisplayName(widget.category.name);
 
   @override
@@ -31,9 +43,9 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
           );
     });
     _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.toLowerCase();
-      });
+      if (_searchQuery != _searchController.text) {
+        setState(() => _searchQuery = _searchController.text);
+      }
     });
   }
 
@@ -43,214 +55,164 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
     super.dispose();
   }
 
+  List<Product> _visible(List<Product> products) {
+    final list = products
+        .where((product) => TurkishText.contains(product.name, _searchQuery))
+        .toList();
+    switch (_sort) {
+      case _Sort.recommended:
+        break;
+      case _Sort.priceLow:
+        list.sort((a, b) => a.actualPrice.compareTo(b.actualPrice));
+      case _Sort.priceHigh:
+        list.sort((a, b) => b.actualPrice.compareTo(a.actualPrice));
+      case _Sort.discounted:
+        list.sort((a, b) => b.discountPercentage.compareTo(a.discountPercentage));
+    }
+    // Stokta olmayanlar her sıralamada sona.
+    final inStock = list.where((p) => !p.isOutOfStock);
+    final outOfStock = list.where((p) => p.isOutOfStock);
+    return [...inStock, ...outOfStock];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: InkWell(
-          onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-        title: Text(
-          _categoryTitle,
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            fontSize: 20,
-            color: Colors.black87,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          // Arama Çubuğu
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-            color: Colors.white,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value.toLowerCase();
-                  });
-                },
-                decoration: InputDecoration(
-                  hintText: '$_categoryTitle içinde ara...',
-                  hintStyle: GoogleFonts.poppins(
-                    color: Colors.grey[400],
-                    fontSize: 14,
+      backgroundColor: MarketPalette.canvas,
+      body: Consumer<CategoryProductsViewModel>(
+        builder: (context, viewModel, child) {
+          final products = _visible(viewModel.products);
+          final loaded = !viewModel.isLoading && viewModel.error == null;
+
+          return CustomScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              SliverToBoxAdapter(
+                child: MarketHeader(
+                  title: _categoryTitle,
+                  subtitle: loaded ? '${viewModel.products.length} ürün' : 'Ürünler yükleniyor',
+                  compact: true,
+                  leading: Container(
+                    width: 46,
+                    height: 46,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: MarketPalette.lime,
+                      borderRadius: BorderRadius.circular(MarketRadius.md),
+                    ),
+                    child: Text(
+                      categoryEmoji(widget.category.name),
+                      style: const TextStyle(fontSize: 22, height: 1),
+                    ),
                   ),
-                  prefixIcon: const Icon(
-                    Icons.search_rounded,
-                    color: AppColors.successGreen,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
+                  bottom: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    style: MarketText.body(size: 16),
+                    decoration: InputDecoration(
+                      hintText: '$_categoryTitle içinde ara',
+                      prefixIcon: const Icon(Icons.search_rounded, color: MarketPalette.green),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Temizle',
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: _searchController.clear,
+                            ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(MarketRadius.md),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(MarketRadius.md),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(MarketRadius.md),
+                        borderSide: const BorderSide(color: MarketPalette.lime, width: 2),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-
-          // Ürün Listesi
-          Expanded(
-            child: Consumer<CategoryProductsViewModel>(
-              builder: (context, viewModel, child) {
-                if (viewModel.isLoading) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.successGreen,
-                      ),
-                    ),
-                  );
-                }
-
-                if (viewModel.error != null) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              if (viewModel.isLoading)
+                const SliverToBoxAdapter(child: MarketProductGridSkeleton())
+              else if (viewModel.error != null)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: MarketEmptyState(
+                    icon: Icons.wifi_off_rounded,
+                    title: 'Ürünler yüklenemedi',
+                    message: viewModel.error!,
+                    actionLabel: 'Tekrar dene',
+                    actionIcon: Icons.refresh_rounded,
+                    onAction: () => viewModel.loadCategoryProducts(widget.category.id),
+                    tint: MarketPalette.red,
+                    tintSoft: MarketPalette.redSoft,
+                  ),
+                )
+              else ...[
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 60,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
                       children: [
-                        Icon(
-                          Icons.error_outline_rounded,
-                          size: 64,
-                          color: Colors.red[300],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Bir hata oluştu',
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                        for (final entry in _sortLabels.entries) ...[
+                          ChoiceChip(
+                            label: Text(entry.value),
+                            selected: _sort == entry.key,
+                            showCheckmark: false,
+                            onSelected: (_) => setState(() => _sort = entry.key),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          viewModel.error!,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: () {
-                            viewModel.loadCategoryProducts(widget.category.id);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.successGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 32,
-                              vertical: 16,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: Text(
-                            'Tekrar Dene',
-                            style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                // Local search filtering
-                final filteredProducts = viewModel.products.where((product) {
-                  return product.name.toLowerCase().contains(_searchQuery);
-                }).toList();
-
-                if (filteredProducts.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.inventory_2_outlined,
-                            size: 64,
-                            color: Colors.grey[300],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'Bu kategoride ürün bulunamadı'
-                              : '"$_searchQuery" için sonuç bulunamadı',
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        if (_searchQuery.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Farklı bir arama yapmayı deneyin',
-                            style: GoogleFonts.poppins(color: Colors.grey[500]),
-                          ),
+                          const SizedBox(width: 8),
                         ],
                       ],
                     ),
-                  );
-                }
-
-                return GridView.builder(
-                  padding: const EdgeInsets.all(20),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.7,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
                   ),
-                  itemCount: filteredProducts.length,
-                  itemBuilder: (context, index) {
-                    final product = filteredProducts[index];
-                    return ProductCard(
-                      product: product,
-                      onTap: () {
-                        context.push('/product', extra: product);
+                ),
+                if (products.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: MarketEmptyState(
+                      icon: _searchQuery.isEmpty
+                          ? Icons.inventory_2_outlined
+                          : Icons.search_off_rounded,
+                      title: _searchQuery.isEmpty
+                          ? 'Bu kategoride ürün yok'
+                          : '"$_searchQuery" bulunamadı',
+                      message: _searchQuery.isEmpty
+                          ? 'Yeni ürünler eklendiğinde burada göreceksin.'
+                          : 'Farklı bir kelimeyle tekrar dene.',
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+                    sliver: SliverLayoutBuilder(
+                      builder: (context, constraints) {
+                        final width = constraints.crossAxisExtent;
+                        final columns = width >= 920 ? 4 : width >= 620 ? 3 : 2;
+                        return SliverGrid(
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: columns,
+                            mainAxisExtent: marketProductCardHeight,
+                            crossAxisSpacing: 13,
+                            mainAxisSpacing: 13,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => MarketProductCard(product: products[index]),
+                            childCount: products.length,
+                          ),
+                        );
                       },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+                    ),
+                  ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }

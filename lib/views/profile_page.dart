@@ -1,404 +1,247 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../viewmodels/auth_viewmodel.dart';
-import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
-import '../services/api_service.dart';
-import 'widgets/custom_dialog.dart';
-import 'widgets/modern_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 
-class ProfilePage extends StatefulWidget {
+import '../models/user.dart';
+import '../viewmodels/auth_viewmodel.dart';
+import '../viewmodels/favorites_viewmodel.dart';
+import '../viewmodels/settings_viewmodel.dart';
+import 'widgets/custom_dialog.dart';
+import 'widgets/market_ui.dart';
+
+class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
   @override
-  State<ProfilePage> createState() => _ProfilePageState();
+  Widget build(BuildContext context) {
+    return Consumer<AuthViewModel>(
+      builder: (context, auth, _) {
+        final user = auth.user;
+        if (auth.isLoggedIn && (user == null || user.name.isEmpty)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            auth.updateProfile();
+          });
+        }
+
+        return Scaffold(
+          backgroundColor: MarketPalette.canvas,
+          body: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              if (auth.isLoggedIn && user != null)
+                _ProfileHeader(user: user)
+              else if (auth.isLoggedIn)
+                const MarketHeader(
+                  title: 'Hesabım',
+                  subtitle: 'Bilgilerin yükleniyor…',
+                  icon: Icons.person_rounded,
+                  showBack: false,
+                )
+              else
+                const MarketHeader(
+                  title: 'Hesabım',
+                  subtitle: 'Siparişlerini ve tercihlerini yönet',
+                  icon: Icons.person_rounded,
+                  showBack: false,
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+                child: auth.isLoggedIn
+                    ? _LoggedInContent(auth: auth)
+                    : const _GuestContent(),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _ProfilePageState extends State<ProfilePage> {
-  late Future<Map<String, dynamic>> _settingsFuture;
+// ---------------------------------------------------------------------------
+// Giriş yapılmış
+// ---------------------------------------------------------------------------
 
-  @override
-  void initState() {
-    super.initState();
-    _settingsFuture = ApiService().getSettings();
-  }
+class _ProfileHeader extends StatelessWidget {
+  final User user;
+
+  const _ProfileHeader({required this.user});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: SafeArea(
-        child: Column(
+    final name = user.name.trim().isEmpty ? 'Kullanıcı' : user.name.trim();
+    final initials = name
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part.characters.first.toUpperCase())
+        .join();
+
+    return MarketHeader(
+      title: name,
+      subtitle: user.email,
+      showBack: false,
+      leading: Container(
+        width: 56,
+        height: 56,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: MarketPalette.lime,
+          borderRadius: BorderRadius.circular(MarketRadius.lg),
+        ),
+        child: Text(
+          initials,
+          style: MarketText.title(color: MarketPalette.greenDeep, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoggedInContent extends StatelessWidget {
+  final AuthViewModel auth;
+
+  const _LoggedInContent({required this.auth});
+
+  @override
+  Widget build(BuildContext context) {
+    final favoriteCount =
+        context.select<FavoritesViewModel, int>((f) => f.favoritesCount);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            // Custom Header
-            _buildHeader(context),
-
-            // Profile Content
             Expanded(
-              child: Consumer<AuthViewModel>(
-                builder: (context, authViewModel, child) {
-                  if (!authViewModel.isLoggedIn) {
-                    return _buildNotLoggedInView(context);
-                  }
-
-                  if (authViewModel.user == null) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      authViewModel.updateProfile();
-                    });
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final user = authViewModel.user!;
-                  if (user.name.isEmpty) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      authViewModel.updateProfile();
-                    });
-                  }
-
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        _buildProfileHeader(user),
-                        const SizedBox(height: 30),
-                        _buildSectionHeader('Hesabım'),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.shopping_bag_outlined,
-                          title: 'Siparişlerim',
-                          onTap: () => context.push('/orders'),
-                        ),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.favorite_outline,
-                          title: 'Favorilerim',
-                          onTap: () => context.push('/favorites'),
-                        ),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.card_giftcard_outlined,
-                          title: 'Arkadaşını Getir',
-                          onTap: () => context.push('/referral'),
-                        ),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.print_outlined,
-                          title: 'Fotokopi Hizmeti',
-                          onTap: () => context.push('/photocopy-upload'),
-                        ),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.history,
-                          title: 'Fotokopi Geçmişi',
-                          onTap: () => context.push('/photocopy-history'),
-                        ),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.chat_bubble_outline,
-                          title: 'Canlı Destek',
-                          onTap: () => context.push('/chat'),
-                        ),
-                        _buildMenuOption(
-                          context,
-                          icon: Icons.delete_outline_rounded,
-                          title: 'Hesabımı Sil',
-                          onTap: () => _showDeleteAccountDialog(context),
-                          isDestructive: true,
-                        ),
-                        const SizedBox(height: 24),
-                        const SizedBox(height: 24),
-                        _buildSectionHeader('Sistem Ayarları'),
-                        FutureBuilder<Map<String, dynamic>>(
-                          future: _settingsFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-                            if (snapshot.hasError) {
-                              return Text(
-                                'Ayarlar yüklenemedi',
-                                style: GoogleFonts.poppins(color: Colors.red),
-                              );
-                            }
-                            final settings = snapshot.data ?? {};
-                            final minAmount =
-                                settings['minimumOrderAmount'] ?? 0;
-                            final startHour = settings['orderStartHour'] ?? 0;
-                            final startMinute =
-                                settings['orderStartMinute'] ?? 0;
-                            final endHour = settings['orderEndHour'] ?? 0;
-                            final endMinute = settings['orderEndMinute'] ?? 0;
-
-                            return Column(
-                              children: [
-                                _buildInfoTile(
-                                  icon: Icons.monetization_on_outlined,
-                                  title: 'Minimum Sipariş Tutarı',
-                                  value: '₺$minAmount',
-                                ),
-                                _buildInfoTile(
-                                  icon: Icons.access_time,
-                                  title: 'Sipariş Saatleri',
-                                  value:
-                                      '${startHour.toString().padLeft(2, '0')}:${startMinute.toString().padLeft(2, '0')} - ${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}',
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 30),
-                        _buildLogoutButton(context, authViewModel),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  );
-                },
+              child: _ShortcutCard(
+                icon: Icons.receipt_long_rounded,
+                label: 'Siparişlerim',
+                color: MarketPalette.greenDark,
+                background: MarketPalette.greenSoft,
+                onTap: () => context.push('/orders'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _ShortcutCard(
+                icon: Icons.favorite_rounded,
+                label: favoriteCount > 0 ? 'Favoriler ($favoriteCount)' : 'Favoriler',
+                color: MarketPalette.pink,
+                background: MarketPalette.pinkSoft,
+                onTap: () => context.push('/favorites'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _ShortcutCard(
+                icon: Icons.support_agent_rounded,
+                label: 'Destek',
+                color: MarketPalette.blue,
+                background: MarketPalette.blueSoft,
+                onTap: () => context.push('/chat'),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF123D24), Color(0xFF087F35)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.successGreen.withOpacity(.22),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.14),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(.18)),
+        const SizedBox(height: 16),
+        _InviteBanner(onTap: () => context.push('/referral')),
+        const SizedBox(height: 24),
+        MarketMenuGroup(
+          title: 'Hizmetler',
+          children: [
+            MarketMenuTile(
+              icon: Icons.print_outlined,
+              title: 'Fotokopi hizmeti',
+              subtitle: 'Belgeni yükle, siparişinle gelsin',
+              iconColor: MarketPalette.blue,
+              iconBackground: MarketPalette.blueSoft,
+              onTap: () => context.push('/photocopy-upload'),
             ),
-            child: const Icon(Icons.person_rounded, color: Colors.white),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Hesabım',
-                    style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800)),
-                Text('Siparişlerini ve tercihlerini yönet',
-                    style: GoogleFonts.poppins(
-                        color: Colors.white.withOpacity(.72),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500)),
-              ],
+            MarketMenuTile(
+              icon: Icons.history_rounded,
+              title: 'Fotokopi geçmişi',
+              iconColor: MarketPalette.blue,
+              iconBackground: MarketPalette.blueSoft,
+              onTap: () => context.push('/photocopy-history'),
             ),
-          ),
-          Icon(Icons.more_horiz_rounded,
-              color: Colors.white.withOpacity(.75), size: 25),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader(dynamic user) {
-    return Column(
-      children: [
-        ModernSoftCard(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Container(
-                width: 68,
-                height: 68,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [AppColors.successGreen, Color(0xFF8DE8A5)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.successGreen.withOpacity(.25),
-                      blurRadius: 16,
-                      offset: const Offset(0, 7),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.person_rounded,
-                    size: 35, color: Colors.white),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Hoş geldin 👋',
-                        style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: AppColors.successGreenDark,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 3),
-                    Text(user.name.isNotEmpty ? user.name : 'Kullanıcı',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF17221B))),
-                    Text(user.email ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                            fontSize: 11, color: Colors.black45)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: Colors.black26),
-            ],
-          ),
+            MarketMenuTile(
+              icon: Icons.rate_review_outlined,
+              title: 'Geri bildirim gönder',
+              subtitle: 'Görüş ve önerilerini bekliyoruz',
+              onTap: () => context.push('/feedback'),
+            ),
+          ],
         ),
+        const SizedBox(height: 24),
+        const _StoreInfoGroup(),
+        const SizedBox(height: 24),
+        MarketMenuGroup(
+          title: 'Hesap',
+          children: [
+            MarketMenuTile(
+              icon: Icons.logout_rounded,
+              title: 'Çıkış yap',
+              iconColor: MarketPalette.inkSoft,
+              iconBackground: MarketPalette.surfaceMuted,
+              onTap: () => _confirmLogout(context),
+            ),
+            MarketMenuTile(
+              icon: Icons.delete_outline_rounded,
+              title: 'Hesabımı sil',
+              subtitle: 'Tüm verilerin kalıcı olarak silinir',
+              destructive: true,
+              onTap: () => _showDeleteAccountDialog(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        const _VersionFooter(),
       ],
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12, left: 4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[500],
-            letterSpacing: 1,
-          ),
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const MarketIconTile(
+          icon: Icons.logout_rounded,
+          size: 52,
+          background: MarketPalette.surfaceMuted,
+          foreground: MarketPalette.inkSoft,
         ),
-      ),
-    );
-  }
-
-  Widget _buildMenuOption(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    bool isDestructive = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          onTap: onTap,
-          leading: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: isDestructive
-                  ? AppColors.errorRed.withOpacity(0.1)
-                  : Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon,
-                color: isDestructive ? AppColors.errorRed : Colors.black87,
-                size: 22),
-          ),
-          title: Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: isDestructive ? AppColors.errorRed : Colors.black87,
-            ),
-          ),
-          trailing: Icon(
-            Icons.arrow_forward_ios,
-            size: 16,
-            color: Colors.grey[300],
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Çıkış yapılsın mı?', textAlign: TextAlign.center),
+        content: const Text(
+          'Sepetin bu cihazda saklanmaya devam eder.',
+          textAlign: TextAlign.center,
         ),
-      ),
-    );
-  }
-
-  Widget _buildLogoutButton(BuildContext context, AuthViewModel authViewModel) {
-    return TextButton(
-      onPressed: () async {
-        // Instant logout without dialog
-        await authViewModel.logout();
-        if (context.mounted) {
-          context.go('/login');
-        }
-      },
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.red[50],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.logout, color: Colors.red[400], size: 20),
-          const SizedBox(width: 10),
-          Text(
-            'Çıkış Yap',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.red[400],
-            ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Çıkış yap'),
           ),
         ],
       ),
     );
+    if (confirmed != true) return;
+    await auth.logout();
+    if (context.mounted) context.go('/login');
   }
 
   void _showDeleteAccountDialog(BuildContext context) {
     CustomDialog.show(
       context: context,
-      title: 'Hesabınızı Silmek İstiyor musunuz?',
+      title: 'Hesabını silmek istiyor musun?',
       message:
-          'Hesabınızı sildiğinizde tüm verileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz.',
-      confirmButtonText: 'Hesabımı Sil',
+          'Hesabını sildiğinde tüm verilerin kalıcı olarak silinir. Bu işlem geri alınamaz.',
+      confirmButtonText: 'Hesabımı sil',
       isDestructive: true,
       icon: Icons.warning_amber_rounded,
       onConfirm: () async {
@@ -410,9 +253,7 @@ class _ProfilePageState extends State<ProfilePage> {
           context: context,
           barrierDismissible: false,
           builder: (context) => const Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.errorRed),
-            ),
+            child: CircularProgressIndicator(color: MarketPalette.red),
           ),
         );
 
@@ -425,213 +266,258 @@ class _ProfilePageState extends State<ProfilePage> {
         }
 
         if (success && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Hesabınız başarıyla silindi.',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: AppColors.successGreen,
-            ),
-          );
+          showMarketSnack(context, 'Hesabın silindi.');
           context.go('/');
         } else if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                authViewModel.error ?? 'Hesap silinirken bir hata oluştu.',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: AppColors.errorRed,
-            ),
+          showMarketSnack(
+            context,
+            authViewModel.error ?? 'Hesap silinirken bir hata oluştu.',
+            error: true,
+            aboveNavigation: true,
           );
         }
       },
     );
   }
+}
 
-  Widget _buildNotLoggedInView(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(30),
+class _ShortcutCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color background;
+  final VoidCallback onTap;
+
+  const _ShortcutCard({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.background,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MarketCard(
+      shadow: false,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+      radius: MarketRadius.lg,
+      onTap: onTap,
+      child: Column(
+        children: [
+          MarketIconTile(icon: icon, size: 42, background: background, foreground: color),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: MarketText.label(size: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InviteBanner extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _InviteBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(MarketRadius.lg),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [MarketPalette.greenDark, MarketPalette.green],
+            ),
+            borderRadius: BorderRadius.circular(MarketRadius.lg),
+          ),
+          child: Row(
+            children: [
+              const MarketIconTile(
+                icon: Icons.card_giftcard_rounded,
+                size: 46,
+                background: MarketPalette.lime,
+                foreground: MarketPalette.greenDeep,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.person_outline,
-                        size: 60,
-                        color: Colors.grey[400],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
                     Text(
-                      'Giriş Yapın',
-                      style: GoogleFonts.poppins(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
+                      'Arkadaşını getir, birlikte kazanın',
+                      style: MarketText.heading(color: Colors.white, size: 16),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 3),
                     Text(
-                      'Siparişlerinizi takip etmek ve size özel fırsatlardan yararlanmak için giriş yapın.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        color: Colors.grey[500],
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    ElevatedButton(
-                      onPressed: () => context.push('/login'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.successGreen,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 40,
-                          vertical: 16,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        'Giriş Yap',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Sistem Ayarları',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[500],
-                          letterSpacing: 1,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    FutureBuilder<Map<String, dynamic>>(
-                      future: _settingsFuture,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
-                        if (snapshot.hasError) {
-                          return Text(
-                            'Ayarlar yüklenemedi',
-                            style: GoogleFonts.poppins(color: Colors.red),
-                          );
-                        }
-                        final settings = snapshot.data ?? {};
-                        final minAmount = settings['minimumOrderAmount'] ?? 0;
-                        final startHour = settings['orderStartHour'] ?? 0;
-                        final startMinute = settings['orderStartMinute'] ?? 0;
-                        final endHour = settings['orderEndHour'] ?? 0;
-                        final endMinute = settings['orderEndMinute'] ?? 0;
-
-                        return Column(
-                          children: [
-                            _buildInfoTile(
-                              icon: Icons.monetization_on_outlined,
-                              title: 'Minimum Sipariş Tutarı',
-                              value: '₺$minAmount',
-                            ),
-                            _buildInfoTile(
-                              icon: Icons.access_time,
-                              title: 'Sipariş Saatleri',
-                              value:
-                                  '${startHour.toString().padLeft(2, '0')}:${startMinute.toString().padLeft(2, '0')} - ${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}',
-                            ),
-                          ],
-                        );
-                      },
+                      'Davet kodunu paylaş, ilk siparişte indirim kazan.',
+                      style: MarketText.caption(color: Colors.white.withValues(alpha: .8)),
                     ),
                   ],
                 ),
               ),
-            ),
+              const Icon(Icons.chevron_right_rounded, color: Colors.white),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
+}
 
-  Widget _buildInfoTile({
-    required IconData icon,
-    required String title,
-    required String value,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+// ---------------------------------------------------------------------------
+// Giriş yapılmamış
+// ---------------------------------------------------------------------------
+
+class _GuestContent extends StatelessWidget {
+  const _GuestContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MarketCard(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Hesabına giriş yap', style: MarketText.title(size: 22)),
+              const SizedBox(height: 6),
+              Text(
+                'Giriş yaparak alışverişini kolaylaştır:',
+                style: MarketText.body(color: MarketPalette.muted, size: 14),
+              ),
+              const SizedBox(height: 14),
+              const _Benefit(
+                icon: Icons.local_shipping_outlined,
+                text: 'Siparişlerini anlık takip et',
+              ),
+              const _Benefit(
+                icon: Icons.favorite_border_rounded,
+                text: 'Favori ürünlerini kaydet',
+              ),
+              const _Benefit(
+                icon: Icons.local_activity_outlined,
+                text: 'Sana özel kupon ve fırsatlar kazan',
+              ),
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: () => context.push('/login'),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                child: const Text('Giriş yap'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: () => context.push('/register'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                child: const Text('Yeni hesap oluştur'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _StoreInfoGroup(),
+        const SizedBox(height: 22),
+        const _VersionFooter(),
+      ],
+    );
+  }
+}
+
+class _Benefit extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _Benefit({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          MarketIconTile(icon: icon, size: 34),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(text, style: MarketText.label(size: 14, weight: FontWeight.w600)),
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          leading: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: Colors.black87, size: 22),
-          ),
-          title: Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-            ),
-          ),
-          trailing: Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ortak
+// ---------------------------------------------------------------------------
+
+class _StoreInfoGroup extends StatelessWidget {
+  const _StoreInfoGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsViewModel>();
+    String hhmm(int h, int m) =>
+        '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+    final hours =
+        '${hhmm(settings.orderStartHour, settings.orderStartMinute)} – ${hhmm(settings.orderEndHour, settings.orderEndMinute)}';
+    final points = [
+      if (settings.girlsDormEnabled) settings.girlsDormName,
+      if (settings.boysDormEnabled) settings.boysDormName,
+    ];
+
+    Widget value(String text) => Text(text, style: MarketText.label(size: 14));
+
+    return MarketMenuGroup(
+      title: 'Mağaza bilgileri',
+      children: [
+        MarketMenuTile(
+          icon: Icons.schedule_rounded,
+          title: 'Sipariş saatleri',
+          subtitle: settings.isWithinOrderHours ? 'Şu an açık' : 'Şu an kapalı',
+          trailing: value(hours),
         ),
-      ),
+        MarketMenuTile(
+          icon: Icons.shopping_basket_outlined,
+          title: 'Minimum sepet tutarı',
+          trailing: value(formatTlShort(settings.minimumOrderAmount)),
+        ),
+        MarketMenuTile(
+          icon: Icons.location_on_outlined,
+          title: 'Teslimat noktaları',
+          subtitle: points.isEmpty ? 'Şu an teslimat yapılmıyor' : points.join(' • '),
+        ),
+      ],
+    );
+  }
+}
+
+class _VersionFooter extends StatelessWidget {
+  const _VersionFooter();
+
+  static final Future<PackageInfo> _info = PackageInfo.fromPlatform();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: _info,
+      builder: (context, snapshot) {
+        final version = snapshot.data?.version;
+        return Text(
+          version == null ? 'Benim Marketim' : 'Benim Marketim • Sürüm $version',
+          textAlign: TextAlign.center,
+          style: MarketText.caption(),
+        );
+      },
     );
   }
 }

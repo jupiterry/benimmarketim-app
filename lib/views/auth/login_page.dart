@@ -80,7 +80,7 @@ class _LoginPageState extends State<LoginPage> {
         const SizedBox(height: 16),
         // Text(
         //   'Benim Marketim',
-        //   style: GoogleFonts.poppins(
+        //   style: GoogleFonts.inter(
         //     fontSize: 28,
         //     fontWeight: FontWeight.bold,
         //     color: Colors.black87,
@@ -89,7 +89,7 @@ class _LoginPageState extends State<LoginPage> {
         const SizedBox(height: 8),
         Text(
           'Hesabınıza giriş yapın',
-          style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[600]),
+          style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[600]),
         ),
       ],
     );
@@ -185,7 +185,7 @@ class _LoginPageState extends State<LoginPage> {
                           ? const CircularProgressIndicator(color: Colors.white)
                           : Text(
                               'Giriş Yap',
-                              style: GoogleFonts.poppins(
+                              style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -212,7 +212,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       child: Text(
                         '🚀 Otomatik Giriş (Dev)',
-                        style: GoogleFonts.poppins(
+                        style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -238,7 +238,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   child: Text(
                     authViewModel.error!,
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.inter(
                       color: Colors.red[700],
                       fontSize: 14,
                     ),
@@ -260,7 +260,7 @@ class _LoginPageState extends State<LoginPage> {
       children: [
         Text(
           'Hesabınız yok mu? ',
-          style: GoogleFonts.poppins(color: Colors.grey[600]),
+          style: GoogleFonts.inter(color: Colors.grey[600]),
         ),
         GestureDetector(
           onTap: () {
@@ -271,7 +271,7 @@ class _LoginPageState extends State<LoginPage> {
           },
           child: Text(
             'Kayıt Ol',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.inter(
               color: Colors.green[600],
               fontWeight: FontWeight.w600,
             ),

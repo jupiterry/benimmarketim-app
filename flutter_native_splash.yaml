@@ -1,15 +1,25 @@
+# NOT: Bu dosya varsa flutter_native_splash, pubspec.yaml içindeki
+# yapılandırma yerine bunu kullanır. İkisi aynı tutulmalıdır.
+#
+# Logosuz, düz #053D2A açılış: Flutter açılış ekranıyla aynı renk; beyaz
+# arka plan ve eski logo görünmez.
 flutter_native_splash:
-  color: "#FFFFFF"
-  image: "assets/images/logo_new.png"
-  branding: "assets/images/logo_new.png"
-  color_dark: "#121212"
-  image_dark: "assets/images/logo_new.png"
-  branding_dark: "assets/images/logo_new.png"
-
-  android_12:
-    image: "assets/images/logo_new.png"
-    icon_background_color: "#FFFFFF"
-    image_dark: "assets/images/logo_new.png"
-    icon_background_color_dark: "#121212"
-
+  color: "#053D2A"
+  color_dark: "#053D2A"
+  ios: true
+  android: true
   web: false
+  fullscreen: false
+  # Görsel verilmezse paket iOS'a 1x1 opak siyah piksel yazar; şeffaf görsel
+  # ile ekran tamamen düz renk kalır.
+  image_ios: assets/splash/android12_transparent.png
+
+  # Android 12+ sistem açılışında görsel verilmezse uygulama simgesi (eski
+  # logo) gösterilir. Tamamen şeffaf görsel ile logosuz, düz renk açılış.
+  android_12:
+    image: assets/splash/android12_transparent.png
+    image_dark: assets/splash/android12_transparent.png
+    color: "#053D2A"
+    color_dark: "#053D2A"
+    icon_background_color: "#053D2A"
+    icon_background_color_dark: "#053D2A"

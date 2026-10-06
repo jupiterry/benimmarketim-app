@@ -18,8 +18,6 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
-    print('User JSON: $json');
-    
     return User(
       id: json['_id'] ?? json['id'] ?? '',
       name: json['name'] ?? '',
@@ -112,8 +110,6 @@ class AuthResponse {
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
-    print('AuthResponse JSON: $json');
-    
     return AuthResponse(
       user: User.fromJson(json['user'] ?? json['data']?['user'] ?? {}),
       accessToken: json['accessToken'] ?? json['token'] ?? json['data']?['accessToken'] ?? '',

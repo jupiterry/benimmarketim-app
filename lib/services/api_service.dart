@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../models/product.dart';
 import '../models/user.dart';
 import '../models/order.dart';
@@ -12,17 +13,29 @@ import '../models/banner.dart';
 import '../models/referral.dart';
 import '../models/coupon.dart';
 import 'token_manager.dart';
+import 'app_logger.dart';
 
 class ApiService {
   // Gerçek API base URL'i
   static const String baseUrl = 'https://devrekbenimmarketim.com/api';
-  late Dio _dio;
 
-  // Token'ı memory'de tut
-  String? _storedToken;
+  // Tüm ApiService örnekleri aynı Dio'yu (bağlantı havuzu + interceptor)
+  // paylaşır; böylece token yenileme tek noktadan yönetilir.
+  static Dio? _sharedDio;
 
-  ApiService() {
-    _dio = Dio(
+  // Aynı anda gelen 401'lerde refresh isteği yalnızca bir kez atılır.
+  static Future<String?>? _refreshInFlight;
+
+  late final Dio _dio = _sharedDio ??= _createDio();
+
+  /// Yalnızca testler/ekran görüntüleri için: ağ yerine sahte yanıt verir.
+  @visibleForTesting
+  static void debugUseHttpAdapter(HttpClientAdapter adapter) {
+    _sharedDio = _createDio()..httpClientAdapter = adapter;
+  }
+
+  static Dio _createDio() {
+    final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
         connectTimeout: const Duration(seconds: 60), // 60 saniye
@@ -32,17 +45,17 @@ class ApiService {
       ),
     );
 
-    // SSL Pinning (Güvenlik)
-    // Not: Gerçek production ortamında buraya sertifika SHA-256 parmak izi eklenmeli
-    // Şu anlık self-signed veya geçersiz sertifikaları reddediyoruz (varsayılan davranış)
-    // Ancak Man-in-the-Middle saldırılarını önlemek için fingerprint kontrolü ekliyoruz.
-
-    // Bu fingerprint devrekbenimmarketim.com'un sertifikasına ait.
-    // Sertifika değişirse bu değerin de güncellenmesi gerekir!
+    // NOT: badCertificateCallback yalnızca sertifika sistem doğrulamasından
+    // GEÇEMEDİĞİNDE çağrılır. Geçerli (CA imzalı) sertifikalarda bu kontrol
+    // hiç çalışmaz; yani bu blok gerçek bir SSL pinning sağlamaz.
+    // Aşağıdaki parmak izi sunucunun güncel Let's Encrypt zincirindeki hiçbir
+    // sertifikayla eşleşmiyor (2026-10-05 kontrolü). Zorunlu pinning açılırsa
+    // uygulama sunucuya bağlanamaz. Gerçek pinning için yedek pin'li
+    // public-key (SPKI) pinning gerekir.
     const String knownFingerprint =
         'EE:EB:A5:75:11:B3:AF:3F:C3:E3:FC:3B:FB:4F:98:D0:03:46:94:E4:C6:DD:5C:02:C2:47:2E:EA:91:0B:C2:81';
 
-    (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+    (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
         (client) {
       client.badCertificateCallback =
           (X509Certificate cert, String host, int port) {
@@ -58,11 +71,11 @@ class ApiService {
         final isValid = digest == expectedFingerprint;
 
         if (!isValid) {
-          print('GÜVENLİK UYARISI: Sertifika parmak izi eşleşmedi!');
-          print('Beklenen: $expectedFingerprint');
-          print('Gelen: $digest');
+          AppLogger.debug('GÜVENLİK UYARISI: Sertifika parmak izi eşleşmedi!');
+          AppLogger.debug('Beklenen: $expectedFingerprint');
+          AppLogger.debug('Gelen: $digest');
         } else {
-          print('GÜVENLİK: SSL Pinning başarılı, sertifika doğrulandı.');
+          AppLogger.debug('GÜVENLİK: SSL Pinning başarılı, sertifika doğrulandı.');
         }
 
         return isValid;
@@ -71,7 +84,7 @@ class ApiService {
     };
 
     // Interceptor ekle (token için)
-    _dio.interceptors.add(
+    dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           // Token varsa header'a ekle
@@ -83,29 +96,29 @@ class ApiService {
         },
         onError: (error, handler) async {
           if (error.response?.statusCode == 401) {
-            print('401 hatası - Token geçersiz, yenileniyor...');
+            AppLogger.debug('401 hatası - Token geçersiz, yenileniyor...');
 
             // Sonsuz döngüyü engelle - sadece bir kez yenile
             if (error.requestOptions.path.contains('/auth/refresh-token')) {
-              print('Refresh token endpoint\'i, döngüyü durdur');
+              AppLogger.debug('Refresh token endpoint\'i, döngüyü durdur');
               _clearStoredToken();
               handler.next(error);
               return;
             }
 
             // Token yenilemeyi dene
-            final newToken = await refreshToken();
+            final newToken = await _refreshAccessToken(dio);
             if (newToken != null) {
               // Yeni token ile isteği tekrar dene
               final originalRequest = error.requestOptions;
               originalRequest.headers['Authorization'] = 'Bearer $newToken';
 
               try {
-                final response = await _dio.fetch(originalRequest);
+                final response = await dio.fetch(originalRequest);
                 handler.resolve(response);
                 return;
               } catch (e) {
-                print('Token yenilendikten sonra istek başarısız: $e');
+                AppLogger.debug('Token yenilendikten sonra istek başarısız: $e');
               }
             }
 
@@ -116,27 +129,67 @@ class ApiService {
         },
       ),
     );
+    return dio;
   }
 
-  Future<String?> _getStoredToken() async {
+  static Future<String?> _getStoredToken() async {
     return await TokenManager.getAccessToken();
   }
 
-  Future<void> _clearStoredToken() async {
+  static Future<void> _clearStoredToken() async {
     await TokenManager.clearAllTokens();
-    _storedToken = null;
-    print('Token temizlendi');
+    AppLogger.debug('Token temizlendi');
+  }
+
+  /// Eşzamanlı çağrılar aynı refresh isteğini bekler.
+  static Future<String?> _refreshAccessToken(Dio dio) {
+    return _refreshInFlight ??=
+        _performRefresh(dio).whenComplete(() => _refreshInFlight = null);
+  }
+
+  static Future<String?> _performRefresh(Dio dio) async {
+    try {
+      AppLogger.debug('Token yenileniyor...');
+
+      // Token yoksa yenileme yapma
+      final currentToken = await _getStoredToken();
+      if (currentToken == null) {
+        AppLogger.debug('Token bulunamadı, yenileme yapılamıyor');
+        return null;
+      }
+
+      final refreshToken = await TokenManager.getRefreshToken();
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return null;
+      }
+
+      final response = await dio.post(
+        '/auth/refresh-token',
+        data: {'refreshToken': refreshToken},
+      );
+
+      if (response.statusCode == 200) {
+        final newToken = response.data['accessToken'];
+        if (newToken != null) {
+          await TokenManager.saveAccessToken(newToken);
+          AppLogger.debug('Token başarıyla yenilendi');
+          return newToken;
+        }
+      }
+
+      return null;
+    } catch (e) {
+      AppLogger.debug('Token yenileme hatası: $e');
+      return null;
+    }
   }
 
   // Kullanıcı işlemleri
   Future<AuthResponse> login(LoginRequest request) async {
     try {
-      print('Login Request: ${request.toJson()}');
-
       final response = await _dio.post('/auth/login', data: request.toJson());
 
-      print('Login Response Status: ${response.statusCode}');
-      print('Login Response: ${response.data}');
+      AppLogger.debug('Login Response Status: ${response.statusCode}');
 
       // HTTP hata kodları kontrolü
       if (response.statusCode == 400) {
@@ -163,13 +216,12 @@ class ApiService {
         throw Exception('Geçersiz token alındı');
       }
 
-      _storedToken = authResponse.accessToken;
       await TokenManager.saveAccessToken(authResponse.accessToken);
       await TokenManager.saveRefreshToken(authResponse.refreshToken);
 
       return authResponse;
     } catch (e) {
-      print('Login Error: $e');
+      AppLogger.debug('Login Error: $e');
 
       // Timeout ve bağlantı hataları kontrolü
       if (e.toString().contains('receive timeout') ||
@@ -177,7 +229,7 @@ class ApiService {
           e.toString().contains('SocketException') ||
           e.toString().contains('Connection refused') ||
           e.toString().contains('Failed host lookup')) {
-        print('API çalışmıyor, gerçek hata fırlatılıyor...');
+        AppLogger.debug('API çalışmıyor, gerçek hata fırlatılıyor...');
         throw Exception(
           'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.',
         );
@@ -194,12 +246,9 @@ class ApiService {
         throw Exception('Telefon numarası zorunludur');
       }
 
-      print('Register Request: ${request.toJson()}');
-
       final response = await _dio.post('/auth/signup', data: request.toJson());
 
-      print('Register Response Status: ${response.statusCode}');
-      print('Register Response: ${response.data}');
+      AppLogger.debug('Register Response Status: ${response.statusCode}');
 
       // HTTP hata kodları kontrolü
       if (response.statusCode == 400) {
@@ -218,13 +267,13 @@ class ApiService {
 
       return AuthResponse.fromJson(response.data);
     } catch (e) {
-      print('Register Error: $e');
+      AppLogger.debug('Register Error: $e');
 
       // Bağlantı hataları kontrolü
       if (e.toString().contains('SocketException') ||
           e.toString().contains('Connection refused') ||
           e.toString().contains('Failed host lookup')) {
-        print('API çalışmıyor, gerçek hata fırlatılıyor...');
+        AppLogger.debug('API çalışmıyor, gerçek hata fırlatılıyor...');
         throw Exception(
           'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.',
         );
@@ -236,10 +285,9 @@ class ApiService {
 
   Future<User> getProfile() async {
     try {
-      print('getProfile: API çağrısı yapılıyor...');
+      AppLogger.debug('getProfile: API çağrısı yapılıyor...');
       final response = await _dio.get('/auth/profile');
-      print('getProfile: Response status: ${response.statusCode}');
-      print('getProfile: Response data: ${response.data}');
+      AppLogger.debug('getProfile: Response status: ${response.statusCode}');
 
       // Response data'yı kontrol et
       Map<String, dynamic> userData;
@@ -257,12 +305,10 @@ class ApiService {
       }
 
       final user = User.fromJson(userData);
-      print(
-        'getProfile: User yüklendi - Name: ${user.name}, Email: ${user.email}',
-      );
+      AppLogger.debug('getProfile: Kullanıcı yüklendi');
       return user;
     } catch (e) {
-      print('getProfile: Hata: $e');
+      AppLogger.debug('getProfile: Hata: $e');
       throw Exception('Profil bilgileri alınırken hata oluştu: $e');
     }
   }
@@ -271,7 +317,7 @@ class ApiService {
     try {
       await _dio.post('/auth/logout');
     } catch (e) {
-      print('Logout API hatası: $e');
+      AppLogger.debug('Logout API hatası: $e');
     } finally {
       // Her durumda token'ı temizle
       _clearStoredToken();
@@ -281,10 +327,10 @@ class ApiService {
   // Hesap silme
   Future<void> deleteAccount() async {
     try {
-      print('Deleting account...');
+      AppLogger.debug('Deleting account...');
       final response = await _dio.delete('/auth/delete-account');
 
-      print('Delete Account Response Status: ${response.statusCode}');
+      AppLogger.debug('Delete Account Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         // Başarılı, tokenları temizle
@@ -294,49 +340,13 @@ class ApiService {
 
       throw Exception('Hesap silinemedi');
     } catch (e) {
-      print('Delete Account Error: $e');
+      AppLogger.debug('Delete Account Error: $e');
       throw Exception('Hesap silinirken bir hata oluştu: $e');
     }
   }
 
   // Token yenileme metodu (web projesindeki refresh token sistemi)
-  Future<String?> refreshToken() async {
-    try {
-      print('Token yenileniyor...');
-
-      // Token yoksa yenileme yapma
-      final currentToken = await _getStoredToken();
-      if (currentToken == null) {
-        print('Token bulunamadı, yenileme yapılamıyor');
-        return null;
-      }
-
-      final refreshToken = await TokenManager.getRefreshToken();
-      if (refreshToken == null || refreshToken.isEmpty) {
-        return null;
-      }
-
-      final response = await _dio.post(
-        '/auth/refresh-token',
-        data: {'refreshToken': refreshToken},
-      );
-
-      if (response.statusCode == 200) {
-        final newToken = response.data['accessToken'];
-        if (newToken != null) {
-          _storedToken = newToken;
-          await TokenManager.saveAccessToken(newToken);
-          print('Token başarıyla yenilendi: $newToken');
-          return newToken;
-        }
-      }
-
-      return null;
-    } catch (e) {
-      print('Token yenileme hatası: $e');
-      return null;
-    }
-  }
+  Future<String?> refreshToken() => _refreshAccessToken(_dio);
 
   // Kategori işlemleri
   Future<List<models.Category>> getCategories() async {
@@ -375,55 +385,9 @@ class ApiService {
           .where((category) => category.name.isNotEmpty)
           .toList();
     } catch (e) {
-      print('Categories API Error: $e');
-      print('Using mock categories as fallback');
-      return _getMockCategories();
-    }
-  }
-
-  // Kategori açıklamalarını döndür
-  String _getCategoryDescription(String categoryName) {
-    switch (categoryName) {
-      case 'dondurma':
-        return 'Golf dondurmalar ve dondurma ürünleri';
-      case 'gida':
-        return 'Temel gıda ürünleri';
-      case 'yiyecekler':
-        return 'Hazır yiyecekler';
-      case 'icecekler':
-        return 'Soğuk içecekler';
-      case 'atistirma':
-        return 'Atıştırmalık ürünler';
-      case 'cayseker':
-        return 'Çay ve şeker ürünleri';
-      case 'makarna':
-        return 'Makarna ve kuru bakliyat';
-      case 'et':
-        return 'Et ve et ürünleri';
-      case 'sut':
-        return 'Süt ve süt ürünleri';
-      case 'meyve-sebze':
-        return 'Taze meyve ve sebzeler';
-      case 'temizlik':
-        return 'Temizlik ürünleri';
-      case 'kisisel':
-        return 'Kişisel bakım ürünleri';
-      case 'baharat':
-        return 'Baharat ve soslar';
-      case 'dondurulmus':
-        return 'Dondurulmuş gıdalar';
-      case 'tozicecekler':
-        return 'Toz içecekler';
-      case 'cips':
-        return 'Cips ve çerezler';
-      case 'bespara':
-        return 'Uygun fiyatlı ürünler';
-      case 'kahve':
-        return 'Kahve ürünleri';
-      case 'kahvalti':
-        return 'Kahvaltılık ürünler';
-      default:
-        return 'Kategori ürünleri';
+      AppLogger.debug('Categories API Error: $e');
+      // Sahte kategori gösterilmez; CategoryViewModel hatayı yakalar.
+      rethrow;
     }
   }
 
@@ -473,74 +437,21 @@ class ApiService {
     }
   }
 
-  // Mock kategoriler (API çalışmadığında)
-  List<models.Category> _getMockCategories() {
-    return [
-      models.Category(
-        id: '1',
-        name: 'Vegan',
-        description: 'Vegan ürünler',
-        icon: 'eco',
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      models.Category(
-        id: '2',
-        name: 'Et',
-        description: 'Et ve et ürünleri',
-        icon: 'restaurant',
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      models.Category(
-        id: '3',
-        name: 'Meyve',
-        description: 'Taze meyveler',
-        icon: 'apple',
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      models.Category(
-        id: '4',
-        name: 'Süt',
-        description: 'Süt ve süt ürünleri',
-        icon: 'local_drink',
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      models.Category(
-        id: '5',
-        name: 'Balık',
-        description: 'Deniz ürünleri',
-        icon: 'set_meal',
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-    ];
-  }
-
   // Banner işlemleri
   Future<List<Banner>> getBanners() async {
     try {
-      print('Getting banners from API...');
+      AppLogger.debug('Getting banners from API...');
 
       final response = await _dio.get('/banners');
 
-      print('Banners Response Status: ${response.statusCode}');
-      print('Banners Response: ${response.data}');
-
+      AppLogger.debug('Banners Response Status: ${response.statusCode}');
       if (response.data != null) {
         // Response formatı: { "success": true, "banners": [...] }
         if (response.data is Map &&
             response.data['success'] == true &&
             response.data['banners'] != null) {
           final List<dynamic> bannersData = response.data['banners'];
-          print('Found ${bannersData.length} banners');
+          AppLogger.debug('Found ${bannersData.length} banners');
 
           // Sadece aktif banner'ları ve sıralı şekilde döndür
           final banners = bannersData
@@ -564,10 +475,10 @@ class ApiService {
         }
       }
 
-      print('No banners found');
+      AppLogger.debug('No banners found');
       return [];
     } catch (e) {
-      print('Banners API Error: $e');
+      AppLogger.debug('Banners API Error: $e');
       return [];
     }
   }
@@ -575,7 +486,7 @@ class ApiService {
   // Ürün işlemleri
   Future<List<Product>> getProducts({String? category}) async {
     try {
-      print('Getting products for category: $category');
+      AppLogger.debug('Getting products for category: $category');
 
       final queryParams = <String, dynamic>{};
       if (category != null && category.isNotEmpty) {
@@ -587,54 +498,51 @@ class ApiService {
         queryParameters: queryParams,
       );
 
-      print('Products Response Status: ${response.statusCode}');
-      print('Products Response: ${response.data}');
-
+      AppLogger.debug('Products Response Status: ${response.statusCode}');
       // API response yapısına göre parse et
       if (response.data is Map && response.data['products'] != null) {
         final List<dynamic> productsData = response.data['products'];
-        print('Found ${productsData.length} products for category: $category');
+        AppLogger.debug('Found ${productsData.length} products for category: $category');
         return productsData.map((json) => Product.fromJson(json)).toList();
       } else if (response.data is List) {
         final List<dynamic> productsData = response.data;
-        print('Found ${productsData.length} products for category: $category');
+        AppLogger.debug('Found ${productsData.length} products for category: $category');
         return productsData.map((json) => Product.fromJson(json)).toList();
       }
 
-      print('No products found for category: $category');
+      AppLogger.debug('No products found for category: $category');
       return [];
     } catch (e) {
-      print('API Error: $e');
-      // API çalışmıyorsa mock data döndür
-      return _getMockProducts();
+      AppLogger.debug('API Error: $e');
+      // Sahte ürün gösterilmez; ViewModel hata + "Tekrar dene" durumunu gösterir.
+      throw Exception(
+        'Ürünler yüklenemedi. Lütfen bağlantınızı kontrol edip tekrar deneyin.',
+      );
     }
   }
 
   // Öne çıkan ürünleri getir
   Future<List<Product>> getFeaturedProducts() async {
     try {
-      print('Getting featured products from API...');
+      AppLogger.debug('Getting featured products from API...');
 
       final response = await _dio.get('/products/featured');
 
-      print('Featured Products Response Status: ${response.statusCode}');
-      print('Featured Products Response: ${response.data}');
-
+      AppLogger.debug('Featured Products Response Status: ${response.statusCode}');
       if (response.data is Map &&
           response.data['success'] == true &&
           response.data['products'] != null) {
         final List<dynamic> productsData = response.data['products'];
-        print('Found ${productsData.length} featured products');
+        AppLogger.debug('Found ${productsData.length} featured products');
         return productsData.map((json) => Product.fromJson(json)).toList();
       }
 
-      print('No featured products found');
+      AppLogger.debug('No featured products found');
       return [];
     } catch (e) {
-      print('Featured Products API Error: $e');
-      // API çalışmıyorsa mock data döndür
-      final mockProducts = await _getMockProducts();
-      return mockProducts.take(4).toList();
+      AppLogger.debug('Featured Products API Error: $e');
+      // Öne çıkanlar opsiyonel; ana ürün listesi yüklenebiliyorsa sayfa çalışır.
+      return [];
     }
   }
 
@@ -663,7 +571,7 @@ class ApiService {
     required String category,
   }) async {
     try {
-      print('Creating feedback: rating=$rating, category=$category');
+      AppLogger.debug('Creating feedback: rating=$rating, category=$category');
 
       final response = await _dio.post(
         '/feedback',
@@ -676,8 +584,7 @@ class ApiService {
         },
       );
 
-      print('Feedback Response Status: ${response.statusCode}');
-      print('Feedback Response: ${response.data}');
+      AppLogger.debug('Feedback Response Status: ${response.statusCode}');
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         return response.data;
@@ -685,7 +592,7 @@ class ApiService {
 
       throw Exception('Geri bildirim gönderilemedi');
     } catch (e) {
-      print('Create Feedback Error: $e');
+      AppLogger.debug('Create Feedback Error: $e');
       if (e is DioException) {
         if (e.response?.statusCode == 401) {
           throw Exception('Oturum süresi dolmuş, lütfen tekrar giriş yapın');
@@ -700,12 +607,11 @@ class ApiService {
   // Kullanıcının geri bildirimlerini getir
   Future<List<Map<String, dynamic>>> getUserFeedbacks() async {
     try {
-      print('Getting user feedbacks...');
+      AppLogger.debug('Getting user feedbacks...');
 
       final response = await _dio.get('/feedback/user');
 
-      print('User Feedbacks Response Status: ${response.statusCode}');
-      print('User Feedbacks Response: ${response.data}');
+      AppLogger.debug('User Feedbacks Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         if (response.data is List) {
@@ -717,7 +623,7 @@ class ApiService {
 
       return [];
     } catch (e) {
-      print('Get User Feedbacks Error: $e');
+      AppLogger.debug('Get User Feedbacks Error: $e');
       return [];
     }
   }
@@ -736,10 +642,10 @@ class ApiService {
   // Benzer ürünleri getir
   Future<List<Product>> getSimilarProducts(String productId) async {
     try {
-      print('Getting similar products for: $productId');
+      AppLogger.debug('Getting similar products for: $productId');
       final response = await _dio.get('/products/$productId/similar');
 
-      print('Similar Products Response Status: ${response.statusCode}');
+      AppLogger.debug('Similar Products Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         if (response.data is List) {
@@ -753,7 +659,7 @@ class ApiService {
 
       return [];
     } catch (e) {
-      print('Get Similar Products Error: $e');
+      AppLogger.debug('Get Similar Products Error: $e');
       return [];
     }
   }
@@ -761,12 +667,11 @@ class ApiService {
   // Kullanıcı siparişlerini getir
   Future<List<Order>> getUserOrders() async {
     try {
-      print('Getting user orders...');
+      AppLogger.debug('Getting user orders...');
 
       final response = await _dio.get('/orders-analytics/user-orders');
 
-      print('User Orders Response Status: ${response.statusCode}');
-      print('User Orders Response: ${response.data}');
+      AppLogger.debug('User Orders Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         // API {orders: [...]} formatında döndürüyor
@@ -785,7 +690,7 @@ class ApiService {
 
       throw Exception('Siparişler alınamadı: ${response.statusCode}');
     } catch (e) {
-      print('Get User Orders Error: $e');
+      AppLogger.debug('Get User Orders Error: $e');
 
       if (e.toString().contains('401')) {
         throw Exception('Oturum süresi dolmuş, lütfen tekrar giriş yapın');
@@ -800,19 +705,18 @@ class ApiService {
   // Sipariş iptal et
   Future<bool> cancelOrder(String orderId) async {
     try {
-      print('Cancelling order: $orderId');
+      AppLogger.debug('Cancelling order: $orderId');
 
       final response = await _dio.put(
         '/orders-analytics/cancel-order',
         data: {'orderId': orderId},
       );
 
-      print('Cancel Order Response Status: ${response.statusCode}');
-      print('Cancel Order Response: ${response.data}');
+      AppLogger.debug('Cancel Order Response Status: ${response.statusCode}');
 
       return response.statusCode == 200;
     } catch (e) {
-      print('Cancel Order Error: $e');
+      AppLogger.debug('Cancel Order Error: $e');
       return false;
     }
   }
@@ -825,8 +729,6 @@ class ApiService {
         throw Exception('Telefon numarası zorunludur');
       }
 
-      print('Creating order: ${request.toJson()}');
-
       // Token kontrolü
       final token = await _getStoredToken();
       if (token == null) {
@@ -834,16 +736,14 @@ class ApiService {
       }
 
       // Web projenizdeki doğru endpoint: /cart/place-order
-      print('Sending order request to: /cart/place-order');
-      print('Request data: ${request.toJson()}');
+      AppLogger.debug('Sending order request to: /cart/place-order');
 
       final response = await _dio.post(
         '/cart/place-order',
         data: request.toJson(),
       );
 
-      print('Order Response Status: ${response.statusCode}');
-      print('Order Response: ${response.data}');
+      AppLogger.debug('Order Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         // Backend'den gelen response yapısına göre parse et
@@ -853,24 +753,19 @@ class ApiService {
             response.data['order'] ?? response.data,
           );
           orderData['_id'] ??= response.data['orderId'];
-          print('=== ORDER DATA DEBUG ===');
-          print('Order Data: $orderData');
-          print('_id field: ${orderData['_id']}');
-          print('id field: ${orderData['id']}');
 
           final order = Order.fromJson(orderData);
-          print('Parsed Order ID: ${order.id}');
-          print('========================');
+          AppLogger.debug('Parsed Order ID: ${order.id}');
           return order;
         }
         final order = Order.fromJson(response.data);
-        print('Parsed Order ID (direct): ${order.id}');
+        AppLogger.debug('Parsed Order ID (direct): ${order.id}');
         return order;
       } else {
         throw Exception('Sipariş oluşturulamadı: ${response.statusCode}');
       }
     } catch (e) {
-      print('Create Order Error: $e');
+      AppLogger.debug('Create Order Error: $e');
 
       // 401 hatası durumunda özel mesaj
       if (e.toString().contains('401')) {
@@ -898,19 +793,18 @@ class ApiService {
       }
       return false;
     } catch (e) {
-      print('hasUserGivenFeedback error: $e');
+      AppLogger.debug('hasUserGivenFeedback error: $e');
       return false;
     }
   }
 
   Future<Order> getOrderById(String orderId) async {
     try {
-      print('Getting order: $orderId');
+      AppLogger.debug('Getting order: $orderId');
 
       final response = await _dio.get('/orders/$orderId');
 
-      print('Order Detail Response Status: ${response.statusCode}');
-      print('Order Detail Response: ${response.data}');
+      AppLogger.debug('Order Detail Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         return Order.fromJson(response.data);
@@ -918,7 +812,7 @@ class ApiService {
         throw Exception('Sipariş bulunamadı: ${response.statusCode}');
       }
     } catch (e) {
-      print('Get Order Error: $e');
+      AppLogger.debug('Get Order Error: $e');
       throw Exception(
         'Sipariş detayı alınırken hata oluştu. Lütfen tekrar deneyin.',
       );
@@ -928,20 +822,18 @@ class ApiService {
   // Ayarları getir (minimum tutar için)
   Future<Map<String, dynamic>> getSettings() async {
     try {
-      print('Getting settings...');
+      AppLogger.debug('Getting settings...');
 
       final response = await _dio.get('/settings');
 
-      print('Settings Response Status: ${response.statusCode}');
-      print('Settings Response: ${response.data}');
-
+      AppLogger.debug('Settings Response Status: ${response.statusCode}');
       if (response.statusCode == 200) {
         return response.data;
       } else {
         throw Exception('Ayarlar alınamadı: ${response.statusCode}');
       }
     } catch (e) {
-      print('Get Settings Error: $e');
+      AppLogger.debug('Get Settings Error: $e');
       // API çalışmıyorsa varsayılan değerleri döndür
       return {
         'minimumOrderAmount': 250.0,
@@ -966,7 +858,7 @@ class ApiService {
     String? channel,
   }) async {
     try {
-      print('Validating coupon: $code for amount: $orderAmount');
+      AppLogger.debug('Validating coupon for amount: $orderAmount');
 
       final response = await _dio.post('/coupons/validate', data: {
         'code': code,
@@ -976,12 +868,11 @@ class ApiService {
         if (channel != null) 'channel': channel,
       });
 
-      print('Validate Coupon Response Status: ${response.statusCode}');
-      print('Validate Coupon Response: ${response.data}');
+      AppLogger.debug('Validate Coupon Response Status: ${response.statusCode}');
 
       return response.data ?? {};
     } catch (e) {
-      print('Validate Coupon Error: $e');
+      AppLogger.debug('Validate Coupon Error: $e');
       if (e is DioException && e.response != null) {
         return e.response!.data ??
             {'success': false, 'message': 'Kupon doğrulanamadı'};
@@ -1014,132 +905,14 @@ class ApiService {
 
   // Eski arama metodu kaldırıldı - yeni gelişmiş arama kullanılıyor
 
-  // Mock data (API çalışmadığında kullanılır)
-  Future<List<Product>> _getMockProducts() async {
-    await Future.delayed(const Duration(seconds: 1));
-
-    return [
-      Product(
-        id: '1',
-        name: 'Süt',
-        description: 'Taze günlük süt',
-        price: 8.50,
-        originalPrice: 8.50,
-        actualPrice: 8.50,
-        image: 'https://via.placeholder.com/150',
-        category: 'Süt Ürünleri',
-        categoryId: 'sut-urunleri',
-        isDiscounted: false,
-        isOutOfStock: false,
-        isFeatured: false,
-        isHidden: false,
-        order: 1,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Product(
-        id: '2',
-        name: 'Ekmek',
-        description: 'Taze beyaz ekmek',
-        price: 3.00,
-        originalPrice: 3.00,
-        actualPrice: 3.00,
-        image: 'https://via.placeholder.com/150',
-        category: 'Fırın',
-        categoryId: 'firin',
-        isDiscounted: false,
-        isOutOfStock: false,
-        isFeatured: false,
-        isHidden: false,
-        order: 2,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Product(
-        id: '3',
-        name: 'Yumurta',
-        description: 'Taze yumurta (30\'lu)',
-        price: 45.00,
-        originalPrice: 45.00,
-        actualPrice: 45.00,
-        image: 'https://via.placeholder.com/150',
-        category: 'Süt Ürünleri',
-        categoryId: 'sut-urunleri',
-        isDiscounted: false,
-        isOutOfStock: false,
-        isFeatured: false,
-        isHidden: false,
-        order: 3,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Product(
-        id: '4',
-        name: 'Domates',
-        description: 'Taze domates (kg)',
-        price: 12.00,
-        originalPrice: 12.00,
-        actualPrice: 12.00,
-        image: 'https://via.placeholder.com/150',
-        category: 'Sebze',
-        categoryId: 'sebze',
-        isDiscounted: false,
-        isOutOfStock: false,
-        isFeatured: false,
-        isHidden: false,
-        order: 4,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Product(
-        id: '5',
-        name: 'Elma',
-        description: 'Kırmızı elma (kg)',
-        price: 8.00,
-        originalPrice: 8.00,
-        actualPrice: 8.00,
-        image: 'https://via.placeholder.com/150',
-        category: 'Meyve',
-        categoryId: 'meyve',
-        isDiscounted: false,
-        isOutOfStock: false,
-        isFeatured: false,
-        isHidden: false,
-        order: 5,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Product(
-        id: '6',
-        name: 'Pirinç',
-        description: 'Baldo pirinç (1kg)',
-        price: 15.00,
-        originalPrice: 15.00,
-        actualPrice: 15.00,
-        image: 'https://via.placeholder.com/150',
-        category: 'Bakliyat',
-        categoryId: 'bakliyat',
-        isDiscounted: false,
-        isOutOfStock: false,
-        isFeatured: false,
-        isHidden: false,
-        order: 6,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-    ];
-  }
-
   // Flash Sale API'leri
   Future<List<FlashSale>> getFlashSales() async {
     try {
-      print('Getting flash sales from API...');
+      AppLogger.debug('Getting flash sales from API...');
 
       final response = await _dio.get('/flash-sales');
 
-      print('Flash Sales Response Status: ${response.statusCode}');
-      print('Flash Sales Response: ${response.data}');
-
+      AppLogger.debug('Flash Sales Response Status: ${response.statusCode}');
       if (response.statusCode == 200) {
         if (response.data is List) {
           return response.data.map((json) => FlashSale.fromJson(json)).toList();
@@ -1153,7 +926,7 @@ class ApiService {
 
       return [];
     } catch (e) {
-      print('Flash Sales API Error: $e');
+      AppLogger.debug('Flash Sales API Error: $e');
       return [];
     }
   }
@@ -1166,7 +939,7 @@ class ApiService {
     required DateTime endDate,
   }) async {
     try {
-      print(
+      AppLogger.debug(
         'Creating flash sale: productId=$productId, discount=$discountPercentage%',
       );
 
@@ -1182,16 +955,14 @@ class ApiService {
         },
       );
 
-      print('Create Flash Sale Response Status: ${response.statusCode}');
-      print('Create Flash Sale Response: ${response.data}');
-
+      AppLogger.debug('Create Flash Sale Response Status: ${response.statusCode}');
       if (response.statusCode == 201 || response.statusCode == 200) {
         return FlashSale.fromJson(response.data);
       }
 
       throw Exception('Flash sale oluşturulamadı');
     } catch (e) {
-      print('Create Flash Sale Error: $e');
+      AppLogger.debug('Create Flash Sale Error: $e');
       rethrow;
     }
   }
@@ -1205,7 +976,7 @@ class ApiService {
     required bool isActive,
   }) async {
     try {
-      print('Updating flash sale: id=$id');
+      AppLogger.debug('Updating flash sale: id=$id');
 
       final response = await _dio.put(
         '/flash-sales/$id',
@@ -1218,33 +989,31 @@ class ApiService {
         },
       );
 
-      print('Update Flash Sale Response Status: ${response.statusCode}');
-      print('Update Flash Sale Response: ${response.data}');
-
+      AppLogger.debug('Update Flash Sale Response Status: ${response.statusCode}');
       if (response.statusCode == 200) {
         return FlashSale.fromJson(response.data);
       }
 
       throw Exception('Flash sale güncellenemedi');
     } catch (e) {
-      print('Update Flash Sale Error: $e');
+      AppLogger.debug('Update Flash Sale Error: $e');
       rethrow;
     }
   }
 
   Future<void> deleteFlashSale(String id) async {
     try {
-      print('Deleting flash sale: id=$id');
+      AppLogger.debug('Deleting flash sale: id=$id');
 
       final response = await _dio.delete('/flash-sales/$id');
 
-      print('Delete Flash Sale Response Status: ${response.statusCode}');
+      AppLogger.debug('Delete Flash Sale Response Status: ${response.statusCode}');
 
       if (response.statusCode != 200 && response.statusCode != 204) {
         throw Exception('Flash sale silinemedi');
       }
     } catch (e) {
-      print('Delete Flash Sale Error: $e');
+      AppLogger.debug('Delete Flash Sale Error: $e');
       rethrow;
     }
   }
@@ -1258,7 +1027,7 @@ class ApiService {
     String sort = 'createdAt',
   }) async {
     try {
-      print('Gelişmiş arama yapılıyor: query=$query, category=$category');
+      AppLogger.debug('Gelişmiş arama yapılıyor: category=$category');
 
       final Map<String, dynamic> params = {'q': query};
 
@@ -1280,16 +1049,14 @@ class ApiService {
         queryParameters: params,
       );
 
-      print('Arama Response Status: ${response.statusCode}');
-      print('Arama Response: ${response.data}');
-
+      AppLogger.debug('Arama Response Status: ${response.statusCode}');
       if (response.statusCode == 200) {
         return SearchResult.fromJson(response.data);
       }
 
       throw Exception('Arama başarısız');
     } catch (e) {
-      print('Arama API Error: $e');
+      AppLogger.debug('Arama API Error: $e');
       rethrow;
     }
   }
@@ -1305,25 +1072,8 @@ class ApiService {
 
       return [];
     } catch (e) {
-      print('Arama önerileri hatası: $e');
+      AppLogger.debug('Arama önerileri hatası: $e');
       return [];
-    }
-    // Ayarları getir
-    Future<Map<String, dynamic>> getSettings() async {
-      try {
-        print('Getting settings from API...');
-        final response = await _dio.get('/settings');
-        print('Settings Response Status: ${response.statusCode}');
-
-        if (response.statusCode == 200 && response.data != null) {
-          return response.data as Map<String, dynamic>;
-        }
-
-        return {};
-      } catch (e) {
-        print('Get Settings Error: $e');
-        return {};
-      }
     }
   }
 
@@ -1334,11 +1084,10 @@ class ApiService {
   /// Kullanıcının referral bilgilerini getir
   Future<Referral> getMyReferrals() async {
     try {
-      print('Getting my referrals from API...');
+      AppLogger.debug('Getting my referrals from API...');
       final response = await _dio.get('/referrals/my-referrals');
 
-      print('My Referrals Response Status: ${response.statusCode}');
-      print('My Referrals Response: ${response.data}');
+      AppLogger.debug('My Referrals Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200 && response.data != null) {
         if (response.data['success'] == true &&
@@ -1349,7 +1098,7 @@ class ApiService {
 
       throw Exception('Referral bilgileri alınamadı');
     } catch (e) {
-      print('Get My Referrals Error: $e');
+      AppLogger.debug('Get My Referrals Error: $e');
       rethrow;
     }
   }
@@ -1357,11 +1106,9 @@ class ApiService {
   /// Referral kodu kontrol et (kayıt öncesi)
   Future<ReferralCodeCheck> checkReferralCode(String code) async {
     try {
-      print('Checking referral code: $code');
       final response = await _dio.get('/referrals/check/$code');
 
-      print('Check Referral Code Response Status: ${response.statusCode}');
-      print('Check Referral Code Response: ${response.data}');
+      AppLogger.debug('Check Referral Code Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200 && response.data != null) {
         return ReferralCodeCheck.fromJson(
@@ -1375,7 +1122,7 @@ class ApiService {
         message: 'Geçersiz referral kodu',
       );
     } on DioException catch (e) {
-      print('Check Referral Code Error: $e');
+      AppLogger.debug('Check Referral Code Error: $e');
 
       // Handle 400 (limit dolmuş) and 404 (geçersiz) errors
       if (e.response?.statusCode == 400) {
@@ -1396,7 +1143,7 @@ class ApiService {
         message: 'Referral kodu kontrol edilemedi',
       );
     } catch (e) {
-      print('Check Referral Code Error: $e');
+      AppLogger.debug('Check Referral Code Error: $e');
       return ReferralCodeCheck(
         isValid: false,
         message: 'Referral kodu kontrol edilemedi',
@@ -1407,11 +1154,10 @@ class ApiService {
   /// Yeni referral kodu oluştur
   Future<Referral> regenerateReferralCode() async {
     try {
-      print('Regenerating referral code...');
+      AppLogger.debug('Regenerating referral code...');
       final response = await _dio.post('/referrals/regenerate');
 
-      print('Regenerate Referral Response Status: ${response.statusCode}');
-      print('Regenerate Referral Response: ${response.data}');
+      AppLogger.debug('Regenerate Referral Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200 && response.data != null) {
         if (response.data['success'] == true) {
@@ -1429,7 +1175,7 @@ class ApiService {
 
       throw Exception('Referral kodu yenilenemedi');
     } catch (e) {
-      print('Regenerate Referral Code Error: $e');
+      AppLogger.debug('Regenerate Referral Code Error: $e');
       rethrow;
     }
   }
@@ -1472,5 +1218,36 @@ class ApiService {
       return Map<String, dynamic>.from(error.response?.data ??
           {'success': false, 'message': 'İstek gönderilemedi'});
     }
+  }
+
+  /// Bildirim tercihlerini getir (orders, messages, campaigns)
+  Future<Map<String, bool>?> getNotificationPreferences() async {
+    try {
+      final response = await _dio.get('/notifications/preferences');
+      return _parseNotificationPreferences(response.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bildirim tercihlerini güncelle; başarısız olursa null döner
+  Future<Map<String, bool>?> updateNotificationPreferences(
+      Map<String, bool> changes) async {
+    try {
+      final response =
+          await _dio.put('/notifications/preferences', data: changes);
+      return _parseNotificationPreferences(response.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, bool>? _parseNotificationPreferences(dynamic data) {
+    if (data is! Map || data['preferences'] is! Map) return null;
+    final preferences = data['preferences'] as Map;
+    return {
+      for (final key in const ['orders', 'messages', 'campaigns'])
+        key: preferences[key] != false,
+    };
   }
 }

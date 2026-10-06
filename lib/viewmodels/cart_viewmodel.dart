@@ -136,7 +136,14 @@ class CartViewModel extends ChangeNotifier {
   // Ürün miktarını güncelle
   void updateQuantity(Product product, int quantity) {
     if (quantity <= 0) {
-      removeFromCart(product);
+      // Ürünü miktarından bağımsız olarak tamamen çıkar.
+      final index = _cartItems.indexWhere((i) => i.product.id == product.id);
+      if (index < 0) return;
+      _cartItems.removeAt(index);
+      _databaseService.removeFromCart(product.id);
+      _scheduleCouponSync();
+      NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
+      notifyListeners();
       return;
     }
 
@@ -315,30 +322,10 @@ class CartViewModel extends ChangeNotifier {
 
   // Belirli ürünün sepetteki miktarını getir
   int getProductQuantity(String productId) {
-    final item = _cartItems.firstWhere(
-      (item) => item.product.id == productId,
-      orElse: () => CartItem(
-        product: Product(
-          id: '',
-          name: '',
-          description: '',
-          price: 0,
-          originalPrice: 0,
-          actualPrice: 0,
-          image: '',
-          category: '',
-          categoryId: '',
-          isDiscounted: false,
-          isOutOfStock: false,
-          isFeatured: false,
-          isHidden: false,
-          order: 0,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-      ),
-    );
-    return item.quantity;
+    for (final item in _cartItems) {
+      if (item.product.id == productId) return item.quantity;
+    }
+    return 0;
   }
 
   // Ürün sepette var mı kontrol et

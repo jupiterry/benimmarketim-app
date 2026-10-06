@@ -73,7 +73,7 @@ class _RegisterPageState extends State<RegisterPage> {
       children: [
         Text(
           'Hesap Oluştur',
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.inter(
             fontSize: 28,
             fontWeight: FontWeight.bold,
             color: Colors.black87,
@@ -82,7 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
         const SizedBox(height: 8),
         Text(
           'Yeni hesabınızı oluşturun',
-          style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[600]),
+          style: GoogleFonts.inter(fontSize: 16, color: Colors.grey[600]),
         ),
       ],
     );
@@ -251,7 +251,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
                           'Kayıt Ol',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
@@ -275,7 +275,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   child: Text(
                     authViewModel.error!,
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.inter(
                       color: Colors.red[700],
                       fontSize: 14,
                     ),
@@ -297,13 +297,13 @@ class _RegisterPageState extends State<RegisterPage> {
       children: [
         Text(
           'Zaten hesabınız var mı? ',
-          style: GoogleFonts.poppins(color: Colors.grey[600]),
+          style: GoogleFonts.inter(color: Colors.grey[600]),
         ),
         GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Text(
             'Giriş Yap',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.inter(
               color: Colors.green[600],
               fontWeight: FontWeight.w600,
             ),

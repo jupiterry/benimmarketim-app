@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'widgets/market_ui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/version_check_service.dart';
@@ -87,6 +87,13 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // "Hareketi azalt" açıksa giriş animasyonu atlanır.
+    if (MediaQuery.disableAnimationsOf(context)) _animation.value = 1;
+  }
+
+  @override
   void dispose() {
     _animation.dispose();
     super.dispose();
@@ -96,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final fade = CurvedAnimation(parent: _animation, curve: Curves.easeOut);
     return Scaffold(
-      backgroundColor: const Color(0xFF053D2A),
+      backgroundColor: MarketPalette.greenDeep,
       body: Stack(
         children: [
           const Positioned.fill(child: _SplashBackdrop()),
@@ -122,8 +129,8 @@ class _SplashScreenState extends State<SplashScreen>
                               width: 118,
                               height: 118,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFB9EB67),
-                                borderRadius: BorderRadius.circular(36),
+                                color: MarketPalette.lime,
+                                borderRadius: BorderRadius.circular(MarketRadius.xl),
                                 boxShadow: const [
                                   BoxShadow(
                                     color: Color(0x55000000),
@@ -135,30 +142,21 @@ class _SplashScreenState extends State<SplashScreen>
                               child: const Icon(
                                 Icons.storefront_rounded,
                                 size: 58,
-                                color: Color(0xFF06452E),
+                                color: MarketPalette.greenDeep,
                               ),
                             ),
                           ),
                           const SizedBox(height: 28),
                           Text(
-                            'BENİM MARKETİM',
+                            'Benim Marketim',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.manrope(
-                              color: Colors.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                            ),
+                            style: MarketText.display(color: Colors.white),
                           ),
                           const SizedBox(height: 9),
                           Text(
                             'İhtiyacın olan her şey, birkaç dokunuş uzağında.',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(
-                              color: Colors.white.withValues(alpha: .7),
-                              fontSize: 13,
-                              height: 1.45,
-                            ),
+                            style: MarketText.body(color: Colors.white.withValues(alpha: .78)),
                           ),
                         ],
                       ),
@@ -175,7 +173,7 @@ class _SplashScreenState extends State<SplashScreen>
                           height: 34,
                           child: CircularProgressIndicator(
                             strokeWidth: 3,
-                            color: Color(0xFFB9EB67),
+                            color: MarketPalette.lime,
                             backgroundColor: Color(0x22FFFFFF),
                           ),
                         ),
@@ -184,11 +182,7 @@ class _SplashScreenState extends State<SplashScreen>
                           _version.isEmpty
                               ? 'Market hazırlanıyor'
                               : 'v$_version',
-                          style: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: .45),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: MarketText.caption(color: Colors.white.withValues(alpha: .72), size: 12, weight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -214,9 +208,9 @@ class _BackdropPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final lime = Paint()
-      ..color = const Color(0xFFB9EB67).withValues(alpha: .09);
+      ..color = MarketPalette.lime.withValues(alpha: .09);
     final green = Paint()
-      ..color = const Color(0xFF15965C).withValues(alpha: .25);
+      ..color = MarketPalette.green.withValues(alpha: .25);
     canvas.drawCircle(Offset(size.width * .9, size.height * .08), 150, lime);
     canvas.drawCircle(Offset(size.width * .05, size.height * .78), 210, green);
     canvas.drawCircle(Offset(size.width * .85, size.height * .7), 70, lime);

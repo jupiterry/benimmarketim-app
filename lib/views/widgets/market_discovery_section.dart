@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/category.dart';
 import '../../viewmodels/category_viewmodel.dart';
 import 'category_presentation.dart';
-import 'market_palette.dart';
+import 'market_ui.dart';
 
 class MarketQuickActions extends StatelessWidget {
   const MarketQuickActions({super.key});
@@ -14,14 +13,14 @@ class MarketQuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
       child: Row(
         children: [
           Expanded(
             child: _QuickActionCard(
               icon: Icons.receipt_long_rounded,
-              label: 'Siparişlerim',
-              color: MarketPalette.green,
+              label: 'Siparişler',
+              color: MarketPalette.greenDark,
               background: MarketPalette.greenSoft,
               onTap: () => context.push('/orders'),
             ),
@@ -30,9 +29,9 @@ class MarketQuickActions extends StatelessWidget {
           Expanded(
             child: _QuickActionCard(
               icon: Icons.favorite_rounded,
-              label: 'Favorilerim',
-              color: const Color(0xFFD84B68),
-              background: const Color(0xFFFFECF0),
+              label: 'Favoriler',
+              color: MarketPalette.pink,
+              background: MarketPalette.pinkSoft,
               onTap: () => context.push('/favorites'),
             ),
           ),
@@ -41,9 +40,19 @@ class MarketQuickActions extends StatelessWidget {
             child: _QuickActionCard(
               icon: Icons.print_rounded,
               label: 'Fotokopi',
-              color: const Color(0xFF4C6FFF),
-              background: const Color(0xFFEDF0FF),
+              color: MarketPalette.blue,
+              background: MarketPalette.blueSoft,
               onTap: () => context.push('/photocopy-upload'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _QuickActionCard(
+              icon: Icons.card_giftcard_rounded,
+              label: 'Davet et',
+              color: MarketPalette.orangeInk,
+              background: MarketPalette.orangeSoft,
+              onTap: () => context.push('/referral'),
             ),
           ),
         ],
@@ -59,11 +68,13 @@ class MarketQuickDiscovery extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<CategoryViewModel>(
       builder: (context, viewModel, _) {
-        final activeCategories = viewModel.getActiveCategories();
+        final activeCategories = _pinnedFirst(
+          _mergeSameName(viewModel.getActiveCategories()),
+        );
         final categories = activeCategories.take(8).toList();
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -71,7 +82,7 @@ class MarketQuickDiscovery extends StatelessWidget {
                 eyebrow: 'KATEGORİLER',
                 title: 'Hızlı keşfet',
                 subtitle: 'Aradığın ürüne birkaç dokunuşta ulaş',
-                actionLabel: activeCategories.length > 8 ? 'Tümünü gör' : null,
+                actionLabel: activeCategories.length > 8 ? 'Tümü' : null,
                 onAction: activeCategories.length > 8
                     ? () => _showAllCategories(context, activeCategories)
                     : null,
@@ -95,12 +106,12 @@ class MarketQuickDiscovery extends StatelessWidget {
                             columns;
                     return Wrap(
                       spacing: spacing,
-                      runSpacing: 8,
+                      runSpacing: 12,
                       children: List.generate(categories.length, (index) {
                         final category = categories[index];
                         return SizedBox(
                           width: itemWidth,
-                          height: 104,
+                          height: 112,
                           child: _CategoryTile(
                             category: category,
                             emoji: categoryEmoji(category.name),
@@ -122,6 +133,33 @@ class MarketQuickDiscovery extends StatelessWidget {
     );
   }
 
+  /// Aynı görünen ada sahip kategoriler (ör. "tozicecekler" ve yazım hatalı
+  /// "tozicecekleri") tek kutuda gösterilir; ürün sayısı en çok olan kalır.
+  static List<Category> _mergeSameName(List<Category> categories) {
+    final best = <String, Category>{};
+    for (final category in categories) {
+      final label = categoryDisplayName(category.name);
+      final current = best[label];
+      if (current == null || (category.order ?? 0) > (current.order ?? 0)) {
+        best[label] = category;
+      }
+    }
+    return categories.where((c) => best[categoryDisplayName(c.name)] == c).toList();
+  }
+
+  /// "Yiyecekler" her zaman en başta; diğerlerinin sırası korunur.
+  static const _pinnedKeys = ['yiyecekler'];
+
+  static List<Category> _pinnedFirst(List<Category> categories) {
+    final pinned = <Category>[];
+    for (final key in _pinnedKeys) {
+      pinned.addAll(
+        categories.where((c) => normalizedCategoryKey(c.name) == key),
+      );
+    }
+    return [...pinned, ...categories.where((c) => !pinned.contains(c))];
+  }
+
   void _showAllCategories(
     BuildContext pageContext,
     List<Category> categories,
@@ -140,48 +178,31 @@ class MarketQuickDiscovery extends StatelessWidget {
               decoration: const BoxDecoration(
                 color: MarketPalette.canvas,
                 borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(30),
+                  top: Radius.circular(MarketRadius.xl),
                 ),
               ),
               child: Column(
                 children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD4DAD5),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
+                  const _SheetHandle(),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 17, 12, 12),
+                    padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
                     child: Row(
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Tüm kategoriler',
-                                style: GoogleFonts.manrope(
-                                  color: MarketPalette.ink,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -.4,
-                                ),
-                              ),
+                              Text('Tüm kategoriler', style: MarketText.title()),
+                              const SizedBox(height: 3),
                               Text(
                                 '${categories.length} kategoriyi keşfet',
-                                style: GoogleFonts.inter(
-                                  color: MarketPalette.muted,
-                                  fontSize: 12,
-                                ),
+                                style: MarketText.caption(size: 13),
                               ),
                             ],
                           ),
                         ),
                         IconButton(
+                          tooltip: 'Kapat',
                           onPressed: () => Navigator.pop(sheetContext),
                           icon: const Icon(Icons.close_rounded),
                         ),
@@ -199,7 +220,7 @@ class MarketQuickDiscovery extends StatelessWidget {
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: columns,
-                            mainAxisExtent: 122,
+                            mainAxisExtent: 124,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 14,
                           ),
@@ -232,6 +253,24 @@ class MarketQuickDiscovery extends StatelessWidget {
   }
 }
 
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 5,
+      margin: const EdgeInsets.only(top: 10),
+      decoration: BoxDecoration(
+        color: MarketPalette.lineStrong,
+        borderRadius: BorderRadius.circular(MarketRadius.sm),
+      ),
+    );
+  }
+}
+
+/// Ana sayfa bölüm başlığı (eski API korunur; görünüm [MarketSectionTitle]).
 class MarketSectionHeader extends StatelessWidget {
   final String eyebrow;
   final String title;
@@ -250,74 +289,12 @@ class MarketSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                eyebrow,
-                style: GoogleFonts.inter(
-                  color: MarketPalette.green,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.15,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                title,
-                style: GoogleFonts.manrope(
-                  color: MarketPalette.ink,
-                  fontSize: 21,
-                  height: 1.05,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.45,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                subtitle,
-                style: GoogleFonts.inter(
-                  color: MarketPalette.muted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (actionLabel != null && onAction != null)
-          TextButton(
-            onPressed: onAction,
-            style: TextButton.styleFrom(
-              foregroundColor: MarketPalette.greenDark,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 8,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  actionLabel!,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: 3),
-                const Icon(Icons.arrow_forward_rounded, size: 15),
-              ],
-            ),
-          ),
-      ],
+    return MarketSectionTitle(
+      eyebrow: eyebrow,
+      title: title,
+      subtitle: subtitle,
+      actionLabel: actionLabel,
+      onAction: onAction,
     );
   }
 }
@@ -336,40 +313,20 @@ class MarketEmptyInlineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: MarketPalette.line),
-      ),
+    return MarketCard(
+      shadow: false,
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
       child: Row(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: MarketPalette.greenSoft,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: MarketPalette.greenDark),
-          ),
+          MarketIconTile(icon: icon, size: 44),
           const SizedBox(width: 13),
           Expanded(
-            child: Text(
-              text,
-              style: GoogleFonts.inter(
-                color: MarketPalette.muted,
-                fontSize: 12,
-                height: 1.35,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            child: Text(text, style: MarketText.body(color: MarketPalette.muted, size: 13)),
           ),
-          TextButton(
+          TextButton.icon(
             onPressed: () => onRetry(),
-            child: const Text('Yenile'),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Yenile'),
           ),
         ],
       ),
@@ -394,43 +351,42 @@ class _QuickActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          height: 74,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: MarketPalette.surface,
-            border: Border.all(color: MarketPalette.line),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: background,
-                  shape: BoxShape.circle,
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: Material(
+        color: MarketPalette.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(MarketRadius.md),
+          side: const BorderSide(color: MarketPalette.line),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 84,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                MarketIconTile(
+                  icon: icon,
+                  size: 38,
+                  background: background,
+                  foreground: color,
                 ),
-                child: Icon(icon, color: color, size: 17),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  color: MarketPalette.ink,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 7),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.label(size: 12),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -462,63 +418,49 @@ class _CategoryTile extends StatelessWidget {
     Color(0xFFEDF3E6),
   ];
 
-  static const foregrounds = [
-    Color(0xFF168A52),
-    Color(0xFFCC6D1B),
-    Color(0xFF4667D9),
-    Color(0xFFD65069),
-    Color(0xFF18888C),
-    Color(0xFF7B52C7),
-    Color(0xFFB98512),
-    Color(0xFF5B7C3D),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final background = backgrounds[colorIndex % backgrounds.length];
-    final foreground = foregrounds[colorIndex % foregrounds.length];
+    final name = categoryDisplayName(category.name);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    return Semantics(
+      button: true,
+      label: name,
+      excludeSemantics: true,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(MarketRadius.lg),
         child: Column(
           children: [
             Ink(
-              width: 68,
-              height: 68,
+              width: 70,
+              height: 70,
               decoration: BoxDecoration(
                 color: background,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: foreground.withValues(alpha: .10),
-                ),
+                borderRadius: BorderRadius.circular(MarketRadius.lg),
               ),
               child: Center(
                 child: Text(
                   emoji,
-                  style: const TextStyle(fontSize: 31, height: 1),
+                  style: const TextStyle(fontSize: 32, height: 1),
                 ),
               ),
             ),
             const SizedBox(height: 8),
             Expanded(
               child: Text(
-                categoryDisplayName(category.name),
+                name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  color: MarketPalette.ink,
-                  fontSize: 10,
-                  height: 1.15,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: MarketText.label(size: 12, weight: FontWeight.w600),
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -535,29 +477,15 @@ class _CategorySkeletonGrid extends StatelessWidget {
       itemCount: 8,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        mainAxisExtent: 104,
+        mainAxisExtent: 112,
         crossAxisSpacing: 10,
-        mainAxisSpacing: 8,
+        mainAxisSpacing: 12,
       ),
-      itemBuilder: (_, __) => Column(
+      itemBuilder: (_, __) => const Column(
         children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE9EEE9),
-              borderRadius: BorderRadius.circular(22),
-            ),
-          ),
-          const SizedBox(height: 9),
-          Container(
-            width: 54,
-            height: 9,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE2E7E3),
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
+          MarketSkeleton(width: 70, height: 70, radius: MarketRadius.lg),
+          SizedBox(height: 10),
+          MarketSkeleton(width: 54, height: 10, radius: MarketRadius.xs),
         ],
       ),
     );

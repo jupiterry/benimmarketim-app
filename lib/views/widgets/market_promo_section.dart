@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/banner.dart' as models;
 import '../../viewmodels/banner_viewmodel.dart';
-import 'market_palette.dart';
+import 'market_ui.dart';
+
+/// Banner görselleri yönetim panelinde metinle birlikte tasarlanıyor; bu yüzden
+/// görselin üstüne ayrıca yazı bindirilmez (çift, okunmaz metin oluşuyordu).
+/// Başlık/alt başlık erişilebilirlik etiketi ve görsel yüklenemezse yedek
+/// kart olarak kullanılır.
+const double _bannerAspect = 2.05;
 
 class MarketPromoSection extends StatefulWidget {
   const MarketPromoSection({super.key});
@@ -15,7 +20,7 @@ class MarketPromoSection extends StatefulWidget {
 }
 
 class _MarketPromoSectionState extends State<MarketPromoSection> {
-  final PageController _controller = PageController(viewportFraction: .92);
+  final PageController _controller = PageController(viewportFraction: .9);
   int _activeIndex = 0;
 
   @override
@@ -31,7 +36,10 @@ class _MarketPromoSectionState extends State<MarketPromoSection> {
         if (viewModel.isLoading && viewModel.banners.isEmpty) {
           return const Padding(
             padding: EdgeInsets.fromLTRB(20, 22, 20, 0),
-            child: _PromoSkeleton(),
+            child: AspectRatio(
+              aspectRatio: _bannerAspect,
+              child: MarketSkeleton(height: double.infinity, radius: MarketRadius.lg),
+            ),
           );
         }
 
@@ -41,57 +49,78 @@ class _MarketPromoSectionState extends State<MarketPromoSection> {
         if (banners.isEmpty) {
           return const Padding(
             padding: EdgeInsets.fromLTRB(20, 22, 20, 0),
-            child: _FallbackPromo(),
+            child: AspectRatio(
+              aspectRatio: _bannerAspect,
+              child: _FallbackPromo(),
+            ),
+          );
+        }
+
+        if (banners.length == 1) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+            child: AspectRatio(
+              aspectRatio: _bannerAspect,
+              child: _BannerCard(
+                banner: banners.first,
+                onTap: () => _openLink(banners.first.linkUrl),
+              ),
+            ),
           );
         }
 
         return Padding(
           padding: const EdgeInsets.only(top: 22),
-          child: Column(
-            children: [
-              SizedBox(
-                height: 190,
-                child: PageView.builder(
-                  controller: _controller,
-                  itemCount: banners.length,
-                  onPageChanged: (value) {
-                    if (mounted) setState(() => _activeIndex = value);
-                  },
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        left: index == 0 ? 20 : 6,
-                        right: index == banners.length - 1 ? 20 : 6,
-                      ),
-                      child: _BannerCard(
-                        banner: banners[index],
-                        onTap: () => _openLink(banners[index].linkUrl),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              if (banners.length > 1) ...[
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(banners.length, (index) {
-                    final active = index == _activeIndex;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      width: active ? 24 : 7,
-                      height: 7,
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      decoration: BoxDecoration(
-                        color:
-                            active ? MarketPalette.green : MarketPalette.line,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    );
-                  }),
-                ),
-              ],
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth * .9 - 12;
+              return Column(
+                children: [
+                  SizedBox(
+                    height: itemWidth / _bannerAspect,
+                    child: PageView.builder(
+                      controller: _controller,
+                      padEnds: false,
+                      itemCount: banners.length,
+                      onPageChanged: (value) {
+                        if (mounted) setState(() => _activeIndex = value);
+                      },
+                      itemBuilder: (context, index) {
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            left: index == 0 ? 20 : 6,
+                            right: index == banners.length - 1 ? 20 : 6,
+                          ),
+                          child: _BannerCard(
+                            banner: banners[index],
+                            onTap: () => _openLink(banners[index].linkUrl),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(banners.length, (index) {
+                      final active = index == _activeIndex;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: active ? 22 : 7,
+                        height: 7,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? MarketPalette.green
+                              : MarketPalette.lineStrong,
+                          borderRadius: BorderRadius.circular(MarketRadius.xs),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
@@ -116,111 +145,45 @@ class _BannerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasText =
-        banner.title.trim().isNotEmpty || banner.subtitle.trim().isNotEmpty;
+    final hasLink = banner.linkUrl?.trim().isNotEmpty == true;
+    final label = [banner.title, banner.subtitle]
+        .where((text) => text.trim().isNotEmpty)
+        .join('. ');
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: banner.linkUrl?.trim().isNotEmpty == true ? onTap : null,
-        borderRadius: BorderRadius.circular(26),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: MarketPalette.greenDark,
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
-              BoxShadow(
-                color: MarketPalette.greenDeep.withValues(alpha: .14),
-                blurRadius: 22,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(26),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.network(
-                  banner.image,
-                  fit: BoxFit.cover,
-                  cacheWidth: 900,
-                  errorBuilder: (_, __, ___) => const _FallbackPromo(),
-                ),
-                if (hasText)
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerRight,
-                        end: Alignment.centerLeft,
-                        colors: [
-                          Colors.transparent,
-                          Color(0x3D000000),
-                          Color(0xC7000000),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (hasText)
-                  Positioned(
-                    left: 20,
-                    right: 44,
-                    bottom: 20,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: MarketPalette.lime,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            'SANA ÖZEL',
-                            style: GoogleFonts.inter(
-                              color: MarketPalette.greenDeep,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: .7,
-                            ),
-                          ),
-                        ),
-                        if (banner.title.trim().isNotEmpty) ...[
-                          const SizedBox(height: 9),
-                          Text(
-                            banner.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.manrope(
-                              color: Colors.white,
-                              fontSize: 21,
-                              height: 1.08,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -.4,
-                            ),
-                          ),
-                        ],
-                        if (banner.subtitle.trim().isNotEmpty) ...[
-                          const SizedBox(height: 5),
-                          Text(
-                            banner.subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              color: Colors.white.withValues(alpha: .82),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-              ],
+    return Semantics(
+      label: label.isEmpty ? 'Kampanya' : label,
+      button: hasLink,
+      image: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(MarketRadius.lg),
+          boxShadow: [
+            BoxShadow(
+              color: MarketPalette.greenDeep.withValues(alpha: .12),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
+          ],
+        ),
+        child: Material(
+          color: MarketPalette.greenDark,
+          borderRadius: BorderRadius.circular(MarketRadius.lg),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: hasLink ? onTap : null,
+            child: banner.image.trim().isEmpty
+                ? _FallbackPromo(title: banner.title, subtitle: banner.subtitle)
+                : Image.network(
+                    banner.image,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    cacheWidth: 1000,
+                    errorBuilder: (_, __, ___) => _FallbackPromo(
+                      title: banner.title,
+                      subtitle: banner.subtitle,
+                    ),
+                  ),
           ),
         ),
       ),
@@ -229,104 +192,76 @@ class _BannerCard extends StatelessWidget {
 }
 
 class _FallbackPromo extends StatelessWidget {
-  const _FallbackPromo();
+  final String title;
+  final String subtitle;
+
+  const _FallbackPromo({this.title = '', this.subtitle = ''});
 
   @override
   Widget build(BuildContext context) {
+    final heading = title.trim().isNotEmpty ? title : 'İhtiyacın neyse\nhepsi burada.';
+    final body = subtitle.trim().isNotEmpty
+        ? subtitle
+        : 'Kolayca seç, güvenle sipariş ver.';
     return Container(
-      height: 190,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [MarketPalette.greenDark, MarketPalette.green],
         ),
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(MarketRadius.lg),
       ),
       child: Stack(
         children: [
           Positioned(
-            right: -45,
-            bottom: -72,
+            right: -40,
+            bottom: -70,
             child: Container(
-              width: 190,
-              height: 190,
+              width: 170,
+              height: 170,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: .08),
               ),
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: MarketPalette.lime,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'BENİM MARKETİM',
-                  style: GoogleFonts.inter(
-                    color: MarketPalette.greenDeep,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .6,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                'İhtiyacın neyse\nhepsi burada.',
-                style: GoogleFonts.manrope(
-                  color: Colors.white,
-                  fontSize: 25,
-                  height: 1.05,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.7,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Kolayca seç, güvenle sipariş ver.',
-                style: GoogleFonts.inter(
-                  color: Colors.white.withValues(alpha: .74),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
           const Positioned(
-            right: 8,
-            bottom: 8,
+            right: 4,
+            bottom: 0,
             child: Icon(
               Icons.shopping_basket_rounded,
               color: MarketPalette.lime,
-              size: 72,
+              size: 64,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 72),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  heading,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.title(color: Colors.white, size: 22),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.caption(
+                    color: Colors.white.withValues(alpha: .8),
+                    size: 13,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PromoSkeleton extends StatelessWidget {
-  const _PromoSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 190,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE9EEE9),
-        borderRadius: BorderRadius.circular(26),
       ),
     );
   }

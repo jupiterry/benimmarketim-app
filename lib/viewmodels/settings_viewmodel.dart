@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class SettingsViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -71,7 +72,7 @@ class SettingsViewModel extends ChangeNotifier {
       _error = null;
     } catch (e) {
       _error = e.toString();
-      print('Settings load error: $e');
+      AppLogger.debug('Settings load error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -92,7 +93,7 @@ class SettingsViewModel extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = e.toString();
-      print('Settings update error: $e');
+      AppLogger.debug('Settings update error: $e');
       return false;
     } finally {
       _isLoading = false;

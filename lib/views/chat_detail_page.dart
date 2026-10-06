@@ -2,12 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat_model.dart';
 import '../viewmodels/chat_viewmodel.dart';
-import 'widgets/market_palette.dart';
+import 'widgets/market_ui.dart';
 
 class ChatDetailPage extends StatefulWidget {
   final String chatId;
@@ -167,20 +166,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       backgroundColor: MarketPalette.greenDeep,
       surfaceTintColor: MarketPalette.greenDeep,
       elevation: 0,
-      leadingWidth: 62,
+      leadingWidth: 64,
       leading: Padding(
         padding: const EdgeInsets.only(left: 14),
-        child: Material(
-          color: Colors.white.withValues(alpha: .11),
-          borderRadius: BorderRadius.circular(15),
-          child: InkWell(
+        child: Center(
+          child: MarketHeaderButton(
+            icon: Icons.arrow_back_rounded,
+            tooltip: 'Geri',
             onTap: () => context.pop(),
-            borderRadius: BorderRadius.circular(15),
-            child: const Icon(
-              Icons.arrow_back_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
           ),
         ),
       ),
@@ -196,7 +189,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                 height: 44,
                 decoration: BoxDecoration(
                   color: MarketPalette.lime,
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(MarketRadius.md),
                 ),
                 child: const Icon(
                   Icons.support_agent_rounded,
@@ -212,14 +205,10 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     Text(
                       chat?.type == 'order'
                           ? 'Sipariş Desteği'
-                          : 'Canlı Destek',
+                          : 'Benim Marketim Asistanı',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.manrope(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      style: MarketText.heading(color: Colors.white, size: 16),
                     ),
                     const SizedBox(height: 3),
                     Row(
@@ -231,7 +220,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                             color: viewModel.isTyping
                                 ? MarketPalette.orange
                                 : isClosed
-                                    ? const Color(0xFFA8B1AB)
+                                    ? MarketPalette.subtle
                                     : MarketPalette.lime,
                             shape: BoxShape.circle,
                           ),
@@ -243,11 +232,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                               : isClosed
                                   ? 'Görüşme kapatıldı'
                                   : 'Destek görüşmesi açık',
-                          style: GoogleFonts.inter(
-                            color: Colors.white.withValues(alpha: .68),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: MarketText.caption(color: Colors.white.withValues(alpha: .78), size: 12, weight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -280,71 +265,112 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           ),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 52),
-              decoration: BoxDecoration(
-                color: MarketPalette.canvas,
-                border: Border.all(color: MarketPalette.line),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: TextField(
-                controller: _messageController,
-                focusNode: _focusNode,
-                minLines: 1,
-                maxLines: 4,
-                textCapitalization: TextCapitalization.sentences,
-                textInputAction: TextInputAction.newline,
-                style: GoogleFonts.inter(
-                  color: MarketPalette.ink,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Mesajını yaz...',
-                  hintStyle: GoogleFonts.inter(
-                    color: MarketPalette.muted.withValues(alpha: .65),
-                    fontSize: 13,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                ),
-              ),
+          SizedBox(
+            height: 37,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                '📦 Siparişim Nerede?',
+                '🛒 Ürün Sor',
+                '🎟 Kampanyalar',
+                '🖨 Fotokopi',
+                '👨‍💼 Canlı Destek',
+              ]
+                  .map((label) => Padding(
+                        padding: const EdgeInsets.only(right: 7),
+                        child: ActionChip(
+                          label: Text(
+                            label,
+                            style: MarketText.label(
+                              color: MarketPalette.greenDark,
+                              size: 12,
+                            ),
+                          ),
+                          onPressed: viewModel.isSending
+                              ? null
+                              : () async {
+                                  _messageController.clear();
+                                  await viewModel.sendMessage(label);
+                                },
+                          backgroundColor: MarketPalette.greenSoft,
+                          side: BorderSide.none,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(MarketRadius.lg)),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
-          const SizedBox(width: 10),
-          Material(
-            color: viewModel.isSending
-                ? const Color(0xFFAAB5AE)
-                : MarketPalette.green,
-            borderRadius: BorderRadius.circular(18),
-            child: InkWell(
-              onTap: viewModel.isSending ? null : () => _sendMessage(viewModel),
-              borderRadius: BorderRadius.circular(18),
-              child: SizedBox(
-                width: 54,
-                height: 54,
-                child: viewModel.isSending
-                    ? const Padding(
-                        padding: EdgeInsets.all(17),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.arrow_upward_rounded,
-                        color: Colors.white,
-                        size: 23,
+          const SizedBox(height: 9),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  decoration: BoxDecoration(
+                    color: MarketPalette.canvas,
+                    border: Border.all(color: MarketPalette.line),
+                    borderRadius: BorderRadius.circular(MarketRadius.md),
+                  ),
+                  child: TextField(
+                    controller: _messageController,
+                    focusNode: _focusNode,
+                    minLines: 1,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.newline,
+                    style: MarketText.body(),
+                    decoration: InputDecoration(
+                      hintText: 'Mesajını yaz...',
+                      hintStyle: MarketText.body(color: MarketPalette.subtle),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
                       ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Semantics(
+                button: true,
+                label: 'Mesajı gönder',
+                child: Material(
+                color: viewModel.isSending
+                    ? MarketPalette.subtle
+                    : MarketPalette.green,
+                borderRadius: BorderRadius.circular(MarketRadius.md),
+                child: InkWell(
+                  onTap: viewModel.isSending
+                      ? null
+                      : () => _sendMessage(viewModel),
+                  borderRadius: BorderRadius.circular(MarketRadius.md),
+                  child: SizedBox(
+                    width: 54,
+                    height: 54,
+                    child: viewModel.isSending
+                        ? const Padding(
+                            padding: EdgeInsets.all(17),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.arrow_upward_rounded,
+                            color: Colors.white,
+                            size: 23,
+                          ),
+                  ),
+                ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -360,22 +386,11 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     final success = await viewModel.sendMessage(content);
     if (!mounted || success) return;
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            'Mesaj gönderilemedi. Tekrar deneyebilirsin.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: MarketPalette.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          margin: const EdgeInsets.all(18),
-        ),
-      );
+    showMarketSnack(
+      context,
+      'Mesaj gönderilemedi. Tekrar deneyebilirsin.',
+      error: true,
+    );
   }
 
   bool _isSameDay(DateTime first, DateTime second) {
@@ -402,17 +417,13 @@ class _MessageBubble extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
             decoration: BoxDecoration(
-              color: const Color(0xFFE9EEE9),
-              borderRadius: BorderRadius.circular(12),
+              color: MarketPalette.fill,
+              borderRadius: BorderRadius.circular(MarketRadius.sm),
             ),
             child: Text(
               message.content,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: MarketPalette.muted,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
+              style: MarketText.caption(size: 12, weight: FontWeight.w600),
             ),
           ),
         ),
@@ -436,7 +447,7 @@ class _MessageBubble extends StatelessWidget {
               height: 32,
               decoration: BoxDecoration(
                 color: MarketPalette.greenSoft,
-                borderRadius: BorderRadius.circular(11),
+                borderRadius: BorderRadius.circular(MarketRadius.sm),
               ),
               child: const Icon(
                 Icons.support_agent_rounded,
@@ -453,8 +464,8 @@ class _MessageBubble extends StatelessWidget {
                 color: isUser ? MarketPalette.greenDark : Colors.white,
                 border: isUser ? null : Border.all(color: MarketPalette.line),
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(19),
-                  topRight: const Radius.circular(19),
+                  topLeft: const Radius.circular(MarketRadius.lg),
+                  topRight: const Radius.circular(MarketRadius.lg),
                   bottomLeft: Radius.circular(isUser ? 19 : 5),
                   bottomRight: Radius.circular(isUser ? 5 : 19),
                 ),
@@ -465,22 +476,13 @@ class _MessageBubble extends StatelessWidget {
                   if (!isUser && message.senderName.isNotEmpty) ...[
                     Text(
                       message.senderName,
-                      style: GoogleFonts.inter(
-                        color: MarketPalette.green,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      style: MarketText.label(color: MarketPalette.green, size: 11, weight: FontWeight.w800),
                     ),
                     const SizedBox(height: 4),
                   ],
                   Text(
                     message.content,
-                    style: GoogleFonts.inter(
-                      color: isUser ? Colors.white : MarketPalette.ink,
-                      fontSize: 13,
-                      height: 1.42,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: MarketText.body(color: isUser ? Colors.white : MarketPalette.ink, size: 13, height: 1.42),
                   ),
                   const SizedBox(height: 5),
                   Row(
@@ -488,13 +490,7 @@ class _MessageBubble extends StatelessWidget {
                     children: [
                       Text(
                         _formatTime(message.createdAt),
-                        style: GoogleFonts.inter(
-                          color: isUser
-                              ? Colors.white.withValues(alpha: .62)
-                              : MarketPalette.muted,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: MarketText.caption(color: isUser ? Colors.white.withValues(alpha: .8) : MarketPalette.muted, size: 11),
                       ),
                       if (isUser) ...[
                         const SizedBox(width: 4),
@@ -547,16 +543,12 @@ class _DateDivider extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFFE9EEE9),
-            borderRadius: BorderRadius.circular(11),
+            color: MarketPalette.fill,
+            borderRadius: BorderRadius.circular(MarketRadius.sm),
           ),
           child: Text(
             text,
-            style: GoogleFonts.inter(
-              color: MarketPalette.muted,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-            ),
+            style: MarketText.label(color: MarketPalette.muted, size: 11),
           ),
         ),
       ),
@@ -584,7 +576,7 @@ class _TypingIndicator extends StatelessWidget {
             height: 32,
             decoration: BoxDecoration(
               color: MarketPalette.greenSoft,
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(MarketRadius.sm),
             ),
             child: const Icon(
               Icons.support_agent_rounded,
@@ -599,9 +591,9 @@ class _TypingIndicator extends StatelessWidget {
               color: Colors.white,
               border: Border.all(color: MarketPalette.line),
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(19),
-                topRight: Radius.circular(19),
-                bottomRight: Radius.circular(19),
+                topLeft: Radius.circular(MarketRadius.lg),
+                topRight: Radius.circular(MarketRadius.lg),
+                bottomRight: Radius.circular(MarketRadius.lg),
                 bottomLeft: Radius.circular(5),
               ),
             ),
@@ -647,7 +639,9 @@ class _TypingDotState extends State<_TypingDot>
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
     Future<void>.delayed(Duration(milliseconds: widget.delay), () {
-      if (mounted) _controller.repeat(reverse: true);
+      // "Hareketi azalt" açıksa noktalar sabit kalır.
+      if (!mounted || MediaQuery.disableAnimationsOf(context)) return;
+      _controller.repeat(reverse: true);
     });
   }
 
@@ -688,7 +682,7 @@ class _EmptyConversation extends StatelessWidget {
               height: 94,
               decoration: BoxDecoration(
                 color: MarketPalette.greenSoft,
-                borderRadius: BorderRadius.circular(31),
+                borderRadius: BorderRadius.circular(MarketRadius.xl),
               ),
               child: const Icon(
                 Icons.waving_hand_rounded,
@@ -699,21 +693,13 @@ class _EmptyConversation extends StatelessWidget {
             const SizedBox(height: 22),
             Text(
               'Sohbeti başlat',
-              style: GoogleFonts.manrope(
-                color: MarketPalette.ink,
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-              ),
+              style: MarketText.title(size: 22),
             ),
             const SizedBox(height: 8),
             Text(
               'Sorunu veya merak ettiğin konuyu aşağıya yaz. Destek ekibimiz buradan yanıtlasın.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: MarketPalette.muted,
-                fontSize: 12,
-                height: 1.5,
-              ),
+              style: MarketText.body(color: MarketPalette.muted, size: 12, weight: FontWeight.w400, height: 1.5),
             ),
           ],
         ),
@@ -727,8 +713,29 @@ class _MessagesLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(color: MarketPalette.green),
+    return const MarketSkeletonPulse(
+      semanticLabel: 'Mesajlar yükleniyor',
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 18, 16, 0),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: MarketSkeleton(width: 220, height: 54, radius: MarketRadius.lg),
+            ),
+            SizedBox(height: MarketSpace.md),
+            Align(
+              alignment: Alignment.centerRight,
+              child: MarketSkeleton(width: 170, height: 42, radius: MarketRadius.lg),
+            ),
+            SizedBox(height: MarketSpace.md),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: MarketSkeleton(width: 250, height: 70, radius: MarketRadius.lg),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -744,7 +751,7 @@ class _ClosedChatBar extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(17),
         decoration: const BoxDecoration(
-          color: Color(0xFFE9EEE9),
+          color: MarketPalette.fill,
           border: Border(top: BorderSide(color: MarketPalette.line)),
         ),
         child: Row(
@@ -758,11 +765,7 @@ class _ClosedChatBar extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               'Bu destek görüşmesi kapatılmış',
-              style: GoogleFonts.inter(
-                color: MarketPalette.muted,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
+              style: MarketText.label(color: MarketPalette.muted, size: 11),
             ),
           ],
         ),

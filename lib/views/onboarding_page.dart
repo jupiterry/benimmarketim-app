@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'widgets/market_ui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OnboardingPage extends StatefulWidget {
@@ -15,27 +15,24 @@ class _OnboardingPageState extends State<OnboardingPage> {
   static const _items = [
     (
       icon: Icons.shopping_basket_rounded,
-      eyebrow: 'KOLAY ALIŞVERİŞ',
       title: 'Marketin artık cebinde',
       description:
-          'Aradığını hızla bul, sepetini kolayca hazırla ve siparişini birkaç dokunuşla tamamla.',
-      color: Color(0xFFB9EB67),
+          'Aradığını bul, sepetini hazırla, siparişini birkaç dokunuşla ver.',
+      color: MarketPalette.lime,
     ),
     (
       icon: Icons.local_shipping_rounded,
-      eyebrow: 'HIZLI TESLİMAT',
       title: 'Siparişini anlık takip et',
       description:
-          'Siparişinin alındığı andan teslimata kadar tüm adımları tek ekrandan gör.',
-      color: Color(0xFFFFA14A),
+          'Siparişin alındığı andan kapına gelene kadar her adımı tek ekrandan gör.',
+      color: MarketPalette.orange,
     ),
     (
       icon: Icons.support_agent_rounded,
-      eyebrow: 'YANINDAYIZ',
-      title: 'İhtiyacında bize yaz',
+      title: 'İhtiyacın olunca bize yaz',
       description:
-          'Canlı destek, fotokopi hizmeti ve sana özel fırsatlar her zaman kolayca ulaşabileceğin yerde.',
-      color: Color(0xFF75D7C1),
+          'Canlı destek, fotokopi hizmeti ve sana özel fırsatlar hep elinin altında.',
+      color: MarketPalette.limeSoft,
     ),
   ];
 
@@ -53,8 +50,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8F4),
+      backgroundColor: MarketPalette.canvas,
       body: SafeArea(
         child: Column(
           children: [
@@ -65,24 +63,20 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0B6541),
-                      borderRadius: BorderRadius.circular(14),
+                      color: MarketPalette.greenDark,
+                      borderRadius: BorderRadius.circular(MarketRadius.md),
                     ),
                     child: const Icon(Icons.storefront_rounded,
                         color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 10),
                   Text('Benim Marketim',
-                      style: GoogleFonts.manrope(
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF153126))),
+                      style: MarketText.heading(size: 16)),
                   const Spacer(),
                   TextButton(
                     onPressed: _finish,
                     child: Text('Atla',
-                        style: GoogleFonts.inter(
-                            color: const Color(0xFF557064),
-                            fontWeight: FontWeight.w700)),
+                        style: MarketText.label(color: MarketPalette.muted)),
                   ),
                 ],
               ),
@@ -102,8 +96,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           child: Container(
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF073F2C),
-                              borderRadius: BorderRadius.circular(34),
+                              color: MarketPalette.greenDeep,
+                              borderRadius: BorderRadius.circular(MarketRadius.xl),
                               boxShadow: const [
                                 BoxShadow(
                                   color: Color(0x180A3F2B),
@@ -132,37 +126,23 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                   height: 174,
                                   decoration: BoxDecoration(
                                     color: item.color,
-                                    borderRadius: BorderRadius.circular(52),
+                                    borderRadius: BorderRadius.circular(MarketRadius.xl),
                                   ),
                                   child: Icon(item.icon,
-                                      size: 82, color: const Color(0xFF073F2C)),
+                                      size: 82, color: MarketPalette.greenDeep),
                                 ),
                               ],
                             ),
                           ),
                         ),
                         const SizedBox(height: 32),
-                        Text(item.eyebrow,
-                            style: GoogleFonts.inter(
-                                color: const Color(0xFF168454),
-                                fontSize: 11,
-                                letterSpacing: 1.5,
-                                fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 10),
                         Text(item.title,
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.manrope(
-                                color: const Color(0xFF12271E),
-                                fontSize: 29,
-                                height: 1.1,
-                                fontWeight: FontWeight.w900)),
+                            style: MarketText.display()),
                         const SizedBox(height: 12),
                         Text(item.description,
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(
-                                color: const Color(0xFF718078),
-                                fontSize: 14,
-                                height: 1.55)),
+                            style: MarketText.body(color: MarketPalette.muted, height: 1.55)),
                       ],
                     ),
                   );
@@ -176,15 +156,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   ...List.generate(
                     _items.length,
                     (index) => AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
+                      duration: reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 250),
                       width: index == _page ? 28 : 8,
                       height: 8,
                       margin: const EdgeInsets.only(right: 7),
                       decoration: BoxDecoration(
                         color: index == _page
-                            ? const Color(0xFF0B7549)
-                            : const Color(0xFFD5DDD8),
-                        borderRadius: BorderRadius.circular(10),
+                            ? MarketPalette.green
+                            : MarketPalette.lineStrong,
+                        borderRadius: BorderRadius.circular(MarketRadius.sm),
                       ),
                     ),
                   ),
@@ -193,6 +175,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     onPressed: () {
                       if (_page == _items.length - 1) {
                         _finish();
+                      } else if (reduceMotion) {
+                        _controller.jumpToPage(_page + 1);
                       } else {
                         _controller.nextPage(
                           duration: const Duration(milliseconds: 350),
@@ -201,20 +185,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       }
                     },
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF0B7549),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 24, vertical: 15),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
                     ),
                     child: Row(
                       children: [
                         Text(
                             _page == _items.length - 1
                                 ? 'Alışverişe başla'
-                                : 'Devam',
-                            style:
-                                GoogleFonts.inter(fontWeight: FontWeight.w800)),
+                                : 'Devam'),
                         const SizedBox(width: 8),
                         const Icon(Icons.arrow_forward_rounded, size: 18),
                       ],

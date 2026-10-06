@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'app_logger.dart';
 
 class NetworkService {
   // HTTP isteği ile internet kontrolü
@@ -15,7 +16,7 @@ class NetworkService {
       
       return response.statusCode == 200;
     } catch (e) {
-      print('HTTP internet kontrolü başarısız: $e');
+      AppLogger.debug('HTTP internet kontrolü başarısız: $e');
       return false;
     }
   }
@@ -26,7 +27,7 @@ class NetworkService {
       final result = await Process.run('ping', ['-c', '1', '8.8.8.8']);
       return result.exitCode == 0;
     } catch (e) {
-      print('Ping internet kontrolü başarısız: $e');
+      AppLogger.debug('Ping internet kontrolü başarısız: $e');
       return false;
     }
   }
@@ -37,36 +38,36 @@ class NetworkService {
       // 1. DNS lookup kontrolü
       final dnsResult = await InternetAddress.lookup('google.com');
       if (dnsResult.isNotEmpty) {
-        print('DNS lookup başarılı');
+        AppLogger.debug('DNS lookup başarılı');
         return true;
       }
     } catch (e) {
-      print('DNS lookup başarısız: $e');
+      AppLogger.debug('DNS lookup başarısız: $e');
     }
 
     try {
       // 2. HTTP isteği kontrolü
       final httpResult = await checkInternetWithHttp();
       if (httpResult) {
-        print('HTTP kontrolü başarılı');
+        AppLogger.debug('HTTP kontrolü başarılı');
         return true;
       }
     } catch (e) {
-      print('HTTP kontrolü başarısız: $e');
+      AppLogger.debug('HTTP kontrolü başarısız: $e');
     }
 
     try {
       // 3. IP adresi kontrolü
       final ipResult = await InternetAddress.lookup('8.8.8.8');
       if (ipResult.isNotEmpty) {
-        print('IP adresi kontrolü başarılı');
+        AppLogger.debug('IP adresi kontrolü başarılı');
         return true;
       }
     } catch (e) {
-      print('IP adresi kontrolü başarısız: $e');
+      AppLogger.debug('IP adresi kontrolü başarısız: $e');
     }
 
-    print('Tüm internet kontrol yöntemleri başarısız');
+    AppLogger.debug('Tüm internet kontrol yöntemleri başarısız');
     return false;
   }
 }

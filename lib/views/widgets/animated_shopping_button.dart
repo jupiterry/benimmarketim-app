@@ -58,7 +58,7 @@ class _AnimatedShoppingButtonState extends State<AnimatedShoppingButton>
             const SizedBox(width: 8),
             Text(
               'Alışverişe Başla',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: Colors.white,

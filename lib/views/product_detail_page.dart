@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models/product.dart';
@@ -13,6 +12,8 @@ import '../viewmodels/home_page_viewmodel.dart';
 import 'widgets/category_presentation.dart';
 import 'widgets/market_palette.dart';
 import 'widgets/market_product_card.dart';
+import '../services/app_logger.dart';
+import 'widgets/market_ui.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final Product product;
@@ -48,7 +49,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       });
     } catch (error) {
       if (kDebugMode) {
-        print('Benzer ürünler yüklenirken hata: $error');
+        AppLogger.debug('Benzer ürünler yüklenirken hata: $error');
       }
       _loadSimilarProductsFallback();
     } finally {
@@ -112,12 +113,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       ),
       title: Text(
         'Ürün Detayı',
-        style: GoogleFonts.manrope(
-          color: MarketPalette.ink,
-          fontSize: 16,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -.2,
-        ),
+        style: MarketText.heading(size: 16),
       ),
       actions: [
         Consumer<FavoritesViewModel>(
@@ -128,7 +124,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   ? Icons.favorite_rounded
                   : Icons.favorite_border_rounded,
               iconColor: isFavorite ? MarketPalette.red : MarketPalette.ink,
-              semanticLabel: 'Favorilere ekle',
+              semanticLabel:
+                  isFavorite ? 'Favorilerden çıkar' : 'Favorilere ekle',
               onTap: () => _toggleFavorite(favorites),
             );
           },
@@ -152,12 +149,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFFF1F8F3),
-            Color(0xFFFFFFFF),
-            Color(0xFFF8F4E9),
+            MarketPalette.greenSoft,
+            MarketPalette.surface,
+            MarketPalette.limeSoft,
           ],
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(36)),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(MarketRadius.xl)),
       ),
       child: Stack(
         children: [
@@ -205,7 +202,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
                 decoration: BoxDecoration(
                   color: MarketPalette.red,
-                  borderRadius: BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(MarketRadius.sm),
                   boxShadow: [
                     BoxShadow(
                       color: MarketPalette.red.withValues(alpha: .22),
@@ -215,20 +212,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   ],
                 ),
                 child: Text(
-                  '%${widget.product.discountPercentage.toInt()} İNDİRİM',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .45,
-                  ),
+                  '%${widget.product.discountPercentage.toInt()} indirim',
+                  style: MarketText.label(color: Colors.white, size: 12, weight: FontWeight.w800),
                 ),
               ),
             ),
           Positioned(
             right: 0,
             bottom: 0,
-            child: _StockPill(isOutOfStock: widget.product.isOutOfStock),
+            child: widget.product.isOutOfStock
+                ? const MarketPill(
+                    label: 'Stokta yok',
+                    icon: Icons.cancel_rounded,
+                    background: MarketPalette.redSoft,
+                    foreground: MarketPalette.red,
+                  )
+                : const MarketPill(
+                    label: 'Stokta',
+                    icon: Icons.check_circle_rounded,
+                  ),
           ),
         ],
       ),
@@ -245,45 +247,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: MarketPalette.greenSoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(emoji, style: const TextStyle(fontSize: 15)),
-                    const SizedBox(width: 6),
-                    Text(
-                      category,
-                      style: GoogleFonts.inter(
-                        color: MarketPalette.greenDark,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          MarketPill(label: '$emoji  $category'),
           const SizedBox(height: 14),
           Text(
             widget.product.name,
-            style: GoogleFonts.manrope(
-              color: MarketPalette.ink,
-              fontSize: 27,
-              height: 1.12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.65,
-            ),
+            style: MarketText.display(),
           ),
           const SizedBox(height: 17),
           _buildPrice(),
@@ -293,39 +261,23 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             const SizedBox(height: 22),
             Row(
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF1DF),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: const Icon(
-                    Icons.notes_rounded,
-                    color: Color(0xFFCC6D1B),
-                    size: 19,
-                  ),
+                const MarketIconTile(
+                  icon: Icons.notes_rounded,
+                  size: 34,
+                  background: MarketPalette.orangeSoft,
+                  foreground: MarketPalette.orangeInk,
                 ),
                 const SizedBox(width: 10),
                 Text(
                   'Ürün hakkında',
-                  style: GoogleFonts.manrope(
-                    color: MarketPalette.ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: MarketText.heading(),
                 ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
               description,
-              style: GoogleFonts.inter(
-                color: MarketPalette.muted,
-                fontSize: 13,
-                height: 1.62,
-                fontWeight: FontWeight.w500,
-              ),
+              style: MarketText.body(color: MarketPalette.muted, height: 1.55),
             ),
           ],
         ],
@@ -340,42 +292,19 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       runSpacing: 8,
       children: [
         Text(
-          '₺${widget.product.actualPrice.toStringAsFixed(2)}',
-          style: GoogleFonts.manrope(
-            color: MarketPalette.greenDark,
-            fontSize: 30,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -.9,
-          ),
+          '${formatTl(widget.product.actualPrice)}',
+          style: MarketText.price(color: MarketPalette.greenDark, size: 28),
         ),
-        if (widget.product.isDiscounted &&
-            widget.product.discountedPrice != null)
+        if (widget.product.price > widget.product.actualPrice)
           Text(
-            '₺${widget.product.price.toStringAsFixed(2)}',
-            style: GoogleFonts.inter(
-              color: MarketPalette.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              decoration: TextDecoration.lineThrough,
-              decorationColor: MarketPalette.muted,
-            ),
+            '${formatTl(widget.product.price)}',
+            style: MarketText.body(color: MarketPalette.muted, size: 16, weight: FontWeight.w600).copyWith(decoration: TextDecoration.lineThrough, decorationColor: MarketPalette.muted),
           ),
-        if (widget.product.isDiscounted &&
-            widget.product.discountPercentage > 0)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFE9E9),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '₺${(widget.product.price - widget.product.actualPrice).toStringAsFixed(2)} kazanç',
-              style: GoogleFonts.inter(
-                color: MarketPalette.red,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+        if (widget.product.price > widget.product.actualPrice)
+          MarketPill(
+            label: '${formatTl((widget.product.price - widget.product.actualPrice))} kazanç',
+            background: MarketPalette.redSoft,
+            foreground: MarketPalette.red,
           ),
       ],
     );
@@ -389,7 +318,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border.all(color: MarketPalette.line),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(MarketRadius.lg),
         ),
         child: const Row(
           children: [
@@ -430,54 +359,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'BUNLARI DA BEĞENEBİLİRSİN',
-                        style: GoogleFonts.inter(
-                          color: MarketPalette.green,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.05,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'Benzer ürünler',
-                        style: GoogleFonts.manrope(
-                          color: MarketPalette.ink,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -.45,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_similarProducts.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: MarketPalette.greenSoft,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${_similarProducts.length} ürün',
-                      style: GoogleFonts.inter(
-                        color: MarketPalette.greenDark,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-              ],
+            child: MarketSectionTitle(
+              title: 'Benzer ürünler',
+              trailing: _similarProducts.isEmpty
+                  ? null
+                  : MarketPill(label: '${_similarProducts.length} ürün'),
             ),
           ),
           const SizedBox(height: 16),
@@ -545,36 +431,23 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       : () => _addToCart(cart),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(58),
-                    backgroundColor: MarketPalette.green,
-                    disabledBackgroundColor: const Color(0xFFDCE2DD),
-                    foregroundColor: Colors.white,
-                    disabledForegroundColor: MarketPalette.muted,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    textStyle: MarketText.label(size: 14, weight: FontWeight.w800),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        widget.product.isOutOfStock
-                            ? Icons.remove_shopping_cart_rounded
-                            : Icons.shopping_bag_rounded,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 9),
+                      if (widget.product.isOutOfStock) ...[
+                        const Icon(Icons.remove_shopping_cart_rounded, size: 20),
+                        const SizedBox(width: 9),
+                      ],
                       Flexible(
                         child: Text(
                           widget.product.isOutOfStock
                               ? 'Stokta yok'
-                              : 'Sepete Ekle • ₺${total.toStringAsFixed(2)}',
+                              : 'Sepete ekle • ${formatTl(total)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
                         ),
                       ),
                     ],
@@ -593,45 +466,11 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       cart.addToCart(widget.product);
     }
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(
-                Icons.check_circle_rounded,
-                color: Colors.white,
-                size: 21,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '$_quantity adet ${widget.product.name} sepete eklendi',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: MarketPalette.greenDark,
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.fromLTRB(
-            18,
-            0,
-            18,
-            MediaQuery.paddingOf(context).bottom + 98,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          duration: const Duration(milliseconds: 1700),
-        ),
-      );
+    showMarketSnack(
+      context,
+      '$_quantity adet ${widget.product.name} sepete eklendi',
+      aboveNavigation: true,
+    );
   }
 
   void _toggleFavorite(FavoritesViewModel favorites) {
@@ -640,16 +479,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: Text(
-            'Favorilerini sakla',
-            style: GoogleFonts.manrope(fontWeight: FontWeight.w800),
-          ),
-          content: Text(
+          title: const Text('Favorilerini sakla'),
+          content: const Text(
             'Favorilere ürün eklemek için hesabına giriş yapmalısın.',
-            style: GoogleFonts.inter(fontSize: 13, height: 1.45),
           ),
           actions: [
             TextButton(
@@ -661,9 +493,6 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 Navigator.pop(dialogContext);
                 context.push('/login');
               },
-              style: FilledButton.styleFrom(
-                backgroundColor: MarketPalette.green,
-              ),
               child: const Text('Giriş yap'),
             ),
           ],
@@ -711,42 +540,6 @@ class _RoundActionButton extends StatelessWidget {
   }
 }
 
-class _StockPill extends StatelessWidget {
-  final bool isOutOfStock;
-
-  const _StockPill({required this.isOutOfStock});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-      decoration: BoxDecoration(
-        color: isOutOfStock ? const Color(0xFFFFE9E9) : MarketPalette.greenSoft,
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isOutOfStock ? Icons.cancel_rounded : Icons.check_circle_rounded,
-            color: isOutOfStock ? MarketPalette.red : MarketPalette.green,
-            size: 15,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            isOutOfStock ? 'Stokta yok' : 'Stokta',
-            style: GoogleFonts.inter(
-              color: isOutOfStock ? MarketPalette.red : MarketPalette.greenDark,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _DetailQuantitySelector extends StatelessWidget {
   final int quantity;
   final VoidCallback? onMinus;
@@ -765,13 +558,14 @@ class _DetailQuantitySelector extends StatelessWidget {
       decoration: BoxDecoration(
         color: MarketPalette.canvas,
         border: Border.all(color: MarketPalette.line),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(MarketRadius.md),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _DetailQuantityButton(
             icon: Icons.remove_rounded,
+            tooltip: 'Azalt',
             onTap: onMinus,
           ),
           SizedBox(
@@ -779,15 +573,12 @@ class _DetailQuantitySelector extends StatelessWidget {
             child: Text(
               '$quantity',
               textAlign: TextAlign.center,
-              style: GoogleFonts.manrope(
-                color: MarketPalette.ink,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
+              style: MarketText.heading(size: 16),
             ),
           ),
           _DetailQuantityButton(
             icon: Icons.add_rounded,
+            tooltip: 'Artır',
             onTap: onPlus,
           ),
         ],
@@ -798,24 +589,32 @@ class _DetailQuantitySelector extends StatelessWidget {
 
 class _DetailQuantityButton extends StatelessWidget {
   final IconData icon;
+  final String tooltip;
   final VoidCallback? onTap;
 
-  const _DetailQuantityButton({required this.icon, required this.onTap});
+  const _DetailQuantityButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(15),
-      child: SizedBox(
-        width: 36,
-        height: 58,
-        child: Icon(
-          icon,
-          color: onTap == null
-              ? MarketPalette.muted.withValues(alpha: .35)
-              : MarketPalette.greenDark,
-          size: 19,
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        child: SizedBox(
+          width: 40,
+          height: 58,
+          child: Icon(
+            icon,
+            color: onTap == null
+                ? MarketPalette.muted.withValues(alpha: .35)
+                : MarketPalette.greenDark,
+            size: 20,
+          ),
         ),
       ),
     );
@@ -841,22 +640,14 @@ class _AssuranceItem extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           title,
-          style: GoogleFonts.inter(
-            color: MarketPalette.ink,
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-          ),
+          style: MarketText.label(size: 12, weight: FontWeight.w800),
         ),
         const SizedBox(height: 2),
         Text(
           subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.inter(
-            color: MarketPalette.muted,
-            fontSize: 8,
-            fontWeight: FontWeight.w500,
-          ),
+          style: MarketText.caption(size: 11),
         ),
       ],
     );
@@ -885,7 +676,7 @@ class _LargeImageFallback extends StatelessWidget {
     return const Center(
       child: Icon(
         Icons.inventory_2_outlined,
-        color: Color(0xFFBAC4BD),
+        color: MarketPalette.subtle,
         size: 72,
       ),
     );
@@ -909,7 +700,7 @@ class _SimilarProductsSkeleton extends StatelessWidget {
           width: 176,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(23),
+            borderRadius: BorderRadius.circular(MarketRadius.lg),
             border: Border.all(color: MarketPalette.line),
           ),
         ),

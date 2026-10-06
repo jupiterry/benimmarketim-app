@@ -22,22 +22,32 @@ class FlashSale {
   });
 
   factory FlashSale.fromJson(Map<String, dynamic> json) {
+    // Backend 'product' alanını bazen dolu nesne, bazen yalnızca ID olarak
+    // döndürür; ikisi de desteklenir.
+    final rawProduct = json['product'];
+    final productJson = rawProduct is Map
+        ? Map<String, dynamic>.from(rawProduct)
+        : <String, dynamic>{};
+    final productId = rawProduct is Map
+        ? (rawProduct['_id'] ?? '').toString()
+        : (rawProduct ?? json['productId'] ?? '').toString();
+
     return FlashSale(
       id: json['_id'] ?? '',
-      productId: json['product'] ?? '',
+      productId: productId,
       name: json['name'] ?? '',
       discountPercentage: (json['discountPercentage'] ?? 0.0).toDouble(),
       startDate: DateTime.parse(json['startDate'] ?? DateTime.now().toIso8601String()),
       endDate: DateTime.parse(json['endDate'] ?? DateTime.now().toIso8601String()),
       isActive: json['isActive'] ?? true,
-      product: Product.fromJson(json['product'] ?? {}),
+      product: Product.fromJson(productJson),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       '_id': id,
-      'product': productId,
+      'productId': productId,
       'name': name,
       'discountPercentage': discountPercentage,
       'startDate': startDate.toIso8601String(),

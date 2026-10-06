@@ -4,14 +4,21 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'market_ui.dart';
+
 class FilePickerWidget extends StatefulWidget {
   final Function(File) onFileSelected;
+
+  /// Kullanıcı seçili dosyayı kaldırdığında çağrılır; üst sayfa kendi
+  /// seçimini de temizlemeli (aksi halde kaldırılan dosya yüklenir).
+  final VoidCallback? onFileRemoved;
   final String? selectedFileName;
   final bool isEnabled;
 
   const FilePickerWidget({
     super.key,
     required this.onFileSelected,
+    this.onFileRemoved,
     this.selectedFileName,
     this.isEnabled = true,
   });
@@ -53,77 +60,50 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
   }
 
   Widget _buildFileSelectionSheet() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'Dosya Seç',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _buildSelectionButton(
-                  icon: Icons.folder_open,
-                  title: 'Dosya Seç',
-                  subtitle: 'PDF, DOC, JPG, PNG',
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: MarketPalette.lineStrong,
+                  borderRadius: BorderRadius.circular(MarketRadius.sm),
+                ),
+              ),
+            ),
+            Text('Belgeni nereden ekleyelim?', style: MarketText.title(size: 22)),
+            const SizedBox(height: 16),
+            MarketMenuGroup(
+              children: [
+                MarketMenuTile(
+                  icon: Icons.folder_open_rounded,
+                  title: 'Dosyalardan seç',
+                  subtitle: 'PDF, DOC, DOCX, JPG, PNG',
+                  iconColor: MarketPalette.blue,
+                  iconBackground: MarketPalette.blueSoft,
                   onTap: _pickDocument,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildSelectionButton(
-                  icon: Icons.camera_alt,
-                  title: 'Kamera',
-                  subtitle: 'Fotoğraf Çek',
+                MarketMenuTile(
+                  icon: Icons.photo_camera_outlined,
+                  title: 'Fotoğrafını çek',
+                  subtitle: 'Kamerayla belgeni tara',
                   onTap: _pickImageFromCamera,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _buildSelectionButton(
-            icon: Icons.photo_library,
-            title: 'Galeri',
-            subtitle: 'Galeriden Seç',
-            onTap: _pickImageFromGallery,
-            isFullWidth: true,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSelectionButton({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    bool isFullWidth = false,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: isFullWidth ? double.infinity : null,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 32, color: Colors.blue),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            Text(
-              subtitle,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                MarketMenuTile(
+                  icon: Icons.photo_library_outlined,
+                  title: 'Galeriden seç',
+                  iconColor: MarketPalette.pink,
+                  iconBackground: MarketPalette.pinkSoft,
+                  onTap: _pickImageFromGallery,
+                ),
+              ],
             ),
           ],
         ),
@@ -202,39 +182,34 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       _selectedFile = null;
       _selectedFileName = null;
     });
+    widget.onFileRemoved?.call();
   }
 
   void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
+    showMarketSnack(context, message, error: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: _selectedFile != null ? Colors.green : Colors.grey.shade300,
-          width: 2,
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: _selectedFile != null
-          ? _buildSelectedFileWidget()
-          : _buildFilePickerWidget(),
-    );
+    return _selectedFile != null
+        ? _buildSelectedFileWidget()
+        : _buildFilePickerWidget();
   }
 
   Widget _buildSelectedFileWidget() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+      decoration: BoxDecoration(
+        color: MarketPalette.greenSoft,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        border: Border.all(color: MarketPalette.greenLine),
+      ),
       child: Row(
         children: [
-          Icon(
-            _getFileIcon(_selectedFileName ?? ''),
-            color: Colors.green,
-            size: 24,
+          MarketIconTile(
+            icon: _getFileIcon(_selectedFileName ?? ''),
+            size: 44,
+            background: Colors.white,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -243,23 +218,21 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
               children: [
                 Text(
                   _selectedFileName ?? 'Dosya seçildi',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: MarketText.label(size: 14),
                 ),
                 if (_selectedFile != null)
                   Text(
-                    _getFileSizeText(_selectedFile!),
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    '${_getFileSizeText(_selectedFile!)} • Hazır',
+                    style: MarketText.caption(color: MarketPalette.greenDark),
                   ),
               ],
             ),
           ),
           IconButton(
             onPressed: _removeFile,
-            icon: const Icon(Icons.close, color: Colors.red),
+            icon: const Icon(Icons.close_rounded, color: MarketPalette.red),
             tooltip: 'Dosyayı kaldır',
           ),
         ],
@@ -268,48 +241,34 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
   }
 
   Widget _buildFilePickerWidget() {
-    return InkWell(
-      onTap: widget.isEnabled ? _pickFile : null,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(
-              Icons.upload_file,
-              color: widget.isEnabled ? Colors.blue : Colors.grey,
-              size: 24,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Dosya Seç',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: widget.isEnabled ? Colors.black : Colors.grey,
-                    ),
-                  ),
-                  Text(
-                    'PDF, DOC, JPG, PNG dosyaları desteklenir',
-                    style: TextStyle(
-                      color: widget.isEnabled
-                          ? Colors.grey.shade600
-                          : Colors.grey,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+    return Material(
+      color: MarketPalette.canvas,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        side: const BorderSide(color: MarketPalette.lineStrong, width: 1.5),
+      ),
+      child: InkWell(
+        onTap: widget.isEnabled ? _pickFile : null,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+          child: Column(
+            children: [
+              const MarketIconTile(
+                icon: Icons.upload_file_rounded,
+                size: 52,
+                background: MarketPalette.blueSoft,
+                foreground: MarketPalette.blue,
               ),
-            ),
-            Icon(
-              Icons.arrow_forward_ios,
-              color: widget.isEnabled ? Colors.grey : Colors.grey.shade300,
-              size: 16,
-            ),
-          ],
+              const SizedBox(height: 10),
+              Text('Belge seç veya fotoğrafını çek', style: MarketText.label(size: 14)),
+              const SizedBox(height: 3),
+              Text(
+                'PDF, DOC, DOCX, JPG ve PNG desteklenir',
+                style: MarketText.caption(),
+              ),
+            ],
+          ),
         ),
       ),
     );

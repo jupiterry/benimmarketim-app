@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'app_logger.dart';
 
 class ConnectivityService {
   static Future<bool> hasInternetConnection() async {
@@ -16,18 +17,18 @@ class ConnectivityService {
         try {
           final result = await InternetAddress.lookup(host);
           if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-            print('İnternet bağlantısı başarılı: $host');
+            AppLogger.debug('İnternet bağlantısı başarılı: $host');
             return true;
           }
         } catch (e) {
-          print('İnternet test hatası ($host): $e');
+          AppLogger.debug('İnternet test hatası ($host): $e');
           continue;
         }
       }
       
       return false;
     } catch (e) {
-      print('İnternet bağlantısı genel hatası: $e');
+      AppLogger.debug('İnternet bağlantısı genel hatası: $e');
       return false;
     }
   }
@@ -37,12 +38,12 @@ class ConnectivityService {
       // API sunucusunu kontrol et
       final result = await InternetAddress.lookup('devrekbenimmarketim.com');
       if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-        print('API sunucusu erişilebilir: devrekbenimmarketim.com');
+        AppLogger.debug('API sunucusu erişilebilir: devrekbenimmarketim.com');
         return true;
       }
       return false;
     } catch (e) {
-      print('API sunucusu erişim hatası: $e');
+      AppLogger.debug('API sunucusu erişim hatası: $e');
       return false;
     }
   }
@@ -59,7 +60,7 @@ class ConnectivityService {
         final result = await InternetAddress.lookup('8.8.8.8');
         return result.isNotEmpty;
       } catch (e2) {
-        print('Temel internet kontrolü başarısız: $e2');
+        AppLogger.debug('Temel internet kontrolü başarısız: $e2');
         return false;
       }
     }

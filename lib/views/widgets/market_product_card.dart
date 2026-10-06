@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/product.dart';
@@ -8,7 +8,61 @@ import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/cart_viewmodel.dart';
 import '../../viewmodels/favorites_viewmodel.dart';
 import 'category_presentation.dart';
-import 'market_palette.dart';
+import 'market_ui.dart';
+
+/// Ürün ızgaralarında kullanılan kart yüksekliği.
+const double marketProductCardHeight = 300;
+
+/// Ürün ızgarası yüklenirken gösterilen iskelet (2 sütun).
+class MarketProductGridSkeleton extends StatelessWidget {
+  final int count;
+  final EdgeInsetsGeometry padding;
+
+  const MarketProductGridSkeleton({
+    super.key,
+    this.count = 4,
+    this.padding = const EdgeInsets.fromLTRB(20, 20, 20, 24),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MarketSkeletonPulse(
+      semanticLabel: 'Ürünler yükleniyor',
+      child: GridView.builder(
+        shrinkWrap: true,
+        padding: padding,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: count,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisExtent: marketProductCardHeight,
+          crossAxisSpacing: 13,
+          mainAxisSpacing: 13,
+        ),
+        itemBuilder: (_, __) => const MarketCard(
+          shadow: false,
+          padding: EdgeInsets.all(MarketSpace.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: MarketSkeleton(
+                  width: double.infinity,
+                  height: double.infinity,
+                  radius: MarketRadius.md,
+                ),
+              ),
+              SizedBox(height: MarketSpace.md),
+              MarketSkeleton(width: 110, height: 13, radius: MarketRadius.xs),
+              SizedBox(height: MarketSpace.sm),
+              MarketSkeleton(width: 64, height: 16, radius: MarketRadius.xs),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class MarketProductCard extends StatelessWidget {
   final Product product;
@@ -21,25 +75,21 @@ class MarketProductCard extends StatelessWidget {
       builder: (context, favorites, cart, _) {
         final isFavorite = favorites.isFavorite(product.id);
         final quantity = cart.getProductQuantity(product.id);
+        final discount = product.isDiscounted ? product.discountPercentage : 0.0;
 
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => context.push('/product', extra: product),
-            borderRadius: BorderRadius.circular(23),
-            child: Ink(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: MarketPalette.line),
-                borderRadius: BorderRadius.circular(23),
-                boxShadow: [
-                  BoxShadow(
-                    color: MarketPalette.ink.withValues(alpha: .045),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
+        return Semantics(
+          container: true,
+          label:
+              '${product.name}, ${formatTl(product.actualPrice)}${product.isOutOfStock ? ', stokta yok' : ''}',
+          child: Material(
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(MarketRadius.lg),
+              side: const BorderSide(color: MarketPalette.line),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => context.push('/product', extra: product),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -48,11 +98,11 @@ class MarketProductCard extends StatelessWidget {
                       children: [
                         Positioned.fill(
                           child: Container(
-                            margin: const EdgeInsets.all(8),
-                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.all(7),
+                            padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF7F8F5),
-                              borderRadius: BorderRadius.circular(18),
+                              color: MarketPalette.canvas,
+                              borderRadius: BorderRadius.circular(MarketRadius.md),
                             ),
                             child: product.image.isNotEmpty
                                 ? Hero(
@@ -68,50 +118,51 @@ class MarketProductCard extends StatelessWidget {
                                 : const _ProductImageFallback(),
                           ),
                         ),
-                        if (product.isDiscounted &&
-                            product.discountPercentage > 0)
+                        if (discount > 0)
                           Positioned(
-                            left: 14,
-                            top: 14,
+                            left: 13,
+                            top: 13,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
-                                vertical: 5,
+                                vertical: 4,
                               ),
                               decoration: BoxDecoration(
                                 color: MarketPalette.red,
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(MarketRadius.sm),
                               ),
                               child: Text(
-                                '%${product.discountPercentage.toInt()}',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                '%${discount.toInt()}',
+                                style: MarketText.label(color: Colors.white, size: 12, weight: FontWeight.w800),
                               ),
                             ),
                           ),
                         Positioned(
-                          right: 14,
-                          top: 14,
+                          right: 11,
+                          top: 11,
                           child: Material(
                             color: Colors.white,
                             shape: const CircleBorder(),
+                            elevation: 0,
                             child: InkWell(
                               customBorder: const CircleBorder(),
                               onTap: () => _toggleFavorite(context, favorites),
-                              child: SizedBox(
-                                width: 34,
-                                height: 34,
-                                child: Icon(
-                                  isFavorite
-                                      ? Icons.favorite_rounded
-                                      : Icons.favorite_border_rounded,
-                                  color: isFavorite
-                                      ? MarketPalette.red
-                                      : MarketPalette.muted,
-                                  size: 19,
+                              child: Tooltip(
+                                message: isFavorite
+                                    ? 'Favorilerden çıkar'
+                                    : 'Favorilere ekle',
+                                child: SizedBox(
+                                  width: 38,
+                                  height: 38,
+                                  child: Icon(
+                                    isFavorite
+                                        ? Icons.favorite_rounded
+                                        : Icons.favorite_border_rounded,
+                                    color: isFavorite
+                                        ? MarketPalette.red
+                                        : MarketPalette.muted,
+                                    size: 20,
+                                  ),
                                 ),
                               ),
                             ),
@@ -120,10 +171,10 @@ class MarketProductCard extends StatelessWidget {
                         if (product.isOutOfStock)
                           Positioned.fill(
                             child: Container(
-                              margin: const EdgeInsets.all(8),
+                              margin: const EdgeInsets.all(7),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: .80),
-                                borderRadius: BorderRadius.circular(18),
+                                color: Colors.white.withValues(alpha: .78),
+                                borderRadius: BorderRadius.circular(MarketRadius.md),
                               ),
                               alignment: Alignment.center,
                               child: Container(
@@ -133,16 +184,11 @@ class MarketProductCard extends StatelessWidget {
                                 ),
                                 decoration: BoxDecoration(
                                   color: MarketPalette.ink,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(MarketRadius.sm),
                                 ),
                                 child: Text(
-                                  'STOKTA YOK',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: .5,
-                                  ),
+                                  'Stokta yok',
+                                  style: MarketText.label(color: Colors.white, size: 12),
                                 ),
                               ),
                             ),
@@ -151,32 +197,31 @@ class MarketProductCard extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 13),
+                    padding: const EdgeInsets.fromLTRB(12, 2, 10, 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (product.category.trim().isNotEmpty)
+                        if (product.category.trim().isNotEmpty) ...[
                           Text(
-                            categoryDisplayName(product.category).toUpperCase(),
+                            categoryDisplayName(product.category),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
+                            style: MarketText.caption(
                               color: MarketPalette.green,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: .55,
+                              size: 12,
+                              weight: FontWeight.w700,
                             ),
                           ),
-                        const SizedBox(height: 4),
-                        Text(
-                          product.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            color: MarketPalette.ink,
-                            fontSize: 12,
-                            height: 1.22,
-                            fontWeight: FontWeight.w700,
+                          const SizedBox(height: 3),
+                        ],
+                        SizedBox(
+                          height: 36,
+                          child: Text(
+                            product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: MarketText.label(size: 13, weight: FontWeight.w600)
+                                .copyWith(height: 1.3),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -184,20 +229,27 @@ class MarketProductCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Expanded(child: _ProductPrice(product: product)),
-                            const SizedBox(width: 5),
+                            const SizedBox(width: 6),
                             if (product.isOutOfStock)
                               const _DisabledAddButton()
                             else if (quantity > 0)
-                              _QuantityControl(
+                              MarketStepper(
                                 quantity: quantity,
+                                compact: true,
                                 onMinus: () => cart.removeFromCart(product),
                                 onPlus: () => cart.addToCart(product),
                               )
                             else
                               _AddButton(
+                                productName: product.name,
                                 onTap: () {
+                                  HapticFeedback.selectionClick();
                                   cart.addToCart(product);
-                                  _showAddedMessage(context, product.name);
+                                  showMarketSnack(
+                                    context,
+                                    '${product.name} sepete eklendi',
+                                    aboveNavigation: true,
+                                  );
                                 },
                               ),
                           ],
@@ -223,17 +275,18 @@ class MarketProductCard extends StatelessWidget {
       showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
+          icon: const MarketIconTile(
+            icon: Icons.favorite_rounded,
+            size: 52,
+            background: MarketPalette.pinkSoft,
+            foreground: MarketPalette.pink,
           ),
-          title: Text(
-            'Favorilerini sakla',
-            style: GoogleFonts.manrope(fontWeight: FontWeight.w800),
-          ),
-          content: Text(
+          title: const Text('Favorilerini sakla', textAlign: TextAlign.center),
+          content: const Text(
             'Favorilere ürün eklemek için hesabına giriş yapmalısın.',
-            style: GoogleFonts.inter(fontSize: 13, height: 1.45),
+            textAlign: TextAlign.center,
           ),
+          actionsAlignment: MainAxisAlignment.center,
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
@@ -244,9 +297,6 @@ class MarketProductCard extends StatelessWidget {
                 Navigator.pop(dialogContext);
                 context.push('/login');
               },
-              style: FilledButton.styleFrom(
-                backgroundColor: MarketPalette.green,
-              ),
               child: const Text('Giriş yap'),
             ),
           ],
@@ -255,40 +305,6 @@ class MarketProductCard extends StatelessWidget {
       return;
     }
     favorites.toggleFavorite(product);
-  }
-
-  void _showAddedMessage(BuildContext context, String productName) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(
-                Icons.check_circle_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '$productName sepete eklendi',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: MarketPalette.greenDark,
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(18, 0, 18, 102),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          duration: const Duration(milliseconds: 1400),
-        ),
-      );
   }
 }
 
@@ -299,30 +315,27 @@ class _ProductPrice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showOld = product.isDiscounted && product.price > product.actualPrice;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (product.isDiscounted && product.discountedPrice != null)
+        if (showOld)
           Text(
-            '₺${product.price.toStringAsFixed(2)}',
+            formatTl(product.price),
             maxLines: 1,
-            style: GoogleFonts.inter(
-              color: MarketPalette.muted,
-              fontSize: 9,
+            style: MarketText.caption(size: 12).copyWith(
               decoration: TextDecoration.lineThrough,
+              decorationColor: MarketPalette.muted,
             ),
           ),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
-            '₺${product.actualPrice.toStringAsFixed(2)}',
-            style: GoogleFonts.manrope(
-              color: MarketPalette.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.35,
+            formatTl(product.actualPrice),
+            style: MarketText.price(
+              color: showOld ? MarketPalette.red : MarketPalette.ink,
             ),
           ),
         ),
@@ -333,21 +346,27 @@ class _ProductPrice extends StatelessWidget {
 
 class _AddButton extends StatelessWidget {
   final VoidCallback onTap;
+  final String productName;
 
-  const _AddButton({required this.onTap});
+  const _AddButton({required this.onTap, required this.productName});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: MarketPalette.green,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: const SizedBox(
-          width: 38,
-          height: 38,
-          child: Icon(Icons.add_rounded, color: Colors.white, size: 23),
+    return Semantics(
+      button: true,
+      label: '$productName sepete ekle',
+      excludeSemantics: true,
+      child: Material(
+        color: MarketPalette.green,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(MarketRadius.md),
+          child: const SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(Icons.add_rounded, color: Colors.white, size: 24),
+          ),
         ),
       ),
     );
@@ -360,78 +379,16 @@ class _DisabledAddButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 38,
-      height: 38,
+      width: 42,
+      height: 42,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8ECE9),
-        borderRadius: BorderRadius.circular(12),
+        color: MarketPalette.surfaceMuted,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
       ),
       child: const Icon(
-        Icons.remove_rounded,
-        color: MarketPalette.muted,
-        size: 20,
-      ),
-    );
-  }
-}
-
-class _QuantityControl extends StatelessWidget {
-  final int quantity;
-  final VoidCallback onMinus;
-  final VoidCallback onPlus;
-
-  const _QuantityControl({
-    required this.quantity,
-    required this.onMinus,
-    required this.onPlus,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      decoration: BoxDecoration(
-        color: MarketPalette.greenSoft,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _QuantityButton(icon: Icons.remove_rounded, onTap: onMinus),
-          SizedBox(
-            width: 22,
-            child: Text(
-              '$quantity',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                color: MarketPalette.greenDark,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          _QuantityButton(icon: Icons.add_rounded, onTap: onPlus),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuantityButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _QuantityButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 26,
-        height: 38,
-        child: Icon(icon, color: MarketPalette.greenDark, size: 16),
+        Icons.remove_shopping_cart_outlined,
+        color: MarketPalette.subtle,
+        size: 19,
       ),
     );
   }
@@ -445,7 +402,7 @@ class _ProductImageFallback extends StatelessWidget {
     return const Center(
       child: Icon(
         Icons.inventory_2_outlined,
-        color: Color(0xFFBAC4BD),
+        color: MarketPalette.subtle,
         size: 38,
       ),
     );

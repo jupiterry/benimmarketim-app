@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 import '../models/product.dart';
+import '../services/app_logger.dart';
 
 class FavoritesViewModel extends ChangeNotifier {
   List<Product> _favorites = [];
@@ -22,7 +23,7 @@ class FavoritesViewModel extends ChangeNotifier {
     try {
       _favorites = await _databaseService.getFavorites();
     } catch (e) {
-      print('Favoriler yüklenirken hata: $e');
+      AppLogger.debug('Favoriler yüklenirken hata: $e');
     }
 
     _isLoading = false;

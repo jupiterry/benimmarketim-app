@@ -60,7 +60,7 @@ class _SearchPageState extends State<SearchPage> {
         ),
         title: Text(
           'Gelişmiş Arama',
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.inter(
             fontWeight: FontWeight.w600,
             fontSize: 20,
             color: Colors.black87,
@@ -84,7 +84,7 @@ class _SearchPageState extends State<SearchPage> {
               },
               child: Text(
                 'Temizle',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   color: AppColors.successGreen,
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
@@ -155,10 +155,10 @@ class _SearchPageState extends State<SearchPage> {
         ),
         child: TextField(
           controller: _searchController,
-          style: GoogleFonts.poppins(),
+          style: GoogleFonts.inter(),
           decoration: InputDecoration(
             hintText: 'Ürün, kategori veya marka ara...',
-            hintStyle: GoogleFonts.poppins(
+            hintStyle: GoogleFonts.inter(
               color: Colors.grey[400],
               fontSize: 14,
             ),
@@ -238,7 +238,7 @@ class _SearchPageState extends State<SearchPage> {
                         const SizedBox(width: 12),
                         Text(
                           'Kategori',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                           ),
@@ -296,7 +296,7 @@ class _SearchPageState extends State<SearchPage> {
                         const SizedBox(width: 12),
                         Text(
                           'Sıralama',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                           ),
@@ -360,7 +360,7 @@ class _SearchPageState extends State<SearchPage> {
                         const SizedBox(width: 12),
                         Text(
                           'Fiyat Aralığı',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.inter(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                           ),
@@ -396,7 +396,7 @@ class _SearchPageState extends State<SearchPage> {
                           ),
                           child: Text(
                             '₺${searchViewModel.minPrice.toStringAsFixed(0)}',
-                            style: GoogleFonts.poppins(
+                            style: GoogleFonts.inter(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
                             ),
@@ -414,7 +414,7 @@ class _SearchPageState extends State<SearchPage> {
                           ),
                           child: Text(
                             '₺${searchViewModel.maxPrice.toStringAsFixed(0)}',
-                            style: GoogleFonts.poppins(
+                            style: GoogleFonts.inter(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
                             ),
@@ -448,7 +448,7 @@ class _SearchPageState extends State<SearchPage> {
           ),
           child: Text(
             label,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w500,
               color: isSelected ? Colors.white : Colors.black87,
@@ -490,7 +490,7 @@ class _SearchPageState extends State<SearchPage> {
                 const SizedBox(height: 24),
                 Text(
                   'Ürün Bulunamadı',
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -500,7 +500,7 @@ class _SearchPageState extends State<SearchPage> {
                 Text(
                   'Farklı anahtar kelimeler veya\nfiltreler deneyin',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     color: Colors.grey[500],
                     fontSize: 14,
                   ),

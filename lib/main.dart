@@ -20,6 +20,7 @@ import 'services/token_manager.dart';
 import 'services/notification_service.dart';
 import 'router/app_router.dart';
 import 'views/widgets/market_system_frame.dart';
+import 'services/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,21 +28,21 @@ void main() async {
   // Hata yakalama ile güvenli başlatma
   try {
     // Notification Service'i en başta başlat (await ile bekle ki izin istesin)
-    debugPrint('🔄 NotificationService initializing...');
+    AppLogger.debug('🔄 NotificationService initializing...');
     await NotificationService.instance.init();
-    debugPrint('✅ NotificationService initialized');
+    AppLogger.debug('✅ NotificationService initialized');
 
     // TokenManager initialization
     try {
       await TokenManager.init();
-      debugPrint('✅ TokenManager initialized');
+      AppLogger.debug('✅ TokenManager initialized');
     } catch (e) {
-      debugPrint('⚠️ TokenManager initialization failed: $e');
+      AppLogger.debug('⚠️ TokenManager initialization failed: $e');
       // TokenManager olmadan da devam edebilir
     }
   } catch (e, stackTrace) {
-    debugPrint('❌ Critical initialization error: $e');
-    debugPrint('Stack trace: $stackTrace');
+    AppLogger.debug('❌ Critical initialization error: $e');
+    AppLogger.debug('Stack trace: $stackTrace');
     // Kritik hata olsa bile uygulamayı başlat
   }
 
@@ -49,8 +50,8 @@ void main() async {
 
   // Global error handler - Flutter hatalarını yakala
   FlutterError.onError = (FlutterErrorDetails details) {
-    debugPrint('❌ Flutter Error: ${details.exception}');
-    debugPrint('Stack: ${details.stack}');
+    AppLogger.debug('❌ Flutter Error: ${details.exception}');
+    AppLogger.debug('Stack: ${details.stack}');
     // Production'da crash reporting servisine gönder
     if (kReleaseMode) {
       // Crash reporting servisine gönder
@@ -103,7 +104,42 @@ void main() async {
     );
   };
 
+  // Bildirime dokununca ilgili ekranı aç
+  NotificationService.instance.currentLocation = _currentRoutePath;
+  NotificationService.instance.onOpenRoute = _openNotificationRoute;
+
   runApp(const MyApp());
+}
+
+String _currentRoutePath() {
+  try {
+    final configuration = AppRouter.router.routerDelegate.currentConfiguration;
+    if (configuration.matches.isEmpty) return '/';
+    return configuration.last.matchedLocation;
+  } catch (_) {
+    return '/';
+  }
+}
+
+// Uygulama bildirimle açıldıysa açılış ekranı bitene kadar bekler; kullanıcı
+// giriş yapmamışsa yönlendirme yapılmaz.
+Future<void> _openNotificationRoute(String route) async {
+  if (route == '/home') return;
+  const waitingScreens = {'/', '/onboarding', '/login', '/register'};
+  for (var attempt = 0; attempt < 60; attempt++) {
+    final path = _currentRoutePath();
+    if (!waitingScreens.contains(path)) {
+      if (path != route) {
+        try {
+          AppRouter.router.push(route);
+        } catch (e) {
+          AppLogger.debug('Bildirim yönlendirme hatası: $e');
+        }
+      }
+      return;
+    }
+    await Future.delayed(const Duration(milliseconds: 250));
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -144,7 +180,7 @@ class _MyAppState extends State<MyApp> {
                   context.read<AuthViewModel>().checkAuthStatus();
                 }
               } catch (e) {
-                debugPrint('Auth check failed: $e');
+                AppLogger.debug('Auth check failed: $e');
               }
             });
           }

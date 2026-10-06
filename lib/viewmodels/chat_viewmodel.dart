@@ -5,6 +5,7 @@ import '../models/chat_model.dart';
 import '../services/chat_service.dart';
 import '../services/socket_service.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class ChatViewModel extends ChangeNotifier {
   final ChatService _chatService = ChatService();
@@ -72,7 +73,7 @@ class ChatViewModel extends ChangeNotifier {
         return currentTime >= startTime && currentTime <= endTime;
       }
     } catch (e) {
-      print('ChatViewModel: Error checking chat hours: $e');
+      AppLogger.debug('ChatViewModel: Error checking chat hours: $e');
       return false; // Hata durumunda erişime izin verme
     }
   }
@@ -237,7 +238,7 @@ class ChatViewModel extends ChangeNotifier {
       _chats.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
     } catch (e) {
       _error = 'Sohbetler yüklenirken hata oluştu';
-      print('ChatViewModel: Load chats error: $e');
+      AppLogger.debug('ChatViewModel: Load chats error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -287,7 +288,7 @@ class ChatViewModel extends ChangeNotifier {
       return response.chat;
     } catch (e) {
       _error = 'Sohbet başlatılırken hata oluştu';
-      print('ChatViewModel: Start chat error: $e');
+      AppLogger.debug('ChatViewModel: Start chat error: $e');
       return null;
     } finally {
       _isLoading = false;
@@ -371,7 +372,7 @@ class ChatViewModel extends ChangeNotifier {
       }
     } catch (e) {
       _error = 'Mesajlar yüklenirken hata oluştu';
-      print('ChatViewModel: Load messages error: $e');
+      AppLogger.debug('ChatViewModel: Load messages error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -415,7 +416,7 @@ class ChatViewModel extends ChangeNotifier {
       // Geçici mesajı kaldır
       _messages.removeWhere((m) => m.id == tempMessage.id);
       _error = 'Mesaj gönderilemedi';
-      print('ChatViewModel: Send message error: $e');
+      AppLogger.debug('ChatViewModel: Send message error: $e');
       return false;
     } finally {
       _isSending = false;

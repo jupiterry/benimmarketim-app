@@ -48,7 +48,7 @@ class CategoriesPage extends StatelessWidget {
         ),
         title: Text(
           'Kategoriler',
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.inter(
             fontSize: 20,
             fontWeight: FontWeight.w700,
             color: Colors.black87,
@@ -101,7 +101,7 @@ class CategoryGrid extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text(
                   'Kategori bulunamadı',
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 18,
                     color: Colors.grey[500],
                     fontWeight: FontWeight.w500,
@@ -216,7 +216,7 @@ class CategoryGrid extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 category.name,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Colors.black87,

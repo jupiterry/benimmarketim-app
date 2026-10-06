@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_logger.dart';
 
 /// Uygulama içi değerlendirme servisi
 /// App Store ve Google Play'de puan isteme işlemlerini yönetir
@@ -31,21 +31,21 @@ class ReviewService {
     // Zaten değerlendirme yaptıysa sorma
     final hasReviewed = prefs.getBool(_hasReviewedKey) ?? false;
     if (hasReviewed) {
-      debugPrint('📝 Review: Kullanıcı zaten değerlendirme yapmış');
+      AppLogger.debug('📝 Review: Kullanıcı zaten değerlendirme yapmış');
       return false;
     }
 
     // Maksimum istek sayısına ulaştıysa sorma
     final requestCount = prefs.getInt(_reviewRequestCountKey) ?? 0;
     if (requestCount >= _maxReviewRequests) {
-      debugPrint('📝 Review: Maksimum istek sayısına ulaşıldı ($requestCount)');
+      AppLogger.debug('📝 Review: Maksimum istek sayısına ulaşıldı ($requestCount)');
       return false;
     }
 
     // Yeterli sipariş tamamlamadıysa sorma
     final orderCount = prefs.getInt(_orderCountKey) ?? 0;
     if (orderCount < _minOrdersBeforeReview) {
-      debugPrint('📝 Review: Yeterli sipariş yok ($orderCount < $_minOrdersBeforeReview)');
+      AppLogger.debug('📝 Review: Yeterli sipariş yok ($orderCount < $_minOrdersBeforeReview)');
       return false;
     }
 
@@ -55,7 +55,7 @@ class ReviewService {
       final lastRequestDate = DateTime.fromMillisecondsSinceEpoch(lastRequest);
       final daysSinceLastRequest = DateTime.now().difference(lastRequestDate).inDays;
       if (daysSinceLastRequest < _daysBetweenRequests) {
-        debugPrint('📝 Review: Henüz yeterli zaman geçmedi ($daysSinceLastRequest gün < $_daysBetweenRequests gün)');
+        AppLogger.debug('📝 Review: Henüz yeterli zaman geçmedi ($daysSinceLastRequest gün < $_daysBetweenRequests gün)');
         return false;
       }
     }
@@ -63,11 +63,11 @@ class ReviewService {
     // In-app review kullanılabilir mi kontrol et
     final isAvailable = await _inAppReview.isAvailable();
     if (!isAvailable) {
-      debugPrint('📝 Review: In-app review kullanılamıyor');
+      AppLogger.debug('📝 Review: In-app review kullanılamıyor');
       return false;
     }
 
-    debugPrint('📝 Review: Değerlendirme istenebilir!');
+    AppLogger.debug('📝 Review: Değerlendirme istenebilir!');
     return true;
   }
 
@@ -77,7 +77,7 @@ class ReviewService {
       final shouldRequest = await shouldRequestReview();
       if (!shouldRequest) return;
 
-      debugPrint('📝 Review: Değerlendirme isteniyor...');
+      AppLogger.debug('📝 Review: Değerlendirme isteniyor...');
       
       // In-app review göster
       await _inAppReview.requestReview();
@@ -88,9 +88,9 @@ class ReviewService {
       await prefs.setInt(_reviewRequestCountKey, currentCount + 1);
       await prefs.setInt(_lastReviewRequestKey, DateTime.now().millisecondsSinceEpoch);
 
-      debugPrint('📝 Review: Değerlendirme istendi (toplam istek: ${currentCount + 1})');
+      AppLogger.debug('📝 Review: Değerlendirme istendi (toplam istek: ${currentCount + 1})');
     } catch (e) {
-      debugPrint('📝 Review Error: $e');
+      AppLogger.debug('📝 Review Error: $e');
     }
   }
 
@@ -100,7 +100,7 @@ class ReviewService {
     final currentCount = prefs.getInt(_orderCountKey) ?? 0;
     await prefs.setInt(_orderCountKey, currentCount + 1);
     
-    debugPrint('📝 Review: Sipariş tamamlandı (toplam: ${currentCount + 1})');
+    AppLogger.debug('📝 Review: Sipariş tamamlandı (toplam: ${currentCount + 1})');
 
     // Değerlendirme istemeyi dene (koşullar sağlanıyorsa)
     await requestReview();
@@ -110,7 +110,7 @@ class ReviewService {
   Future<void> markAsReviewed() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hasReviewedKey, true);
-    debugPrint('📝 Review: Kullanıcı değerlendirme yaptı olarak işaretlendi');
+    AppLogger.debug('📝 Review: Kullanıcı değerlendirme yaptı olarak işaretlendi');
   }
 
   /// Mağaza sayfasına yönlendir (fallback için)
@@ -121,7 +121,7 @@ class ReviewService {
         // Google Play için package name otomatik kullanılır
       );
     } catch (e) {
-      debugPrint('📝 Review: Store listing açılamadı: $e');
+      AppLogger.debug('📝 Review: Store listing açılamadı: $e');
     }
   }
 
@@ -144,6 +144,6 @@ class ReviewService {
     await prefs.remove(_reviewRequestCountKey);
     await prefs.remove(_hasReviewedKey);
     await prefs.remove(_orderCountKey);
-    debugPrint('📝 Review: Test verileri sıfırlandı');
+    AppLogger.debug('📝 Review: Test verileri sıfırlandı');
   }
 }

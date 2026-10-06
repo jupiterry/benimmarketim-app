@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/theme_service.dart';
 import 'custom_dialog.dart';
+import '../../services/app_logger.dart';
 
 class UpdateDialog extends StatelessWidget {
   final bool isMandatory;
@@ -47,7 +48,7 @@ class UpdateDialog extends StatelessWidget {
         }
       }
     } catch (e) {
-      debugPrint('Error launching store: $e');
+      AppLogger.debug('Error launching store: $e');
       if (context.mounted) {
         _showError(context);
       }
@@ -59,7 +60,7 @@ class UpdateDialog extends StatelessWidget {
       SnackBar(
         content: Text(
           'Mağaza açılamadı. Lütfen manuel olarak güncelleyin.',
-          style: GoogleFonts.poppins(),
+          style: GoogleFonts.inter(),
         ),
         backgroundColor: AppColors.errorRed,
       ),

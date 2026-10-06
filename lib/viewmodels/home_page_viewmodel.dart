@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class HomePageViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -35,11 +36,11 @@ class HomePageViewModel extends ChangeNotifier {
   Future<void> loadHomeProducts() async {
     // Eğer zaten ürün varsa tekrar yükleme (Session Persistence)
     if (_products.isNotEmpty) {
-      print('HomePageViewModel: Using cached products');
+      AppLogger.debug('HomePageViewModel: Using cached products');
       return;
     }
 
-    print('HomePageViewModel: Loading fresh home products');
+    AppLogger.debug('HomePageViewModel: Loading fresh home products');
     _setLoading(true);
     _error = null;
 
@@ -62,7 +63,7 @@ class HomePageViewModel extends ChangeNotifier {
 
         // Listeyi karıştırmadan sırayı koru; ürün keşfi tutarlı kalsın.
         _products = visibleProducts.take(50).toList();
-        print(
+        AppLogger.debug(
           'HomePageViewModel: Selected 50 random visible products (filtered ${allProducts.length - visibleProducts.length} hidden)',
         );
       } else {
@@ -71,7 +72,7 @@ class HomePageViewModel extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      print('HomePageViewModel: Error loading products: $e');
+      AppLogger.debug('HomePageViewModel: Error loading products: $e');
       _error = e.toString();
       notifyListeners();
     } finally {

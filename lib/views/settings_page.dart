@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../viewmodels/auth_viewmodel.dart';
-import '../services/theme_service.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
+
+import '../services/api_service.dart';
+import '../viewmodels/auth_viewmodel.dart';
+import 'widgets/legal_links.dart';
+import 'widgets/market_ui.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -13,433 +16,261 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  bool _notificationsEnabled = true;
+  final ApiService _apiService = ApiService();
+  // Sunucudan gelene kadar varsayılan: hepsi açık
+  Map<String, bool> _preferences = {
+    'orders': true,
+    'messages': true,
+    'campaigns': true,
+  };
+  bool _preferencesLoaded = false;
+  final Future<PackageInfo> _info = PackageInfo.fromPlatform();
 
-  String _selectedLanguage = 'tr';
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreferences());
+  }
+
+  Future<void> _loadPreferences() async {
+    if (!mounted || !context.read<AuthViewModel>().isLoggedIn) return;
+    final preferences = await _apiService.getNotificationPreferences();
+    if (!mounted || preferences == null) return;
+    setState(() {
+      _preferences = preferences;
+      _preferencesLoaded = true;
+    });
+  }
+
+  Future<void> _setPreference(String key, bool value) async {
+    final previous = _preferences[key] ?? true;
+    setState(() => _preferences = {..._preferences, key: value});
+    final saved = await _apiService.updateNotificationPreferences({key: value});
+    if (!mounted) return;
+    if (saved == null) {
+      setState(() => _preferences = {..._preferences, key: previous});
+      showMarketSnack(context, 'Tercih kaydedilemedi. Lütfen tekrar dene.',
+          error: true);
+    } else {
+      setState(() => _preferences = saved);
+    }
+  }
+
+  Widget _preferenceTile({
+    required String keyName,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return MarketMenuTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      trailing: Switch.adaptive(
+        value: _preferences[keyName] ?? true,
+        onChanged: _preferencesLoaded
+            ? (value) => _setPreference(keyName, value)
+            : null,
+      ),
+    );
+  }
+
+  Widget _soon() => const MarketPill(label: 'Yakında');
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(
-          'Ayarlar',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
+      backgroundColor: MarketPalette.canvas,
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          const MarketHeader(
+            title: 'Ayarlar',
+            subtitle: 'Uygulama ve hesap tercihlerin',
+            icon: Icons.settings_rounded,
+            compact: true,
           ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: InkWell(
-          onTap: () => context.pop(),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionHeader('Uygulama Ayarları'),
-            const SizedBox(height: 16),
-            _buildSettingsCard([
-              _buildSwitchTile(
-                title: 'Bildirimler',
-                subtitle: 'Sipariş ve kampanya bildirimleri',
-                icon: Icons.notifications_outlined,
-                value: _notificationsEnabled,
-                onChanged: (value) {
-                  setState(() {
-                    _notificationsEnabled = value;
-                  });
-                },
-              ),
-              _buildDivider(),
-              _buildLanguageTile(),
-            ]),
-            const SizedBox(height: 32),
-            _buildSectionHeader('Hesap'),
-            const SizedBox(height: 16),
-            _buildSettingsCard([
-              _buildActionTile(
-                title: 'Şifre Değiştir',
-                icon: Icons.lock_outline_rounded,
-                badge: 'Yakında',
-                onTap: () {
-                  // Şifre değiştirme sayfasına git
-                },
-              ),
-              _buildDivider(),
-              _buildActionTile(
-                title: 'Adreslerim',
-                icon: Icons.location_on_outlined,
-                onTap: () {
-                  // Adres sayfasına git
-                },
-              ),
-              _buildDivider(),
-              _buildActionTile(
-                title: 'Hesabımı Sil',
-                icon: Icons.delete_outline_rounded,
-                isDestructive: true,
-                onTap: () {
-                  _showDeleteAccountDialog(context);
-                },
-              ),
-            ]),
-            const SizedBox(height: 32),
-            _buildSectionHeader('Diğer'),
-            const SizedBox(height: 16),
-            _buildSettingsCard([
-              _buildActionTile(
-                title: 'Hakkımızda',
-                icon: Icons.info_outline_rounded,
-                badge: 'Yakında',
-                onTap: () {
-                  // Hakkımızda sayfasına git
-                },
-              ),
-              _buildDivider(),
-              _buildActionTile(
-                title: 'Yardım ve Destek',
-                icon: Icons.help_outline_rounded,
-                badge: 'Yakında',
-                onTap: () {
-                  // Yardım sayfasına git
-                },
-              ),
-            ]),
-            const SizedBox(height: 32),
-            Consumer<AuthViewModel>(
-              builder: (context, authViewModel, child) {
-                if (authViewModel.isLoggedIn) {
-                  return SizedBox(
-                    width: double.infinity,
-                    child: TextButton.icon(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (context.watch<AuthViewModel>().isLoggedIn) ...[
+                  MarketMenuGroup(
+                    title: 'Bildirimler',
+                    children: [
+                      _preferenceTile(
+                        keyName: 'orders',
+                        icon: Icons.local_shipping_outlined,
+                        title: 'Sipariş bildirimleri',
+                        subtitle: 'Hazırlanıyor, yolda ve teslim edildi',
+                      ),
+                      _preferenceTile(
+                        keyName: 'messages',
+                        icon: Icons.support_agent_rounded,
+                        title: 'Destek mesajları',
+                        subtitle: 'Destek ekibi yanıt yazdığında',
+                      ),
+                      _preferenceTile(
+                        keyName: 'campaigns',
+                        icon: Icons.local_offer_outlined,
+                        title: 'Kampanya ve hatırlatmalar',
+                        subtitle: 'Fırsatlar, kuponlar ve sepet hatırlatması',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
+                MarketMenuGroup(
+                  title: 'Uygulama',
+                  children: [
+                    MarketMenuTile(
+                      icon: Icons.language_rounded,
+                      title: 'Dil',
+                      trailing: Text('Türkçe', style: MarketText.label(color: MarketPalette.muted)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                MarketMenuGroup(
+                  title: 'Hesap',
+                  children: [
+                    MarketMenuTile(
+                      icon: Icons.lock_outline_rounded,
+                      title: 'Şifre değiştir',
+                      trailing: _soon(),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.location_on_outlined,
+                      title: 'Adreslerim',
+                      trailing: _soon(),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.delete_outline_rounded,
+                      title: 'Hesabımı sil',
+                      destructive: true,
+                      onTap: () => _showDeleteAccountDialog(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                MarketMenuGroup(
+                  title: 'Diğer',
+                  children: [
+                    MarketMenuTile(
+                      icon: Icons.support_agent_rounded,
+                      title: 'Yardım ve destek',
+                      onTap: () => context.push('/chat'),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.rate_review_outlined,
+                      title: 'Geri bildirim gönder',
+                      onTap: () => context.push('/feedback'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                MarketMenuGroup(
+                  title: 'Yasal',
+                  children: [
+                    MarketMenuTile(
+                      icon: Icons.shield_outlined,
+                      title: 'KVKK Aydınlatma Metni',
+                      onTap: () => LegalLinks.open(context, LegalLinks.kvkk),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.privacy_tip_outlined,
+                      title: 'Gizlilik Politikası',
+                      onTap: () => LegalLinks.open(context, LegalLinks.privacy),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.description_outlined,
+                      title: 'Kullanım Koşulları',
+                      onTap: () => LegalLinks.open(context, LegalLinks.terms),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Mesafeli Satış Sözleşmesi',
+                      onTap: () =>
+                          LegalLinks.open(context, LegalLinks.distanceSales),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.assignment_return_outlined,
+                      title: 'İade Politikası',
+                      onTap: () =>
+                          LegalLinks.open(context, LegalLinks.returnPolicy),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Consumer<AuthViewModel>(
+                  builder: (context, authViewModel, child) {
+                    if (!authViewModel.isLoggedIn) return const SizedBox.shrink();
+                    return OutlinedButton.icon(
                       onPressed: () async {
                         await authViewModel.logout();
-                        if (mounted) {
-                          context.pop();
-                        }
+                        if (context.mounted) context.pop();
                       },
                       icon: const Icon(Icons.logout_rounded),
-                      label: Text(
-                        'Çıkış Yap',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                        ),
+                      label: const Text('Çıkış yap'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: MarketPalette.red,
+                        side: const BorderSide(color: MarketPalette.redLine),
+                        minimumSize: const Size.fromHeight(52),
                       ),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.errorRed,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: AppColors.errorRed.withOpacity(0.1),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-            const SizedBox(height: 32),
-            Center(
-              child: Text(
-                'Versiyon 1.0.0',
-                style: GoogleFonts.poppins(
-                  color: Colors.grey[400],
-                  fontSize: 12,
+                    );
+                  },
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        title,
-        style: GoogleFonts.poppins(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[600],
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSettingsCard(List<Widget> children) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(children: children),
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: Colors.black87, size: 22),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.grey[500],
+                const SizedBox(height: 24),
+                FutureBuilder<PackageInfo>(
+                  future: _info,
+                  builder: (context, snapshot) => Text(
+                    snapshot.hasData ? 'Sürüm ${snapshot.data!.version}' : '',
+                    textAlign: TextAlign.center,
+                    style: MarketText.caption(),
                   ),
                 ),
               ],
             ),
           ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: AppColors.successGreen,
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildActionTile({
-    required String title,
-    required IconData icon,
-    required VoidCallback onTap,
-    String? badge,
-    bool isDestructive = false,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isDestructive
-                    ? AppColors.errorRed.withOpacity(0.1)
-                    : Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon,
-                  color: isDestructive ? AppColors.errorRed : Colors.black87,
-                  size: 22),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: isDestructive ? AppColors.errorRed : Colors.black87,
-                ),
-              ),
-            ),
-            if (badge != null)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.successGreen.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  badge,
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.successGreen,
-                  ),
-                ),
-              ),
-            Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 16,
-              color: Colors.grey[400],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLanguageTile() {
-    return InkWell(
-      onTap: () {
-        // Dil seçimi dialogu
-      },
-      borderRadius: const BorderRadius.only(
-        bottomLeft: Radius.circular(20),
-        bottomRight: Radius.circular(20),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.language_rounded,
-                color: Colors.black87,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                'Dil',
-                style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _selectedLanguage == 'tr' ? 'Türkçe' : 'English',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDivider() {
-    return Divider(
-      height: 1,
-      thickness: 1,
-      color: Colors.grey[100],
-      indent: 68,
     );
   }
 
   void _showDeleteAccountDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Hesabınızı Silmek İstiyor musunuz?',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: AppColors.errorRed,
-          ),
+      builder: (dialogContext) => AlertDialog(
+        icon: const MarketIconTile(
+          icon: Icons.warning_amber_rounded,
+          size: 52,
+          background: MarketPalette.redSoft,
+          foreground: MarketPalette.red,
         ),
-        content: Text(
-          'Hesabınızı sildiğinizde tüm verileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz.',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: Colors.grey[700],
-          ),
+        title: const Text('Hesabını silmek istiyor musun?', textAlign: TextAlign.center),
+        content: const Text(
+          'Hesabını sildiğinde tüm verilerin kalıcı olarak silinir. Bu işlem geri alınamaz.',
+          textAlign: TextAlign.center,
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        actionsAlignment: MainAxisAlignment.center,
         actions: [
           TextButton(
-            onPressed: () => context.pop(),
-            child: Text(
-              'Vazgeç',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
-              ),
-            ),
+            onPressed: () => dialogContext.pop(),
+            child: const Text('Vazgeç'),
           ),
-          TextButton(
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: MarketPalette.red),
             onPressed: () async {
               // Dialogu kapat
-              context.pop();
+              dialogContext.pop();
 
               // Loading göster
               showDialog(
                 context: context,
                 barrierDismissible: false,
                 builder: (context) => const Center(
-                  child: CircularProgressIndicator(
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(AppColors.errorRed),
-                  ),
+                  child: CircularProgressIndicator(color: MarketPalette.red),
                 ),
               );
 
@@ -452,38 +283,17 @@ class _SettingsPageState extends State<SettingsPage> {
               }
 
               if (success && context.mounted) {
-                // Başarılı mesajı göster ve ana sayfaya yönlendir
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Hesabınız başarıyla silindi.',
-                      style: GoogleFonts.poppins(),
-                    ),
-                    backgroundColor: AppColors.successGreen,
-                  ),
-                );
+                showMarketSnack(context, 'Hesabın silindi.');
                 context.go('/');
               } else if (context.mounted) {
-                // Hata mesajı
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      authViewModel.error ??
-                          'Hesap silinirken bir hata oluştu.',
-                      style: GoogleFonts.poppins(),
-                    ),
-                    backgroundColor: AppColors.errorRed,
-                  ),
+                showMarketSnack(
+                  context,
+                  authViewModel.error ?? 'Hesap silinirken bir hata oluştu.',
+                  error: true,
                 );
               }
             },
-            child: Text(
-              'Hesabımı Sil',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w600,
-                color: AppColors.errorRed,
-              ),
-            ),
+            child: const Text('Hesabımı sil'),
           ),
         ],
       ),

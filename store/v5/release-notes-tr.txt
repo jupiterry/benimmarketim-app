@@ -1,0 +1,5 @@
+Benim Marketim 5.0.0
+• Yenilenen alışveriş arayüzü ve açılış ekranı.
+• Ürün keşfi, sepet ve hesap ekranlarında kullanım iyileştirmeleri.
+• Bildirim tercihleri ve destek deneyiminde iyileştirmeler.
+• Yasal bilgilere kolay erişim ve çeşitli hata düzeltmeleri.

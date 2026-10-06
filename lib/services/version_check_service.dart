@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:version/version.dart';
+import 'app_logger.dart';
 
 class VersionCheckResult {
   final bool isUpdateRequired;
@@ -36,7 +36,7 @@ class VersionCheckService {
       final currentVersionStr = packageInfo.version;
       final currentVersion = Version.parse(currentVersionStr);
 
-      debugPrint('Current App Version: $currentVersionStr');
+      AppLogger.debug('Current App Version: $currentVersionStr');
 
       // 2. API'den en son sürüm bilgisini çek
       // Platform'a göre parametre gönderiyoruz (ios/android)
@@ -55,7 +55,7 @@ class VersionCheckService {
         );
         data = response.data;
       } catch (e) {
-        debugPrint('API Error: $e');
+        AppLogger.debug('API Error: $e');
         // API hatası durumunda (internetsiz vs) null dönerek uygulamanın açılmasını engellemeyelim
         return null;
       }
@@ -67,8 +67,8 @@ class VersionCheckService {
       final latestVersion = Version.parse(latestVersionStr);
       final minVersion = Version.parse(minVersionStr);
 
-      debugPrint('Latest Version: $latestVersionStr');
-      debugPrint('Min Version: $minVersionStr');
+      AppLogger.debug('Latest Version: $latestVersionStr');
+      AppLogger.debug('Min Version: $minVersionStr');
 
       // 3. Karşılaştırma Mantığı
       bool isUpdateRequired = false;
@@ -78,14 +78,14 @@ class VersionCheckService {
         // Mevcut sürüm minimum sürümden küçük -> ZORUNLU GÜNCELLEME
         isUpdateRequired = true;
         isMandatory = true;
-        debugPrint('Status: Mandatory Update Required');
+        AppLogger.debug('Status: Mandatory Update Required');
       } else if (currentVersion < latestVersion) {
         // Mevcut sürüm son sürümden küçük -> KULLANICI İSTEĞİ: HER GÜNCELLEME ZORUNLU
         isUpdateRequired = true;
         isMandatory = true; // Artık hepsi zorunlu
-        debugPrint('Status: Update Available (Mandatory)');
+        AppLogger.debug('Status: Update Available (Mandatory)');
       } else {
-        debugPrint('Status: App is Up to Date');
+        AppLogger.debug('Status: App is Up to Date');
       }
 
       return VersionCheckResult(
@@ -97,7 +97,7 @@ class VersionCheckService {
       );
 
     } catch (e) {
-      debugPrint('Version Check Error: $e');
+      AppLogger.debug('Version Check Error: $e');
       return null;
     }
   }

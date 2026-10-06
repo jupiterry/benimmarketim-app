@@ -79,6 +79,7 @@ class Product {
       'actualPrice': actualPrice,
       'image': image,
       'category': category,
+      'categoryId': categoryId,
       'isDiscounted': isDiscounted,
       'discountedPrice': discountedPrice,
       'isOutOfStock': isOutOfStock,
@@ -92,7 +93,7 @@ class Product {
 
   // İndirim yüzdesi hesapla
   double get discountPercentage {
-    if (!isDiscounted || discountedPrice == null) return 0.0;
+    if (!isDiscounted || discountedPrice == null || price <= 0) return 0.0;
     return ((price - discountedPrice!) / price * 100).roundToDouble();
   }
 }

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../viewmodels/banner_viewmodel.dart';
 import '../../models/banner.dart' as model; // Alias to avoid collision with Flutter's Banner widget if needed, though likely not.
 import 'package:shimmer/shimmer.dart';
+import '../../services/app_logger.dart';
 
 class PromotionBanner extends StatefulWidget {
   const PromotionBanner({super.key});
@@ -38,7 +39,7 @@ class _PromotionBannerState extends State<PromotionBanner> {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       } else {
-        debugPrint('Could not launch url: $url');
+        AppLogger.debug('Could not launch url: $url');
       }
     }
   }

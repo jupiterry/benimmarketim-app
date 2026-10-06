@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-import 'widgets/market_palette.dart';
+import 'widgets/market_ui.dart';
 
 class OrderConfirmationPage extends StatefulWidget {
   final String? orderId;
@@ -26,6 +25,13 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
       duration: const Duration(milliseconds: 850),
     )..forward();
     _arrival = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // "Hareketi azalt" açıksa giriş animasyonu atlanır.
+    if (MediaQuery.disableAnimationsOf(context)) _controller.value = 1;
   }
 
   @override
@@ -59,10 +65,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                       onPressed: () => context.go('/home'),
                       child: Text(
                         'Ana sayfa',
-                        style: GoogleFonts.inter(
-                          color: MarketPalette.greenDark,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: MarketText.label(color: MarketPalette.greenDark),
                       ),
                     ),
                   ),
@@ -132,22 +135,13 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                   Text(
                     'Siparişin bizde!',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.manrope(
-                      color: MarketPalette.ink,
-                      fontSize: 29,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -.7,
-                    ),
+                    style: MarketText.display(),
                   ),
                   const SizedBox(height: 10),
                   Text(
                     'Siparişin başarıyla alındı. Hazırlık başladığında durumunu Siparişlerim sayfasından takip edebilirsin.',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      color: MarketPalette.muted,
-                      fontSize: 14,
-                      height: 1.55,
-                    ),
+                    style: MarketText.body(color: MarketPalette.muted, weight: FontWeight.w400, height: 1.55),
                   ),
                   const SizedBox(height: 26),
                   _buildOrderCard(),
@@ -156,7 +150,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                     padding: const EdgeInsets.all(15),
                     decoration: BoxDecoration(
                       color: MarketPalette.greenSoft,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(MarketRadius.md),
                     ),
                     child: Row(
                       children: [
@@ -166,12 +160,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                         Expanded(
                           child: Text(
                             'Sipariş durumundaki değişiklikleri sana bildireceğiz.',
-                            style: GoogleFonts.inter(
-                              color: MarketPalette.greenDark,
-                              fontSize: 12,
-                              height: 1.4,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: MarketText.body(color: MarketPalette.greenDark, size: 12, weight: FontWeight.w600, height: 1.4),
                           ),
                         ),
                       ],
@@ -187,14 +176,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                         extra: {'initialTabIndex': 2, 'openOrders': true},
                       ),
                       icon: const Icon(Icons.local_shipping_outlined),
-                      label: Text('Siparişimi takip et',
-                          style: GoogleFonts.inter(
-                              fontSize: 15, fontWeight: FontWeight.w800)),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: MarketPalette.green,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18)),
-                      ),
+                      label: const Text('Siparişimi takip et'),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -203,11 +185,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                     height: 52,
                     child: TextButton(
                       onPressed: () => context.go('/home'),
-                      child: Text('Alışverişe devam et',
-                          style: GoogleFonts.inter(
-                              color: MarketPalette.greenDark,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800)),
+                      child: const Text('Alışverişe devam et'),
                     ),
                   ),
                 ],
@@ -225,7 +203,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(MarketRadius.lg),
         border: Border.all(color: MarketPalette.line),
         boxShadow: [
           BoxShadow(
@@ -244,7 +222,7 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                 height: 46,
                 decoration: BoxDecoration(
                   color: MarketPalette.greenSoft,
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(MarketRadius.md),
                 ),
                 child: const Icon(Icons.receipt_long_rounded,
                     color: MarketPalette.green),
@@ -255,15 +233,10 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Sipariş numarası',
-                        style: GoogleFonts.inter(
-                            color: MarketPalette.muted, fontSize: 11)),
+                        style: MarketText.caption(size: 11, weight: FontWeight.w400)),
                     const SizedBox(height: 3),
                     Text('#$_shortOrderId',
-                        style: GoogleFonts.manrope(
-                            color: MarketPalette.ink,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: .6)),
+                        style: MarketText.heading()),
                   ],
                 ),
               ),
@@ -271,14 +244,11 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3DF),
-                  borderRadius: BorderRadius.circular(99),
+                  color: MarketPalette.orangeSoft,
+                  borderRadius: BorderRadius.circular(MarketRadius.pill),
                 ),
                 child: Text('Alındı',
-                    style: GoogleFonts.inter(
-                        color: const Color(0xFFC87316),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800)),
+                    style: MarketText.label(color: MarketPalette.orangeInk, size: 11, weight: FontWeight.w800)),
               ),
             ],
           ),
@@ -338,11 +308,7 @@ class _OrderProgress extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(labels[step],
-                style: GoogleFonts.inter(
-                    color:
-                        active ? MarketPalette.greenDark : MarketPalette.muted,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700)),
+                style: MarketText.label(color: active ? MarketPalette.greenDark : MarketPalette.muted, size: 11)),
           ],
         );
       }),

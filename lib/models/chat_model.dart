@@ -1,4 +1,4 @@
-/// Chat ve Message modelleri
+// Chat ve Message modelleri
 
 class ChatModel {
   final String id;
@@ -31,7 +31,7 @@ class ChatModel {
         orderId = json['order'];
       }
     }
-    
+
     return ChatModel(
       id: json['_id'] ?? '',
       orderId: orderId,
@@ -42,8 +42,8 @@ class ChatModel {
           ? DateTime.parse(json['lastMessageAt'])
           : DateTime.now(),
       lastMessageSender: json['lastMessageSender'] ?? 'user',
-      userUnreadCount: json['userUnreadCount'] is int 
-          ? json['userUnreadCount'] 
+      userUnreadCount: json['userUnreadCount'] is int
+          ? json['userUnreadCount']
           : (int.tryParse(json['userUnreadCount']?.toString() ?? '0') ?? 0),
     );
   }
@@ -65,7 +65,7 @@ class ChatModel {
 class MessageModel {
   final String id;
   final String chatId;
-  final String sender; // "user" | "admin"
+  final String sender; // "user" | "admin" | "ai" | "system"
   final String senderName;
   final String content;
   final String type; // "text" | "image" | "file" | "system"

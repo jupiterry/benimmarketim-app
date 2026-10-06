@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import '../../services/theme_service.dart';
+
+import 'market_ui.dart';
 
 class CustomDialog extends StatelessWidget {
   final String title;
@@ -77,7 +77,7 @@ class CustomDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(MarketRadius.lg),
       ),
       elevation: 0,
       backgroundColor: Colors.transparent,
@@ -86,10 +86,10 @@ class CustomDialog extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           shape: BoxShape.rectangle,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(MarketRadius.lg),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: .1),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -98,98 +98,52 @@ class CustomDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDestructive
-                    ? AppColors.errorRed.withOpacity(0.1)
-                    : AppColors.successGreen.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 32,
-                color:
-                    isDestructive ? AppColors.errorRed : AppColors.successGreen,
-              ),
+            MarketIconTile(
+              icon: icon,
+              size: 60,
+              background: isDestructive ? MarketPalette.redSoft : MarketPalette.greenSoft,
+              foreground: isDestructive ? MarketPalette.red : MarketPalette.greenDark,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: Colors.black87,
-              ),
+              style: MarketText.title(size: 22),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[600],
-                height: 1.5,
+              style: MarketText.body(color: MarketPalette.muted, size: 14, height: 1.5),
+            ),
+            const SizedBox(height: 26),
+            // Butonlar alt alta: uzun metinler kırılmaz, ana eylem üstte.
+            FilledButton(
+              onPressed: onConfirm,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+                backgroundColor:
+                    isDestructive ? MarketPalette.red : MarketPalette.green,
               ),
+              child: Text(confirmButtonText),
             ),
-            const SizedBox(height: 32),
-            Row(
-              children: [
-                if (showCancelButton) ...[
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () {
-                        if (onCancel != null) {
-                          onCancel!();
-                        } else {
-                          context.pop();
-                        }
-                      },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: Colors.grey[100],
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        cancelButtonText,
-                        style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                ],
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: onConfirm,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: isDestructive
-                          ? AppColors.errorRed
-                          : AppColors.successGreen,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      confirmButtonText,
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+            if (showCancelButton) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  if (onCancel != null) {
+                    onCancel!();
+                  } else {
+                    context.pop();
+                  }
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: MarketPalette.inkSoft,
+                  minimumSize: const Size.fromHeight(48),
                 ),
-              ],
-            ),
+                child: Text(cancelButtonText),
+              ),
+            ],
           ],
         ),
       ),

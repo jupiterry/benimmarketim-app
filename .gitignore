@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local release outputs
+/releases/
+/Claude outputs/
+/screenshot_test/
+*.ipa
+*.aab
+*.apk
