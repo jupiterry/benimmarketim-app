@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_background">#063F2B</color>
     <color name="splash_color">#00C639</color>
+    <!-- Uygulama açılırken pencerenin arkasında görünen renk (açılış ekranıyla aynı) -->
+    <color name="launch_window_background">#053D2A</color>
 </resources>

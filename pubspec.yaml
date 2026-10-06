@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 6.0.0+46
+version: 6.0.0+47
 
 environment:
   sdk: ^3.0.0
@@ -146,7 +146,12 @@ flutter:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/logo.png"
+  # Maskotlu uygulama simgesi. Android'in uyarlanabilir simgesinde zemin düz
+  # renk, ön plan saydam zeminli maskottur.
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#063F2B"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  remove_alpha_ios: true
   min_sdk_android: 21 # android min sdk min:16, default 21
   web:
     generate: true
@@ -161,22 +166,23 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets/logo.png"
 
-# Native açılış ekranı Flutter görünmeden çok kısa süre görünür. Görsel
-# kullanılmaması, iOS'ta iki küçük logonun art arda belirmesini engeller.
+# Sistem açılış ekranı (uygulama çizilmeden önce görünür): koyu yeşil zemin,
+# ortada maskot. Android 12 ve sonrasında altta yazılı logo da gösterilir.
 flutter_native_splash:
   color: "#053D2A"
   color_dark: "#053D2A"
+  image: assets/splash/splash_logo.png
+  image_dark: assets/splash/splash_logo.png
   ios: true
   android: true
   web: false
   fullscreen: false
-  image_ios: assets/splash/android12_transparent.png
-  # Android 12+ sistem açılışında görsel verilmezse uygulama simgesi (eski
-  # logo) gösterilir. Tamamen şeffaf görsel ile logosuz, düz renk açılış.
   android_12:
-    image: assets/splash/android12_transparent.png
-    image_dark: assets/splash/android12_transparent.png
+    image: assets/splash/android12_mascot.png
+    image_dark: assets/splash/android12_mascot.png
     color: "#053D2A"
     color_dark: "#053D2A"
     icon_background_color: "#053D2A"
     icon_background_color_dark: "#053D2A"
+    branding: assets/splash/branding.png
+    branding_dark: assets/splash/branding.png
