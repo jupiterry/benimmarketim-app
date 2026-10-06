@@ -106,6 +106,18 @@ class ReviewService {
     await requestReview();
   }
 
+  /// Sunucudan gelen teslim edilmiş sipariş sayısıyla mağaza puan penceresini dener.
+  /// Pencere yalnızca sipariş sayısı ve süre koşullarına bağlıdır; müşterinin
+  /// uygulama içinde verdiği puana göre gösterilmez veya gizlenmez.
+  Future<void> requestReviewForDeliveredOrders(int deliveredCount) async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getInt(_orderCountKey) ?? 0;
+    if (deliveredCount > stored) {
+      await prefs.setInt(_orderCountKey, deliveredCount);
+    }
+    await requestReview();
+  }
+
   /// Kullanıcı değerlendirme yaptığını işaretle (opsiyonel - kullanıcı feedback verirse)
   Future<void> markAsReviewed() async {
     final prefs = await SharedPreferences.getInstance();

@@ -104,6 +104,33 @@ class CartViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ürünü verilen adetle tek seferde sepete ekler (tekrar sipariş, asistan
+  /// önerisi, favori sepet). Adet tek yazmayla kaydedildiği için uygulama
+  /// yeniden açıldığında da doğru kalır.
+  void addQuantity(Product product, int quantity) {
+    if (quantity < 1) return;
+    final existingItemIndex = _cartItems.indexWhere(
+      (item) => item.product.id == product.id,
+    );
+
+    if (existingItemIndex >= 0) {
+      final updatedItem = _cartItems[existingItemIndex].copyWith(
+        product: product,
+        quantity: _cartItems[existingItemIndex].quantity + quantity,
+      );
+      _cartItems[existingItemIndex] = updatedItem;
+      _databaseService.saveCartItem(updatedItem);
+    } else {
+      final newItem = CartItem(product: product, quantity: quantity);
+      _cartItems.add(newItem);
+      _databaseService.addToCart(newItem);
+    }
+
+    _scheduleCouponSync();
+    NotificationService.instance.updateCartTag(true);
+    notifyListeners();
+  }
+
   // Sepetten ürün çıkar
   void removeFromCart(Product product) {
     final existingItemIndex = _cartItems.indexWhere(

@@ -9,6 +9,7 @@ import '../services/app_logger.dart';
 import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/chat_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
+import 'widgets/bill_split_sheet.dart';
 import 'widgets/market_ui.dart';
 
 class OrdersPage extends StatefulWidget {
@@ -97,9 +98,8 @@ class _OrdersPageState extends State<OrdersPage> {
         skipped++;
         continue;
       }
-      for (var i = 0; i < item.quantity; i++) {
-        cart.addToCart(product);
-      }
+      // Adet tek seferde yazılır; tek tek eklemek yerel kayıtta adedi 1 bırakıyordu
+      cart.addQuantity(product, item.quantity);
       added++;
     }
 
@@ -219,7 +219,7 @@ class _OrdersPageState extends State<OrdersPage> {
       body: RefreshIndicator(
         onRefresh: _loadOrders,
         child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          physics: const AlwaysScrollableScrollPhysics(parent: MarketScrollPhysics()),
           slivers: [
             SliverToBoxAdapter(
               child: MarketHeader(
@@ -483,6 +483,24 @@ class _OrdersPageState extends State<OrdersPage> {
                         child: Text(formatTl(order.totalAmount),
                             style: MarketText.price(color: MarketPalette.greenDark, size: 18)),
                       ),
+                      if (order.status != 'İptal Edildi')
+                        InkWell(
+                          onTap: () => showBillSplitSheet(context, total: order.totalAmount),
+                          borderRadius: BorderRadius.circular(MarketRadius.xs),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.call_split_rounded,
+                                    size: 14, color: MarketPalette.green),
+                                const SizedBox(width: 3),
+                                Text('Hesabı böl',
+                                    style: MarketText.label(color: MarketPalette.green, size: 12)),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

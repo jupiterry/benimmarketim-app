@@ -1220,6 +1220,165 @@ class ApiService {
     }
   }
 
+  /// Benim Asistanım: yazılan isteğe (ve varsa bütçeye) göre sepet önerisi.
+  /// Her durumda {success, message, proposal} döner; hata fırlatmaz.
+  Future<Map<String, dynamic>> suggestCart({
+    required String prompt,
+    double? budget,
+  }) async {
+    try {
+      final response = await _dio.post('/cart-assistant/suggest', data: {
+        'prompt': prompt,
+        if (budget != null) 'budget': budget,
+      });
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+      return {'success': false, 'message': 'Sepet şu anda hazırlanamadı. Lütfen tekrar dene.'};
+    } on DioException catch (error) {
+      final data = error.response?.data;
+      final status = error.response?.statusCode;
+      if (data is Map && data['message'] is String) {
+        return {'success': false, 'message': data['message']};
+      }
+      if (status == 401) {
+        return {'success': false, 'message': 'Oturumunun süresi dolmuş. Lütfen tekrar giriş yap.'};
+      }
+      if (status == 404) {
+        return {'success': false, 'message': 'Asistan henüz kullanıma açılmadı. Lütfen daha sonra tekrar dene.'};
+      }
+      return {'success': false, 'message': 'Bağlantı kurulamadı. İnternetini kontrol edip tekrar dene.'};
+    } catch (_) {
+      return {'success': false, 'message': 'Sepet şu anda hazırlanamadı. Lütfen tekrar dene.'};
+    }
+  }
+
+  /// Favori sepetler. {success, carts, message} döner; hata fırlatmaz.
+  Future<Map<String, dynamic>> getSavedCarts() async {
+    try {
+      final response = await _dio.get('/saved-carts');
+      final carts = response.data is Map ? response.data['carts'] : null;
+      return {
+        'success': true,
+        'carts': carts is List
+            ? carts
+                .whereType<Map>()
+                .map((cart) => Map<String, dynamic>.from(cart))
+                .toList()
+            : <Map<String, dynamic>>[],
+      };
+    } on DioException catch (error) {
+      return _savedCartError(error, 'Favori sepetlerin yüklenemedi.');
+    } catch (_) {
+      return {'success': false, 'message': 'Favori sepetlerin yüklenemedi.'};
+    }
+  }
+
+  /// Ürün listesini verilen adla favori sepet olarak kaydeder. Aynı adla
+  /// kayıt varsa üzerine yazılır ({replaced: true}).
+  Future<Map<String, dynamic>> saveSavedCart({
+    required String name,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final response = await _dio.post('/saved-carts', data: {
+        'name': name,
+        'items': items,
+      });
+      if (response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+      return {'success': false, 'message': 'Sepet kaydedilemedi. Lütfen tekrar dene.'};
+    } on DioException catch (error) {
+      return _savedCartError(error, 'Sepet kaydedilemedi. Lütfen tekrar dene.');
+    } catch (_) {
+      return {'success': false, 'message': 'Sepet kaydedilemedi. Lütfen tekrar dene.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteSavedCart(String id) async {
+    try {
+      await _dio.delete('/saved-carts/$id');
+      return {'success': true};
+    } on DioException catch (error) {
+      return _savedCartError(error, 'Sepet silinemedi. Lütfen tekrar dene.');
+    } catch (_) {
+      return {'success': false, 'message': 'Sepet silinemedi. Lütfen tekrar dene.'};
+    }
+  }
+
+  Map<String, dynamic> _savedCartError(DioException error, String fallback) {
+    final data = error.response?.data;
+    final status = error.response?.statusCode;
+    if (status == 401) {
+      return {'success': false, 'message': 'Oturumunun süresi dolmuş. Lütfen tekrar giriş yap.'};
+    }
+    if (status == 404 && !(data is Map && data['message'] is String)) {
+      return {'success': false, 'message': 'Favori sepetler henüz kullanıma açılmadı. Lütfen daha sonra tekrar dene.'};
+    }
+    if (data is Map && data['message'] is String) {
+      return {'success': false, 'message': data['message']};
+    }
+    if (status == null) {
+      return {'success': false, 'message': 'Bağlantı kurulamadı. İnternetini kontrol edip tekrar dene.'};
+    }
+    return {'success': false, 'message': fallback};
+  }
+
+  /// Süren sipariş görevleri ve müşterinin ilerlemesi
+  Future<List<Map<String, dynamic>>> getActiveMissions() async {
+    try {
+      final response = await _dio.get('/missions/active');
+      final missions = response.data is Map ? response.data['missions'] : null;
+      if (missions is! List) return [];
+      return missions
+          .whereType<Map>()
+          .map((mission) => Map<String, dynamic>.from(mission))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Sipariş sonrası anket durumu: {deliveredCount, prompt: {milestone, orderId} | null}
+  Future<Map<String, dynamic>?> getOrderFeedbackPrompt() async {
+    try {
+      final response = await _dio.get('/feedback/prompt');
+      if (response.data is! Map) return null;
+      return Map<String, dynamic>.from(response.data as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sipariş sonrası anketi gönderir. Başarılıysa null, değilse hata mesajı döner.
+  Future<String?> submitOrderFeedback({
+    required int rating,
+    required int milestone,
+    required List<String> tags,
+    required String comment,
+    String? orderId,
+  }) async {
+    try {
+      await _dio.post('/feedback/order', data: {
+        'rating': rating,
+        'milestone': milestone,
+        'tags': tags,
+        'comment': comment,
+        if (orderId != null) 'orderId': orderId,
+      });
+      return null;
+    } on DioException catch (error) {
+      final data = error.response?.data;
+      if (data is Map && data['message'] is String) {
+        return data['message'] as String;
+      }
+      return 'Geri bildirim gönderilemedi. Lütfen tekrar dene.';
+    } catch (_) {
+      return 'Geri bildirim gönderilemedi. Lütfen tekrar dene.';
+    }
+  }
+
   /// Bildirim tercihlerini getir (orders, messages, campaigns)
   Future<Map<String, bool>?> getNotificationPreferences() async {
     try {

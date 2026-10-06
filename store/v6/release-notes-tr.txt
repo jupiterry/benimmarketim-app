@@ -1,0 +1,7 @@
+Benim Marketim 6.0.0
+• İhtiyacına ve bütçene göre alışveriş listesi öneren sepet asistanı.
+• Sık aldığın ürünleri kaydedebileceğin favori sepetler.
+• Aktif görevleri takip etme ve koşulları tamamlayarak ödül kazanma.
+• Sepet tutarını paylaşmayı kolaylaştıran hesap bölüşme özelliği.
+• Yenilenen açılış ekranı, maskot ve alışveriş deneyimi.
+• Sipariş değerlendirmeleri, bildirimler ve kullanım iyileştirmeleri.

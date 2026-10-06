@@ -12,7 +12,7 @@ class NotificationService {
 
   // Bildirime dokununca açılabilecek ekranlar (sunucudaki listeyle aynı)
   static final RegExp _allowedRoute = RegExp(
-      r'^/(home|cart|orders|referral|photocopy-history|chat(/[a-fA-F0-9]{24})?)$');
+      r'^/(home|cart|orders|referral|photocopy-history|rate-app|chat(/[a-fA-F0-9]{24})?)$');
   void Function(String route)? _onOpenRoute;
   String? _pendingRoute;
 

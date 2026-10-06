@@ -39,11 +39,15 @@ abstract final class MarketPalette {
   static const pink = Color(0xFFD84B68);
   static const pinkSoft = Color(0xFFFFECF0);
 
+  // Saatin durduğu durum çubuğu şeridi (MarketSystemFrame) düz greenDeep'tir.
+  // Başlık da üstte aynı renkle başlar, ilk çeyreğinde hiç değişmez ve aşağıya
+  // doğru yalnızca hafifçe açılır; böylece kısa başlıklarda bile şeritle
+  // başlık arasında renk farkı ya da bant görünmez.
   static const headerGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [greenDeep, greenDark, Color(0xFF117A48)],
-    stops: [0, .58, 1],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [greenDeep, greenDeep, greenDark],
+    stops: [0, .25, 1],
   );
 }
 

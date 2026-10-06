@@ -5,11 +5,14 @@ import '../../viewmodels/banner_viewmodel.dart';
 import '../../viewmodels/cart_viewmodel.dart';
 import '../../viewmodels/category_viewmodel.dart';
 import '../../viewmodels/home_page_viewmodel.dart';
+import 'home_assistant_card.dart';
+import 'home_quick_carts.dart';
 import 'market_discovery_section.dart';
 import 'market_home_header.dart';
 import 'market_products_section.dart';
 import 'market_promo_section.dart';
 import 'market_ui.dart';
+import 'mission_section.dart';
 
 export 'market_palette.dart';
 
@@ -42,7 +45,7 @@ class ModernMarketHome extends StatelessWidget {
         child: CustomScrollView(
           key: const PageStorageKey('modern-market-home'),
           physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
+            parent: MarketScrollPhysics(),
           ),
           // Tek, kesintisiz zemin: bölümler arasında piksel çizgisi oluşmaz.
           slivers: const [
@@ -54,8 +57,14 @@ class ModernMarketHome extends StatelessWidget {
                   children: [
                     MarketHomeHeader(),
                     MarketPromoSection(),
+                    MissionSection(),
                     MarketQuickActions(),
                     MarketQuickDiscovery(),
+                    // Asistan ve hızlı sepetler üst kısmı kalabalıklaştırmasın
+                    // diye keşif bölümünün altında durur; asistana her yerden
+                    // sağ alttaki maskot düğmesiyle de ulaşılır.
+                    HomeAssistantCard(),
+                    HomeQuickCarts(),
                     MarketProductsSection(),
                     SizedBox(height: 120),
                   ],
@@ -69,6 +78,8 @@ class ModernMarketHome extends StatelessWidget {
   }
 
   Future<void> _refreshHome(BuildContext context) async {
+    // Son sipariş ve favori sepet kısayolları da yenilenir
+    homeQuickCartsRefresh.value++;
     await Future.wait([
       context.read<HomePageViewModel>().refreshProducts(),
       context.read<CategoryViewModel>().loadCategories(),

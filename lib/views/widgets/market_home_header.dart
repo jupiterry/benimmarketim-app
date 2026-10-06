@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/chat_viewmodel.dart';
 import '../../viewmodels/settings_viewmodel.dart';
+import 'market_mascot.dart';
 import 'market_ui.dart';
 
 class MarketHomeHeader extends StatelessWidget {
@@ -23,9 +24,11 @@ class MarketHomeHeader extends StatelessWidget {
       ),
       child: Stack(
         children: [
+          // Süs dairesi başlığın üst kenarına taşmaz; taşarsa saat şeridinin
+          // altında düz bir çizgiyle kesilmiş görünür.
           const Positioned(
-            top: -90,
-            right: -70,
+            top: 34,
+            right: -96,
             child: _DecorativeCircle(size: 230, opacity: .05),
           ),
           Padding(
@@ -35,22 +38,14 @@ class MarketHomeHeader extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const MarketIconTile(
-                      icon: Icons.storefront_rounded,
-                      size: 44,
-                      background: MarketPalette.lime,
-                      foreground: MarketPalette.greenDeep,
-                    ),
-                    const SizedBox(width: 12),
+                    const MarketMascot(size: 54),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Benim Marketim',
-                            style: MarketText.heading(color: Colors.white, size: 16),
-                          ),
-                          const SizedBox(height: 2),
+                          const MarketWordmark(height: 36),
+                          const SizedBox(height: 3),
                           Text(
                             'Devrek • Yurda teslimat',
                             style: MarketText.caption(

@@ -22,6 +22,8 @@ import '../views/chat_detail_page.dart';
 import '../models/product.dart';
 import '../models/category.dart';
 import '../views/onboarding_page.dart';
+import '../views/cart_assistant_page.dart';
+import '../views/saved_carts_page.dart';
 
 
 class AppRouter {
@@ -58,6 +60,19 @@ class AppRouter {
         },
       ),
       GoRoute(path: '/cart', builder: (context, state) => const CartPage()),
+      GoRoute(
+        path: '/cart-assistant',
+        builder: (context, state) {
+          final extra = state.extra;
+          return CartAssistantPage(
+            initialPrompt: extra is String ? extra : null,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/saved-carts',
+        builder: (context, state) => const SavedCartsPage(),
+      ),
       GoRoute(
         path: '/profile',
         builder: (context, state) => const ProfilePage(),

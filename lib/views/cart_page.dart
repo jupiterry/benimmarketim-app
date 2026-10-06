@@ -13,7 +13,9 @@ import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/market_product_card.dart';
+import 'widgets/market_mascot.dart';
 import 'widgets/market_ui.dart';
+import 'widgets/save_cart_dialog.dart';
 
 class CartPage extends StatelessWidget {
   final VoidCallback? onExplore;
@@ -39,6 +41,22 @@ class CartPage extends StatelessWidget {
             showBack: false,
             compact: true,
             actions: [
+              if (items.isNotEmpty)
+                MarketHeaderButton(
+                  icon: Icons.bookmark_add_outlined,
+                  tooltip: 'Favori sepet olarak kaydet',
+                  onTap: () => showSaveCartDialog(
+                    context,
+                    aboveNavigation: true,
+                    items: [
+                      for (final item in items)
+                        {
+                          'productId': item.product.id,
+                          'quantity': item.quantity > 20 ? 20 : item.quantity,
+                        },
+                    ],
+                  ),
+                ),
               if (items.isNotEmpty)
                 MarketHeaderButton(
                   icon: Icons.delete_sweep_outlined,
@@ -682,6 +700,7 @@ class _EmptyCart extends StatelessWidget {
       children: [
         MarketEmptyState(
           icon: Icons.shopping_basket_outlined,
+          illustration: const MarketMascot(size: 132),
           title: 'Sepetin boş',
           message:
               'Henüz ürün eklemedin. Atıştırmalıktan temizliğe ihtiyacın olan her şey birkaç dokunuş uzağında.',
@@ -689,6 +708,15 @@ class _EmptyCart extends StatelessWidget {
           actionIcon: Icons.explore_rounded,
           onAction: onExplore ?? () => context.go('/home'),
         ),
+        if (context.watch<AuthViewModel>().isLoggedIn)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: OutlinedButton.icon(
+              onPressed: () => context.push('/saved-carts'),
+              icon: const Icon(Icons.bookmarks_outlined, size: 18),
+              label: const Text('Favori sepetlerimden doldur'),
+            ),
+          ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 20),
           child: _CouponRequestCampaignCard(),

@@ -32,26 +32,26 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> {
 
   final List<WhatsNewItem> _items = [
     WhatsNewItem(
-      emoji: '💬',
-      title: 'Canlı destek',
+      emoji: '🛒',
+      title: 'Sepet asistanın hazır',
       description:
-          'Siparişinle ilgili bir sorun mu var? Sipariş saatlerinde tek dokunuşla destek ekibimize yaz, hemen ilgilenelim.',
+          'Ne almak istediğini ve bütçeni yaz; sepet asistanı marketteki ürünlerden sana bir alışveriş listesi önersin.',
       color: MarketPalette.blue,
       background: MarketPalette.blueSoft,
     ),
     WhatsNewItem(
       emoji: '🎁',
-      title: 'Akıllı kupon sistemi',
+      title: 'Görevleri tamamla, ödül kazan',
       description:
-          'Kazandığın kuponlar sepetinde otomatik görünür. Sepetine en uygun kuponu öneriyoruz, indirimini anında görürsün.',
+          'Aktif görevleri ana sayfadan takip et. Görev koşullarını tamamlayarak ödül kuponu kazan.',
       color: MarketPalette.orangeInk,
       background: MarketPalette.orangeSoft,
     ),
     WhatsNewItem(
       emoji: '👥',
-      title: 'Arkadaşını getir, kazan',
+      title: 'Favori sepetlerin hep yanında',
       description:
-          'Davet kodunu paylaş; arkadaşın ilk siparişinde indirim kazansın, sen de ödül kuponu al.',
+          'Sık aldığın ürünleri bir sepet olarak kaydet, sonraki alışverişinde kolayca yeniden kullan.',
       color: MarketPalette.pink,
       background: MarketPalette.pinkSoft,
     ),

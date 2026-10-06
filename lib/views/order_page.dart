@@ -697,7 +697,7 @@ class _OrderPageState extends State<OrderPage> {
             child: CustomScrollView(
               controller: _scrollController,
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              physics: const BouncingScrollPhysics(),
+              physics: const MarketScrollPhysics(),
               slivers: [
                 SliverToBoxAdapter(
                   child: MarketHeader(

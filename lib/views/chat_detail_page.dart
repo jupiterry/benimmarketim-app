@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/chat_model.dart';
 import '../viewmodels/chat_viewmodel.dart';
+import 'widgets/cart_proposal_card.dart';
 import 'widgets/market_ui.dart';
 
 class ChatDetailPage extends StatefulWidget {
@@ -484,6 +485,11 @@ class _MessageBubble extends StatelessWidget {
                     message.content,
                     style: MarketText.body(color: isUser ? Colors.white : MarketPalette.ink, size: 13, height: 1.42),
                   ),
+                  if (!isUser && message.cartProposal != null)
+                    CartProposalCard(
+                      key: ValueKey('cart-${message.id}'),
+                      proposal: message.cartProposal!,
+                    ),
                   const SizedBox(height: 5),
                   Row(
                     mainAxisSize: MainAxisSize.min,

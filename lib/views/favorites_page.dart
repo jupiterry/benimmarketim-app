@@ -17,7 +17,7 @@ class FavoritesPage extends StatelessWidget {
         builder: (context, favorites, _) {
           final count = favorites.favoritesCount;
           return CustomScrollView(
-            physics: const BouncingScrollPhysics(),
+            physics: const MarketScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(
                 child: MarketHeader(

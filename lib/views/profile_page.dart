@@ -152,6 +152,12 @@ class _LoggedInContent extends StatelessWidget {
           title: 'Hizmetler',
           children: [
             MarketMenuTile(
+              icon: Icons.bookmarks_outlined,
+              title: 'Favori sepetlerim',
+              subtitle: 'Kaydettiğin listeleri tek dokunuşla sepete ekle',
+              onTap: () => context.push('/saved-carts'),
+            ),
+            MarketMenuTile(
               icon: Icons.print_outlined,
               title: 'Fotokopi hizmeti',
               subtitle: 'Belgeni yükle, siparişinle gelsin',

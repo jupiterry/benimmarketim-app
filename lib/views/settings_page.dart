@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/review_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/legal_links.dart';
 import 'widgets/market_ui.dart';
@@ -166,6 +167,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.rate_review_outlined,
                       title: 'Geri bildirim gönder',
                       onTap: () => context.push('/feedback'),
+                    ),
+                    MarketMenuTile(
+                      icon: Icons.star_outline_rounded,
+                      title: 'Uygulamayı değerlendir',
+                      subtitle: 'Mağazada puan ver, yorum yaz',
+                      onTap: () => ReviewService.instance.openStoreListing(),
                     ),
                   ],
                 ),

@@ -18,7 +18,9 @@ import 'viewmodels/chat_viewmodel.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
 import 'services/notification_service.dart';
+import 'services/review_service.dart';
 import 'router/app_router.dart';
+import 'views/widgets/market_scroll.dart';
 import 'views/widgets/market_system_frame.dart';
 import 'services/app_logger.dart';
 
@@ -125,6 +127,11 @@ String _currentRoutePath() {
 // giriş yapmamışsa yönlendirme yapılmaz.
 Future<void> _openNotificationRoute(String route) async {
   if (route == '/home') return;
+  // "Mağazada puan ver" bildirimi: uygulamanın mağaza sayfasını aç
+  if (route == '/rate-app') {
+    await ReviewService.instance.openStoreListing();
+    return;
+  }
   const waitingScreens = {'/', '/onboarding', '/login', '/register'};
   for (var attempt = 0; attempt < 60; attempt++) {
     final path = _currentRoutePath();
@@ -190,6 +197,8 @@ class _MyAppState extends State<MyApp> {
             debugShowCheckedModeBanner: false,
             theme: AppThemes.lightTheme,
             routerConfig: AppRouter.router,
+            // Sayfa üstten aşağı çekilince başlığın üstünde boşluk açılmasın
+            scrollBehavior: const MarketScrollBehavior(),
             locale: const Locale('tr', 'TR'),
             supportedLocales: const [Locale('tr', 'TR'), Locale('en', 'US')],
             localizationsDelegates: const [

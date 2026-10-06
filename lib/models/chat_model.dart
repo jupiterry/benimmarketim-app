@@ -75,6 +75,15 @@ class MessageModel {
   final DateTime? readAt;
   final DateTime createdAt;
 
+  /// Mesaja eşlik eden yapılandırılmış veri (ör. asistanın sepet önerisi).
+  final Map<String, dynamic>? meta;
+
+  /// Asistanın önerdiği sepet; yoksa null.
+  Map<String, dynamic>? get cartProposal {
+    final value = meta?['cartProposal'];
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
   MessageModel({
     required this.id,
     required this.chatId,
@@ -87,6 +96,7 @@ class MessageModel {
     required this.isRead,
     this.readAt,
     required this.createdAt,
+    this.meta,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -104,6 +114,9 @@ class MessageModel {
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : DateTime.now(),
+      meta: json['meta'] is Map
+          ? Map<String, dynamic>.from(json['meta'] as Map)
+          : null,
     );
   }
 
@@ -120,6 +133,7 @@ class MessageModel {
       'isRead': isRead,
       'readAt': readAt?.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
+      'meta': meta,
     };
   }
 

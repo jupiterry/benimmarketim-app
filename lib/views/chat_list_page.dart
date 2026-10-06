@@ -31,7 +31,7 @@ class _ChatListPageState extends State<ChatListPage> {
         builder: (context, chatViewModel, settings, _) {
           return CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
+              parent: MarketScrollPhysics(),
             ),
             slivers: [
               SliverToBoxAdapter(

@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../services/order_feedback_coordinator.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/banner_viewmodel.dart';
 import '../viewmodels/category_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import 'cart_page.dart';
 import 'profile_page.dart';
+import 'widgets/home_assistant_card.dart';
 import 'widgets/market_home_widgets.dart';
 import 'widgets/market_tab_stack.dart';
 
@@ -42,6 +44,8 @@ class _HomePageState extends State<HomePage> {
       context.read<CategoryViewModel>().loadCategories();
       context.read<HomePageViewModel>().loadHomeProducts();
       context.read<BannerViewModel>().loadBanners();
+      // Sipariş sonrası anket veya mağaza puan penceresi (oturum başına bir kez)
+      OrderFeedbackCoordinator.run(context);
 
       if (widget.openOrders && mounted) {
         Future<void>.delayed(const Duration(milliseconds: 120), () {
@@ -97,6 +101,9 @@ class _HomePageState extends State<HomePage> {
             const ProfilePage(),
           ],
         ),
+        // Maskotlu asistan düğmesi yalnızca ana sayfa sekmesinde görünür
+        floatingActionButton:
+            _selectedIndex == 0 ? const HomeAssistantButton() : null,
         bottomNavigationBar: MarketBottomNavigation(
           selectedIndex: _selectedIndex,
           onSelected: _selectPage,

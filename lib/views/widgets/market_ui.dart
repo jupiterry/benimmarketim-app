@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'market_palette.dart';
 
 export 'market_palette.dart';
+export 'market_scroll.dart';
 
 // ---------------------------------------------------------------------------
 // Tipografi: başlıklar Manrope, metinler Inter. En küçük metin 11 px.
@@ -536,6 +537,9 @@ class MarketEmptyState extends StatelessWidget {
   final Color tint;
   final Color tintSoft;
 
+  /// Verilirse simge kutusunun yerine gösterilir (ör. maskot).
+  final Widget? illustration;
+
   const MarketEmptyState({
     super.key,
     required this.icon,
@@ -546,6 +550,7 @@ class MarketEmptyState extends StatelessWidget {
     this.onAction,
     this.tint = MarketPalette.greenDark,
     this.tintSoft = MarketPalette.greenSoft,
+    this.illustration,
   });
 
   @override
@@ -558,15 +563,16 @@ class MarketEmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 112,
-                height: 112,
-                decoration: BoxDecoration(
-                  color: tintSoft,
-                  borderRadius: BorderRadius.circular(MarketRadius.xl),
-                ),
-                child: Icon(icon, size: 52, color: tint),
-              ),
+              illustration ??
+                  Container(
+                    width: 112,
+                    height: 112,
+                    decoration: BoxDecoration(
+                      color: tintSoft,
+                      borderRadius: BorderRadius.circular(MarketRadius.xl),
+                    ),
+                    child: Icon(icon, size: 52, color: tint),
+                  ),
               const SizedBox(height: 24),
               Text(
                 title,

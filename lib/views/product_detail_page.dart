@@ -82,7 +82,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
       body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
+        physics: const MarketScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(child: _buildImageStage()),
           SliverToBoxAdapter(child: _buildProductInformation()),
