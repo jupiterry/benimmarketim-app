@@ -21,6 +21,7 @@ import '../views/chat_list_page.dart';
 import '../views/chat_detail_page.dart';
 import '../models/product.dart';
 import '../models/category.dart';
+import '../models/order.dart' show PaymentMethod;
 import '../views/onboarding_page.dart';
 import '../views/cart_assistant_page.dart';
 import '../views/saved_carts_page.dart';
@@ -36,6 +37,12 @@ class AppRouter {
     ],
     // Hata durumunda fallback route
     errorBuilder: (context, state) => const SplashScreen(),
+    // TODO(deep-link): AndroidManifest'te https://devrekbenimmarketim.com
+    // için /signup, /referral ve /ref yolları uygulamaya bağlandı (App Links).
+    // Sunucuda /.well-known/assetlinks.json yayınlandıktan sonra burada
+    // `/signup?ref=KOD`, `/referral` ve `/ref/KOD` gelen bağlantıları
+    // RegisterPage'e (davet kodu dolu) yönlendiren bir `redirect` eklenmeli;
+    // şimdilik bilinmeyen yollar errorBuilder ile açılışa düşer.
     routes: [
       GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
       GoRoute(
@@ -109,7 +116,11 @@ class AppRouter {
         path: '/order-confirmation/:orderId',
         builder: (context, state) {
           final orderId = state.pathParameters['orderId'];
-          return OrderConfirmationPage(orderId: orderId);
+          return OrderConfirmationPage(
+            orderId: orderId,
+            paymentMethod:
+                PaymentMethod.fromKey(state.uri.queryParameters['payment']),
+          );
         },
       ),
       GoRoute(

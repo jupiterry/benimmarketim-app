@@ -33,8 +33,11 @@ class SocketService {
 
   /// Socket.IO bağlantısını başlat
   Future<void> connect({String? userId}) async {
-    if (_isConnected && _socket != null) {
-      AppLogger.debug('SocketService: Already connected');
+    if (_socket != null) {
+      // Bağlı ya da yeniden bağlanmayı deniyor; ikinci bir soket açma.
+      AppLogger.debug(
+          'SocketService: Socket already exists (connected: $_isConnected)');
+      if (userId != null) _userId = userId;
       return;
     }
 
@@ -229,11 +232,34 @@ class SocketService {
       leaveChat(_currentChatId!);
     }
 
-    _socket?.disconnect();
-    _socket?.dispose();
+    final socket = _socket;
     _socket = null;
     _isConnected = false;
+    if (socket != null) {
+      // dispose(): bağlantıyı keser ve tüm dinleyicileri temizler
+      socket.dispose();
+    }
     AppLogger.debug('SocketService: Disconnected');
+  }
+
+  /// Token yenilendikten/giriş yapıldıktan sonra soketi yeni token ile
+  /// yeniden kurar. Soket hiç açılmadıysa bir şey yapmaz (sohbet ekranı
+  /// açılınca zaten yeni token ile bağlanır).
+  void reconnectWithToken(String token) {
+    final socket = _socket;
+    if (socket == null) return;
+    final chatId = _currentChatId;
+    final userId = _userId;
+    _socket = null;
+    _isConnected = false;
+    try {
+      socket.dispose();
+    } catch (e) {
+      AppLogger.debug('SocketService: eski soket kapatılamadı: $e');
+    }
+    _currentChatId = chatId; // onConnect tetiklenince odaya yeniden katılır
+    AppLogger.debug('SocketService: Reconnecting with refreshed token');
+    connect(userId: userId);
   }
 
   /// Servisi temizle

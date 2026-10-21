@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -10,13 +12,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import '../services/meta_app_events_service.dart';
+import '../services/notification_service.dart';
 import '../services/review_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/cart_viewmodel.dart';
+import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
+import 'widgets/bank_transfer_card.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/market_ui.dart';
+import '../services/image_url.dart';
 
 class OrderPage extends StatefulWidget {
   const OrderPage({super.key});
@@ -39,6 +46,9 @@ class _OrderPageState extends State<OrderPage> {
   bool _isLoading = false;
   String _selectedDeliveryPoint = '';
   bool _deliveryError = false;
+  PaymentMethod? _selectedPaymentMethod; // Zorunlu: nakit, POS ya da havale/EFT
+  bool _paymentError = false;
+  final _paymentSectionKey = GlobalKey();
   bool _feedbackSatisfied = false; // Bu oturumda geri bildirim verildi mi
   bool _couponReminderAnswered = false; // "Kuponsuz devam et" seçildi mi
   bool _campaignAnswered = false; // Topluluk indirimi sorusu yanıtlandı mı
@@ -62,6 +72,9 @@ class _OrderPageState extends State<OrderPage> {
     _restoreLastOrderPhone(user?.id ?? '', profilePhone);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<ReferralViewModel>().loadCoupons();
+      // Bildirim izni (yalnızca bir kez sorulur): sipariş durumu bildirimleri
+      // için en anlamlı yer burası.
+      unawaited(NotificationService.instance.requestPermissionIfNeeded());
     });
     PackageInfo.fromPlatform().then((info) {
       _appVersion = info.version;
@@ -83,6 +96,16 @@ class _OrderPageState extends State<OrderPage> {
       _phoneController.text = saved;
     } catch (e) {
       AppLogger.debug('Son sipariş telefonu okunamadı: $e');
+    }
+  }
+
+  Future<void> _rememberDeliveryPoint(String deliveryPoint) async {
+    if (deliveryPoint.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(lastDeliveryPointPrefsKey, deliveryPoint);
+    } catch (_) {
+      // İsteğe bağlı; sipariş akışını etkilemez
     }
   }
 
@@ -356,8 +379,9 @@ class _OrderPageState extends State<OrderPage> {
                                 } catch (_) {
                                   if (context.mounted) context.pop(false);
                                 } finally {
-                                  if (context.mounted)
+                                  if (context.mounted) {
                                     setState(() => submitting = false);
+                                  }
                                 }
                               },
                         style: FilledButton.styleFrom(
@@ -450,6 +474,21 @@ class _OrderPageState extends State<OrderPage> {
     if (!_formKey.currentState!.validate()) {
       showMarketSnack(context, 'Lütfen telefon numaranı kontrol et',
           error: true);
+      return;
+    }
+
+    if (_selectedPaymentMethod == null) {
+      setState(() => _paymentError = true);
+      final paymentContext = _paymentSectionKey.currentContext;
+      if (paymentContext != null && paymentContext.mounted) {
+        Scrollable.ensureVisible(
+          paymentContext,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          alignment: .1,
+        );
+      }
+      showMarketSnack(context, 'Lütfen ödeme yöntemini seç', error: true);
       return;
     }
 
@@ -575,6 +614,7 @@ class _OrderPageState extends State<OrderPage> {
             ? settingsViewModel.girlsDormName
             : settingsViewModel.boysDormName,
         note: _notesController.text,
+        paymentMethod: _selectedPaymentMethod!,
         couponCode: cartViewModel.appliedCouponCode, // Kupon kodu
         discountAmount: cartViewModel.discountAmount, // İndirim miktarı
         device: {
@@ -618,9 +658,22 @@ class _OrderPageState extends State<OrderPage> {
 
       final order = await apiService.createOrder(orderRequest);
 
+      // Meta Purchase: yalnızca sunucu siparişi kaydettikten sonra, sepet
+      // temizlenmeden önceki ürünlerle ve sipariş numarası başına bir kez.
+      // Ölçüm hatası sipariş akışını etkilemez.
+      unawaited(MetaAppEventsService.instance.logPurchase(
+        orderId: order.id,
+        items: List.of(cartViewModel.items),
+        amount: order.totalAmount > 0
+            ? order.totalAmount
+            : orderRequest.totalAmount,
+      ));
+
       // Bir sonraki siparişte bu numara hazır gelsin; profil de sunucudaki
       // güncel numarayla yenilenir.
       await _rememberOrderPhone(currentUserId, orderRequest.phone);
+      // Ana sayfa önerileri yurda göre istenir (Kız/Erkek KYK)
+      await _rememberDeliveryPoint(orderRequest.deliveryPoint);
       auth.updateProfile();
 
       // Sepeti temizle
@@ -641,12 +694,18 @@ class _OrderPageState extends State<OrderPage> {
       AppLogger.debug('Order ID: ${order.id}');
 
       if (mounted) {
-        context.go('/order-confirmation/${order.id}');
+        // Ödeme yöntemi onay ekranında gösterilir (havale/EFT ise IBAN).
+        final payment =
+            (order.paymentMethod ?? orderRequest.paymentMethod).key;
+        context.go('/order-confirmation/${order.id}?payment=$payment');
       }
     } catch (e) {
       String detailedError = '';
 
-      if (e is DioException) {
+      if (e is ApiException) {
+        // Sunucunun anlaşılır mesajı (sipariş saatleri, minimum tutar, kupon)
+        detailedError = e.message;
+      } else if (e is DioException) {
         if (e.response != null) {
           // Backend'den gelen hata mesajını almaya çalış
           if (e.response?.data is Map) {
@@ -716,6 +775,8 @@ class _OrderPageState extends State<OrderPage> {
                       _buildDeliverySection(),
                       const SizedBox(height: 14),
                       _buildContactSection(),
+                      const SizedBox(height: 14),
+                      _buildPaymentSection(),
                       const SizedBox(height: 14),
                       _buildNotesSection(),
                       const SizedBox(height: 14),
@@ -938,9 +999,129 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
+  // Ödeme yöntemi (zorunlu). Ödeme teslimatta ya da havale/EFT ile alınır;
+  // seçim yönetim panelinde sipariş kartında görünür.
+  Widget _buildPaymentSection() {
+    return Consumer<SettingsViewModel>(
+      builder: (context, settings, child) {
+        return KeyedSubtree(
+          key: _paymentSectionKey,
+          child: _section(
+            step: '3',
+            title: 'Ödeme yöntemi',
+            trailing: 'Zorunlu',
+            error: _paymentError,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final method in PaymentMethod.values) ...[
+                  if (method != PaymentMethod.values.first)
+                    const SizedBox(height: 10),
+                  _buildPaymentOption(method),
+                ],
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: _selectedPaymentMethod == PaymentMethod.bankTransfer
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: BankTransferCard(settings: settings),
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
+                if (_paymentError) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Devam etmek için bir ödeme yöntemi seç.',
+                    style: MarketText.caption(
+                        color: MarketPalette.red, weight: FontWeight.w700),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static IconData _paymentIcon(PaymentMethod method) {
+    switch (method) {
+      case PaymentMethod.cash:
+        return Icons.payments_outlined;
+      case PaymentMethod.card:
+        return Icons.credit_card_rounded;
+      case PaymentMethod.bankTransfer:
+        return Icons.account_balance_rounded;
+    }
+  }
+
+  Widget _buildPaymentOption(PaymentMethod method) {
+    final selected = _selectedPaymentMethod == method;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${method.label} ödeme yöntemini seç',
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _selectedPaymentMethod = method;
+            _paymentError = false;
+          });
+        },
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? MarketPalette.greenSoft : MarketPalette.canvas,
+            borderRadius: BorderRadius.circular(MarketRadius.md),
+            border: Border.all(
+              color: selected ? MarketPalette.green : MarketPalette.line,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              MarketIconTile(
+                icon: _paymentIcon(method),
+                size: 44,
+                background: selected ? MarketPalette.green : Colors.white,
+                foreground: selected ? Colors.white : MarketPalette.muted,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(method.label, style: MarketText.label(size: 14)),
+                    const SizedBox(height: 2),
+                    Text(method.description, style: MarketText.caption()),
+                  ],
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                child: Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  key: ValueKey(selected),
+                  color: selected ? MarketPalette.green : MarketPalette.subtle,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildNotesSection() {
     return _section(
-      step: '3',
+      step: '4',
       title: 'Sipariş notu',
       trailing: 'İsteğe bağlı',
       child: Column(
@@ -1084,7 +1265,7 @@ class _OrderPageState extends State<OrderPage> {
     });
 
     return _section(
-      step: '4',
+      step: '5',
       title: 'Sipariş özeti',
       trailing: '${cart.items.length} çeşit',
       child: Column(
@@ -1106,7 +1287,10 @@ class _OrderPageState extends State<OrderPage> {
                         ? const Icon(Icons.inventory_2_outlined,
                             color: MarketPalette.subtle, size: 20)
                         : Image.network(
-                            item.product.image,
+                            optimizedImageUrl(
+                              item.product.image,
+                              width: MarketImageSize.thumb,
+                            ),
                             fit: BoxFit.contain,
                             cacheWidth: 120,
                             errorBuilder: (_, __, ___) => const Icon(

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Meta (Facebook) App Events. Client Token gizli değildir; App Secret
+         buraya YAZILMAZ. Değer: Meta for Developers > Uygulama ayarları >
+         Gelişmiş > Güvenlik > İstemci belirteci (Client Token). -->
+    <string name="facebook_app_id" translatable="false">911432225234141</string>
+    <string name="facebook_client_token" translatable="false">8f55046911247fa9c4aedd7144bbb52a</string>
+    <string name="fb_login_protocol_scheme" translatable="false">fb911432225234141</string>
+</resources>

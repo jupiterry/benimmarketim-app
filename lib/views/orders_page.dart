@@ -10,7 +10,9 @@ import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/chat_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/bill_split_sheet.dart';
+import 'widgets/feedback_parts.dart';
 import 'widgets/market_ui.dart';
+import '../services/image_url.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -59,10 +61,10 @@ class _OrdersPageState extends State<OrdersPage> {
     }
   }
 
-  Future<void> _cancelOrder(String orderId) async {
+  Future<void> _cancelOrder(String orderId, {String? reason, String? note}) async {
     try {
       final apiService = ApiService();
-      final success = await apiService.cancelOrder(orderId);
+      final success = await apiService.cancelOrder(orderId, reason: reason, note: note);
       if (!mounted) return;
       if (success) {
         showMarketSnack(context, 'Sipariş iptal edildi');
@@ -441,9 +443,21 @@ class _OrdersPageState extends State<OrdersPage> {
                       ),
                     ),
                   ),
+                if (order.hasDiscount) ...[
+                  _detailRow(Icons.receipt_outlined, 'Ara toplam',
+                      formatTl(order.subtotalOrDerived)),
+                  _detailRow(
+                    Icons.local_offer_outlined,
+                    order.couponCode == null ? 'Kupon indirimi' : 'Kupon (${order.couponCode})',
+                    '-${formatTl(order.couponDiscount)}',
+                  ),
+                ],
                 if (expanded) ...[
                   if (order.deliveryPointName.isNotEmpty)
                     _detailRow(Icons.location_on_outlined, 'Teslimat', order.deliveryPointName),
+                  if (order.paymentMethod != null)
+                    _detailRow(Icons.account_balance_wallet_outlined, 'Ödeme',
+                        order.paymentMethod!.label),
                   if (order.note.trim().isNotEmpty)
                     _detailRow(Icons.sticky_note_2_outlined, 'Not', order.note.trim()),
                   const SizedBox(height: 6),
@@ -539,7 +553,7 @@ class _OrdersPageState extends State<OrdersPage> {
       child: image == null || image.isEmpty
           ? const Icon(Icons.shopping_bag_outlined, color: MarketPalette.subtle, size: 19)
           : Image.network(
-              image,
+              optimizedImageUrl(image, width: MarketImageSize.thumb),
               fit: BoxFit.contain,
               cacheWidth: 120,
               errorBuilder: (_, __, ___) => const Icon(
@@ -607,36 +621,14 @@ class _OrdersPageState extends State<OrdersPage> {
     return id.substring(0, id.length > 8 ? 8 : id.length).toUpperCase();
   }
 
+  /// İptal onayı: müşteri nedenini seçmek zorunda (fiyat, teslimat süresi, ...).
+  /// Neden yönetici panelinde sipariş detayında ve memnuniyet raporunda görünür.
   Future<void> _showCancelDialog(String orderId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const MarketIconTile(
-          icon: Icons.cancel_outlined,
-          size: 52,
-          background: MarketPalette.redSoft,
-          foreground: MarketPalette.red,
-        ),
-        title: const Text('Sipariş iptal edilsin mi?', textAlign: TextAlign.center),
-        content: const Text(
-          'Siparişin iptal edilecek. Bu işlem geri alınamaz.',
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: MarketPalette.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('İptal et'),
-          ),
-        ],
-      ),
+    final result = await showFeedbackSheet<({String reason, String note})>(
+      context,
+      const _CancelReasonSheet(),
     );
-    if (confirmed == true) _cancelOrder(orderId);
+    if (result != null) _cancelOrder(orderId, reason: result.reason, note: result.note);
   }
 
   String _formatDate(DateTime date) {
@@ -733,6 +725,109 @@ class _StatusSteps extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class _CancelReasonSheet extends StatefulWidget {
+  const _CancelReasonSheet();
+
+  @override
+  State<_CancelReasonSheet> createState() => _CancelReasonSheetState();
+}
+
+class _CancelReasonSheetState extends State<_CancelReasonSheet> {
+  // Sunucudaki CANCEL_REASONS ile aynı kimlikler (backend/lib/feedbackOptions.js)
+  static const _reasons = [
+    FeedbackOption('gec', 'Teslimat çok uzun sürecek'),
+    FeedbackOption('fikir', 'Fikrimi değiştirdim'),
+    FeedbackOption('yanlis_siparis', 'Yanlış/eksik sipariş verdim'),
+    FeedbackOption('fiyat', 'Fiyat yüksek geldi'),
+    FeedbackOption('baska_yer', 'Başka yerden aldım'),
+    FeedbackOption('diger', 'Diğer'),
+  ];
+
+  final TextEditingController _note = TextEditingController();
+  String? _reason;
+  bool _missing = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FeedbackSheetHandle(),
+        const Center(
+          child: MarketIconTile(
+            icon: Icons.cancel_outlined,
+            size: 52,
+            background: MarketPalette.redSoft,
+            foreground: MarketPalette.red,
+          ),
+        ),
+        const SizedBox(height: MarketSpace.md),
+        Text('Sipariş iptal edilsin mi?', textAlign: TextAlign.center, style: MarketText.title(size: 20)),
+        const SizedBox(height: MarketSpace.sm),
+        Text('Bu işlem geri alınamaz. Neden vazgeçtiğini seçer misin?',
+            textAlign: TextAlign.center, style: MarketText.body(color: MarketPalette.muted)),
+        const SizedBox(height: MarketSpace.lg),
+        Wrap(
+          spacing: MarketSpace.sm,
+          runSpacing: MarketSpace.sm,
+          children: [
+            for (final reason in _reasons)
+              FeedbackChip(
+                label: reason.label,
+                negative: true,
+                selected: _reason == reason.id,
+                onTap: () => setState(() {
+                  _reason = reason.id;
+                  _missing = false;
+                }),
+              ),
+          ],
+        ),
+        if (_reason == 'diger') ...[
+          const SizedBox(height: MarketSpace.md),
+          TextField(
+            controller: _note,
+            maxLength: 300,
+            maxLines: 2,
+            decoration: const InputDecoration(hintText: 'Kısaca yazar mısın? (isteğe bağlı)', counterText: ''),
+          ),
+        ],
+        if (_missing) ...[
+          const SizedBox(height: MarketSpace.sm),
+          Text('Lütfen bir neden seç.', style: MarketText.label(color: MarketPalette.red)),
+        ],
+        const SizedBox(height: MarketSpace.lg),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: MarketPalette.red,
+            minimumSize: const Size.fromHeight(52),
+          ),
+          onPressed: () {
+            if (_reason == null) {
+              setState(() => _missing = true);
+              return;
+            }
+            Navigator.of(context).pop((reason: _reason!, note: _note.text.trim()));
+          },
+          child: const Text('Siparişi iptal et'),
+        ),
+        const SizedBox(height: MarketSpace.sm),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Vazgeç'),
+        ),
       ],
     );
   }

@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/meta_app_events_service.dart';
 import '../services/review_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/legal_links.dart';
@@ -26,11 +27,64 @@ class _SettingsPageState extends State<SettingsPage> {
   };
   bool _preferencesLoaded = false;
   final Future<PackageInfo> _info = PackageInfo.fromPlatform();
+  final MetaAppEventsService _metaEvents = MetaAppEventsService.instance;
+  bool? _metaConsentGranted; // Yüklenene kadar null
+  bool _metaConsentSaving = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreferences());
+    _loadMetaConsent();
+  }
+
+  Future<void> _loadMetaConsent() async {
+    if (!_metaEvents.isSupported) return;
+    await _metaEvents.init();
+    if (!mounted) return;
+    setState(() => _metaConsentGranted =
+        _metaEvents.consent == MetaTrackingConsent.granted);
+  }
+
+  Future<void> _setMetaConsent(bool granted) async {
+    setState(() {
+      _metaConsentGranted = granted;
+      _metaConsentSaving = true;
+    });
+    final active = await _metaEvents.setConsent(granted);
+    if (!mounted) return;
+    setState(() {
+      _metaConsentGranted =
+          _metaEvents.consent == MetaTrackingConsent.granted;
+      _metaConsentSaving = false;
+    });
+    if (granted && !active && _metaEvents.isIos) {
+      await _explainIosTrackingOff();
+    }
+  }
+
+  /// iOS'ta izleme izni sistem tarafından kapalıysa uygulama yeniden
+  /// soramaz; kullanıcı iPhone Ayarlar'dan açabilir.
+  Future<void> _explainIosTrackingOff() async {
+    final status = await _metaEvents.trackingStatus();
+    if (!mounted) return;
+    final restricted = status == TrackingStatus.restricted;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          restricted
+              ? 'Bu iPhone\'da uygulamaların izleme yapması kısıtlanmış.'
+              : 'iPhone\'da izleme izni kapalı. Ayarlar > Benim Marketim > '
+                  '"İzlemeye İzin Ver" seçeneğini açabilirsin.',
+        ),
+        action: restricted
+            ? null
+            : SnackBarAction(
+                label: 'Ayarlar',
+                onPressed: () => _metaEvents.openTrackingSettings(),
+              ),
+      ),
+    );
   }
 
   Future<void> _loadPreferences() async {
@@ -177,6 +231,27 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
                 const SizedBox(height: 24),
+                if (_metaEvents.isSupported) ...[
+                  MarketMenuGroup(
+                    title: 'Gizlilik',
+                    children: [
+                      MarketMenuTile(
+                        icon: Icons.insights_outlined,
+                        title: 'Reklam ölçümü (Meta)',
+                        subtitle:
+                            'Açılış, sepete ekleme ve sipariş bilgilerini reklam ölçümü için Meta ile paylaş',
+                        trailing: Switch.adaptive(
+                          value: _metaConsentGranted ?? false,
+                          onChanged:
+                              _metaConsentGranted == null || _metaConsentSaving
+                                  ? null
+                                  : _setMetaConsent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 MarketMenuGroup(
                   title: 'Yasal',
                   children: [

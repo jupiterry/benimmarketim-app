@@ -60,6 +60,25 @@ class SettingsViewModel extends ChangeNotifier {
   String get boysDormName =>
       _settings['deliveryPoints']?['boysDorm']?['name'] ?? 'Erkek KYK Yurdu';
 
+  // Havale / EFT hesap bilgileri (yönetim paneli → Ayarlar → Ödeme)
+  Map<String, dynamic> get _bank {
+    final raw = _settings['bankTransfer'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  String get bankName => (_bank['bankName'] ?? '').toString().trim();
+  String get bankAccountName => (_bank['accountName'] ?? '').toString().trim();
+
+  /// Boşluksuz IBAN (kopyalamak için)
+  String get bankIban =>
+      (_bank['iban'] ?? '').toString().replaceAll(RegExp(r'\s+'), '').toUpperCase();
+
+  /// Okunur IBAN: "TR12 0006 2000 ..."
+  String get bankIbanFormatted => bankIban
+      .replaceAllMapped(RegExp(r'(.{4})(?=.)'), (m) => '${m.group(1)} ');
+
+  bool get hasBankTransferInfo => bankIban.isNotEmpty;
+
   // Ayarları yükle
   Future<void> loadSettings() async {
     _isLoading = true;

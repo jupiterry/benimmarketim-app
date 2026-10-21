@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/banner.dart' as models;
 import '../../viewmodels/banner_viewmodel.dart';
 import 'market_ui.dart';
+import '../../services/image_url.dart';
 
 /// Banner görselleri yönetim panelinde metinle birlikte tasarlanıyor; bu yüzden
 /// görselin üstüne ayrıca yazı bindirilmez (çift, okunmaz metin oluşuyordu).
@@ -174,7 +175,10 @@ class _BannerCard extends StatelessWidget {
             child: banner.image.trim().isEmpty
                 ? _FallbackPromo(title: banner.title, subtitle: banner.subtitle)
                 : Image.network(
-                    banner.image,
+                    optimizedImageUrl(
+                      banner.image,
+                      width: MarketImageSize.banner,
+                    ),
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,

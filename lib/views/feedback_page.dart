@@ -21,6 +21,29 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
   static const _ratingTexts = ['Çok kötü', 'Kötü', 'Orta', 'İyi', 'Mükemmel'];
 
+  /// Yönetici yanıtı ya da telafi kuponu olan önceki geri bildirimler
+  List<Map<String, dynamic>> _answered = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAnswered());
+  }
+
+  Future<void> _loadAnswered() async {
+    if (!context.read<AuthViewModel>().isLoggedIn) return;
+    final items = await ApiService().getMyFeedbacks();
+    if (!mounted) return;
+    setState(() {
+      _answered = items.where((item) {
+        final reply = item['adminReply'];
+        final comp = item['compensation'];
+        return (reply is Map && (reply['text'] ?? '').toString().trim().isNotEmpty) ||
+            (comp is Map && (comp['code'] ?? '').toString().isNotEmpty);
+      }).take(5).toList();
+    });
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -104,6 +127,14 @@ class _FeedbackPageState extends State<FeedbackPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (_answered.isNotEmpty) ...[
+                          Text('Yanıtlarımız', style: MarketText.heading(size: 16)),
+                          const SizedBox(height: 10),
+                          for (final item in _answered) _AnsweredFeedbackCard(item: item),
+                          const SizedBox(height: 12),
+                          Text('Yeni geri bildirim', style: MarketText.heading(size: 16)),
+                          const SizedBox(height: 10),
+                        ],
                         MarketCard(
                           child: Column(
                             children: [
@@ -193,6 +224,73 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Önceki geri bildirim + yönetici yanıtı (+ varsa telafi kuponu)
+class _AnsweredFeedbackCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  const _AnsweredFeedbackCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final reply = item['adminReply'] is Map ? item['adminReply'] as Map : const {};
+    final replyText = (reply['text'] ?? '').toString().trim();
+    final comp = item['compensation'] is Map ? item['compensation'] as Map : const {};
+    final code = (comp['code'] ?? '').toString();
+    final amount = (comp['amount'] as num?)?.toInt() ?? 0;
+    final message = (item['message'] ?? '').toString().trim();
+    final title = (item['title'] ?? '').toString().trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: MarketCard(
+        shadow: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title.isNotEmpty) Text(title, style: MarketText.caption()),
+            if (message.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(message, maxLines: 3, overflow: TextOverflow.ellipsis, style: MarketText.body(size: 13)),
+            ],
+            if (replyText.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: MarketPalette.greenSoft,
+                  borderRadius: BorderRadius.circular(MarketRadius.md),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.storefront_rounded, size: 16, color: MarketPalette.greenDark),
+                        const SizedBox(width: 6),
+                        Text('Benim Marketim', style: MarketText.label(color: MarketPalette.greenDark, size: 12)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(replyText, style: MarketText.body(size: 14)),
+                  ],
+                ),
+              ),
+            ],
+            if (code.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              MarketNotice(
+                icon: Icons.card_giftcard_rounded,
+                text: '$amount TL telafi kuponun: $code. Sepette kupon olarak kullanabilirsin.',
+                background: MarketPalette.orangeSoft,
+                foreground: MarketPalette.orangeInk,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

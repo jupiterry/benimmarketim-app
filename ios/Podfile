@@ -43,6 +43,14 @@ post_install do |installer|
       # Firebase header hatasini cozmek icin gerekli ayarlar
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # permission_handler: yalnızca iOS izleme izni (ATT) penceresi açık.
+      # Meta reklam ölçümü bu izinle çalışır; diğer izinler kapalı kalır.
+      if target.name == 'permission_handler_apple'
+        defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+        defs = defs.split(' ') if defs.is_a?(String)
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] =
+          defs + ['PERMISSION_APP_TRACKING_TRANSPARENCY=1']
+      end
     end
   end
 end

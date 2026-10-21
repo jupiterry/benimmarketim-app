@@ -4,14 +4,15 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/app_logger.dart';
 import '../services/version_check_service.dart';
 import '../viewmodels/banner_viewmodel.dart';
 import '../viewmodels/category_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import 'whats_new_screen.dart';
-import 'widgets/custom_dialog.dart';
 import 'widgets/market_mascot.dart';
 import 'widgets/update_dialog.dart';
+import '../services/image_url.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -29,7 +30,7 @@ class _SplashScreenState extends State<SplashScreen>
   // Açılış ekranı en az [_minSplash] görünür; bu sürede ana sayfanın verisi
   // ve ilk görselleri indirilir. İndirme uzarsa en fazla [_maxSplash]
   // beklenir, kalanı ana sayfada yüklenmeye devam eder.
-  static const Duration _minSplash = Duration(seconds: 3);
+  static const Duration _minSplash = Duration(seconds: 1);
   static const Duration _maxSplash = Duration(seconds: 5);
   // Görseller, ana sayfadaki Image.network çağrılarıyla aynı genişlikte
   // önbelleğe alınır; böylece ana sayfa aynı kaydı bulur ve yeniden indirmez.
@@ -74,7 +75,11 @@ class _SplashScreenState extends State<SplashScreen>
       for (final banner in banners.banners) {
         final url = banner.image.trim();
         if (banner.isActive && url.isNotEmpty) {
-          providers.add(ResizeImage(NetworkImage(banner.image),
+          providers.add(ResizeImage(
+              NetworkImage(optimizedImageUrl(
+                banner.image,
+                width: MarketImageSize.banner,
+              )),
               width: _bannerImageWidth));
         }
       }
@@ -89,7 +94,12 @@ class _SplashScreenState extends State<SplashScreen>
         if (seen.length >= _maxPreloadedProductImages) break;
         if (product.isHidden || product.image.isEmpty) continue;
         if (!seen.add(product.image)) continue;
-        providers.add(ResizeImage(NetworkImage(product.image),
+        // Kartın istediği adresle aynı olmalı ki önbellek paylaşılsın.
+        providers.add(ResizeImage(
+            NetworkImage(optimizedImageUrl(
+              product.image,
+              width: MarketImageSize.card,
+            )),
             width: _productImageWidth));
       }
 
@@ -114,20 +124,10 @@ class _SplashScreenState extends State<SplashScreen>
       final result = await VersionCheckService().checkVersion();
       if (!mounted) return;
       if (result == null) {
-        await CustomDialog.show(
-          context: context,
-          title: 'Bağlantı kurulamadı',
-          message:
-              'Market bilgilerine ulaşamadık. İnternet bağlantınızı kontrol edip yeniden deneyin.',
-          confirmButtonText: 'Yeniden dene',
-          showCancelButton: false,
-          icon: Icons.wifi_off_rounded,
-          isDestructive: true,
-          onConfirm: () {
-            Navigator.pop(context);
-            _start();
-          },
-        );
+        // Sürüm bilgisi alınamadı (çevrimdışı/sunucu hatası): açılış
+        // engellenmez; ana sayfa kendi hata durumunu gösterir.
+        AppLogger.debug('Sürüm denetimi yapılamadı, uygulamaya devam ediliyor');
+        await _navigate();
         return;
       }
       if (result.isUpdateRequired) {

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/user.dart';
+import '../services/app_logger.dart';
+import '../services/image_url.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/favorites_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
@@ -63,36 +66,209 @@ class ProfilePage extends StatelessWidget {
 // Giriş yapılmış
 // ---------------------------------------------------------------------------
 
-class _ProfileHeader extends StatelessWidget {
+class _ProfileHeader extends StatefulWidget {
   final User user;
 
   const _ProfileHeader({required this.user});
 
   @override
+  State<_ProfileHeader> createState() => _ProfileHeaderState();
+}
+
+class _ProfileHeaderState extends State<_ProfileHeader> {
+  bool _busy = false;
+
+  static String _initialsOf(String name) => name
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .take(2)
+      .map((part) => part.characters.first.toUpperCase())
+      .join();
+
+  Future<void> _showPhotoSheet() async {
+    final hasAvatar = widget.user.avatar != null;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: MarketPalette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(MarketRadius.xl)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              MarketSpace.xl, MarketSpace.lg, MarketSpace.xl, MarketSpace.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Profil fotoğrafı', style: MarketText.heading(size: 17)),
+              const SizedBox(height: MarketSpace.sm),
+              MarketMenuTile(
+                icon: Icons.photo_camera_outlined,
+                title: 'Fotoğraf çek',
+                onTap: () => Navigator.pop(sheetContext, 'camera'),
+              ),
+              MarketMenuTile(
+                icon: Icons.photo_library_outlined,
+                title: 'Galeriden seç',
+                onTap: () => Navigator.pop(sheetContext, 'gallery'),
+              ),
+              if (hasAvatar)
+                MarketMenuTile(
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Fotoğrafı kaldır',
+                  destructive: true,
+                  onTap: () => Navigator.pop(sheetContext, 'remove'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'remove') {
+      await _removePhoto();
+    } else {
+      await _pickAndUpload(
+        action == 'camera' ? ImageSource.camera : ImageSource.gallery,
+      );
+    }
+  }
+
+  Future<void> _pickAndUpload(ImageSource source) async {
+    XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 768,
+        maxHeight: 768,
+        imageQuality: 80,
+      );
+    } catch (e) {
+      AppLogger.debug('Fotoğraf seçilemedi: $e');
+      if (mounted) {
+        showMarketSnack(
+          context,
+          'Fotoğraf seçilemedi. Kamera/galeri iznini kontrol et.',
+          error: true,
+          aboveNavigation: true,
+        );
+      }
+      return;
+    }
+    if (picked == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        if (mounted) {
+          showMarketSnack(context, 'Fotoğraf en fazla 5 MB olabilir.',
+              error: true, aboveNavigation: true);
+        }
+        return;
+      }
+      if (!mounted) return;
+      final error = await context.read<AuthViewModel>().uploadProfilePhoto(bytes);
+      if (!mounted) return;
+      if (error == null) {
+        showMarketSnack(context, 'Profil fotoğrafın güncellendi.',
+            aboveNavigation: true);
+      } else {
+        showMarketSnack(context, error, error: true, aboveNavigation: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removePhoto() async {
+    setState(() => _busy = true);
+    try {
+      final error = await context.read<AuthViewModel>().removeProfilePhoto();
+      if (!mounted) return;
+      if (error == null) {
+        showMarketSnack(context, 'Profil fotoğrafın kaldırıldı.',
+            aboveNavigation: true);
+      } else {
+        showMarketSnack(context, error, error: true, aboveNavigation: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = widget.user;
     final name = user.name.trim().isEmpty ? 'Kullanıcı' : user.name.trim();
-    final initials = name
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .take(2)
-        .map((part) => part.characters.first.toUpperCase())
-        .join();
+    final initials = _initialsOf(name);
+    final avatar = user.avatar;
 
     return MarketHeader(
       title: name,
       subtitle: user.email,
       showBack: false,
-      leading: Container(
-        width: 56,
-        height: 56,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: MarketPalette.lime,
-          borderRadius: BorderRadius.circular(MarketRadius.lg),
-        ),
-        child: Text(
-          initials,
-          style: MarketText.title(color: MarketPalette.greenDeep, size: 22),
+      leading: Semantics(
+        button: true,
+        label: 'Profil fotoğrafını değiştir',
+        child: GestureDetector(
+          onTap: _busy ? null : _showPhotoSheet,
+          child: SizedBox(
+            width: 60,
+            height: 60,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: CircleAvatar(
+                    backgroundColor: MarketPalette.lime,
+                    foregroundImage: avatar == null
+                        ? null
+                        : NetworkImage(
+                            optimizedImageUrl(avatar, width: MarketImageSize.thumb),
+                          ),
+                    onForegroundImageError: avatar == null ? null : (_, __) {},
+                    child: Text(
+                      initials,
+                      style: MarketText.title(color: MarketPalette.greenDeep, size: 22),
+                    ),
+                  ),
+                ),
+                if (_busy)
+                  const Positioned.fill(
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: MarketPalette.greenDeep,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: MarketPalette.surface,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: MarketPalette.line),
+                    ),
+                    child: const Icon(
+                      Icons.photo_camera_rounded,
+                      size: 13,
+                      color: MarketPalette.greenDeep,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -147,6 +323,20 @@ class _LoggedInContent extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _InviteBanner(onTap: () => context.push('/referral')),
+        const SizedBox(height: 24),
+        MarketMenuGroup(
+          title: 'Hesap bilgileri',
+          children: [
+            MarketMenuTile(
+              icon: Icons.phone_outlined,
+              title: 'Telefon numarası',
+              subtitle: (auth.user?.phone ?? '').trim().isEmpty
+                  ? 'Siparişlerin için numaranı ekle'
+                  : auth.user!.phone!.trim(),
+              onTap: () => _editPhone(context),
+            ),
+          ],
+        ),
         const SizedBox(height: 24),
         MarketMenuGroup(
           title: 'Hizmetler',
@@ -206,6 +396,69 @@ class _LoggedInContent extends StatelessWidget {
         const _VersionFooter(),
       ],
     );
+  }
+
+  static final RegExp _phonePattern = RegExp(r'^05\d{9}$');
+
+  Future<void> _editPhone(BuildContext context) async {
+    final controller = TextEditingController(
+      text: (auth.user?.phone ?? '').replaceAll(RegExp(r'\D'), ''),
+    );
+    String? validationError;
+    final phone = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Telefon numarası'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.phone,
+            maxLength: 11,
+            style: MarketText.body(size: 15),
+            decoration: InputDecoration(
+              hintText: '05XXXXXXXXX',
+              counterText: '',
+              errorText: validationError,
+              fillColor: MarketPalette.canvas,
+            ),
+            onChanged: (_) {
+              if (validationError != null) {
+                setDialogState(() => validationError = null);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = controller.text.replaceAll(RegExp(r'\D'), '');
+                if (!_phonePattern.hasMatch(value)) {
+                  setDialogState(() => validationError =
+                      'Numara 05 ile başlamalı ve 11 haneli olmalı');
+                  return;
+                }
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Kaydet'),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Diyalog kapanış animasyonu bitince kontrolcü serbest bırakılır
+    Future<void>.delayed(const Duration(milliseconds: 400), controller.dispose);
+    if (phone == null || !context.mounted) return;
+    final error = await auth.updatePhone(phone);
+    if (!context.mounted) return;
+    if (error == null) {
+      showMarketSnack(context, 'Telefon numaran güncellendi.', aboveNavigation: true);
+    } else {
+      showMarketSnack(context, error, error: true, aboveNavigation: true);
+    }
   }
 
   Future<void> _confirmLogout(BuildContext context) async {

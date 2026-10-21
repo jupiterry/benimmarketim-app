@@ -11,11 +11,13 @@ import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
+import 'widgets/abandon_reason_sheet.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/market_product_card.dart';
 import 'widgets/market_mascot.dart';
 import 'widgets/market_ui.dart';
 import 'widgets/save_cart_dialog.dart';
+import '../services/image_url.dart';
 
 class CartPage extends StatelessWidget {
   final VoidCallback? onExplore;
@@ -106,7 +108,10 @@ class CartPage extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed == true) cart.clearCart();
+    if (confirmed == true) {
+      cart.clearCart();
+      if (context.mounted) await maybeAskAbandonReason(context);
+    }
   }
 }
 
@@ -321,7 +326,10 @@ class _SuggestionTile extends StatelessWidget {
                     ? const Icon(Icons.inventory_2_outlined,
                         color: MarketPalette.subtle)
                     : Image.network(
-                        product.image,
+                        optimizedImageUrl(
+                          product.image,
+                          width: MarketImageSize.thumb,
+                        ),
                         fit: BoxFit.contain,
                         cacheWidth: 240,
                         errorBuilder: (_, __, ___) => const Icon(
@@ -426,7 +434,10 @@ class _CartItemCard extends StatelessWidget {
               ),
               child: product.image.isNotEmpty
                   ? Image.network(
-                      product.image,
+                      optimizedImageUrl(
+                        product.image,
+                        width: MarketImageSize.thumb,
+                      ),
                       fit: BoxFit.contain,
                       cacheWidth: 200,
                       errorBuilder: (_, __, ___) => const Icon(

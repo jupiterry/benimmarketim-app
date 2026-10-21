@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +21,7 @@ import 'services/theme_service.dart';
 import 'services/token_manager.dart';
 import 'services/notification_service.dart';
 import 'services/review_service.dart';
+import 'services/meta_app_events_service.dart';
 import 'router/app_router.dart';
 import 'views/widgets/market_scroll.dart';
 import 'views/widgets/market_system_frame.dart';
@@ -29,7 +32,8 @@ void main() async {
 
   // Hata yakalama ile güvenli başlatma
   try {
-    // Notification Service'i en başta başlat (await ile bekle ki izin istesin)
+    // OneSignal'ı başlat (izin burada istenmez; onboarding sonunda ya da ilk
+    // sipariş ekranında NotificationService.requestPermissionIfNeeded sorar)
     AppLogger.debug('🔄 NotificationService initializing...');
     await NotificationService.instance.init();
     AppLogger.debug('✅ NotificationService initialized');
@@ -47,6 +51,10 @@ void main() async {
     AppLogger.debug('Stack trace: $stackTrace');
     // Kritik hata olsa bile uygulamayı başlat
   }
+
+  // Meta uygulama olayları: kayıtlı izni okur, izin varsa SDK'yı hazırlar.
+  // İzin yoksa Meta'ya olay gönderilmez. Açılışı bekletmez.
+  unawaited(MetaAppEventsService.instance.init());
 
   // Notification Service başlat
 
@@ -185,6 +193,15 @@ class _MyAppState extends State<MyApp> {
               try {
                 if (context.mounted) {
                   context.read<AuthViewModel>().checkAuthStatus();
+                  // Flash sale'ler: rozet/geri sayım ve kampanya başlayıp
+                  // bitince sepetteki fiyatın güncellenmesi.
+                  final flashSales = context.read<FlashSaleViewModel>();
+                  flashSales.addProductRefreshListener(
+                    context.read<CartViewModel>().applyFreshProducts,
+                  );
+                  flashSales.start();
+                  // Uzun süre arka planda kalınca ana sayfa rafları tazelenir
+                  context.read<HomePageViewModel>().startAutoRefresh();
                 }
               } catch (e) {
                 AppLogger.debug('Auth check failed: $e');

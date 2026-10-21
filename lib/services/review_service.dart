@@ -129,7 +129,7 @@ class ReviewService {
   Future<void> openStoreListing() async {
     try {
       await _inAppReview.openStoreListing(
-        appStoreId: '6755705908', // App Store ID'niz
+        appStoreId: '6755792336', // App Store Connect Apple ID (codemagic.yaml ile aynı)
         // Google Play için package name otomatik kullanılır
       );
     } catch (e) {

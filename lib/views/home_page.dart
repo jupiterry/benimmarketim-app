@@ -13,6 +13,7 @@ import 'profile_page.dart';
 import 'widgets/home_assistant_card.dart';
 import 'widgets/market_home_widgets.dart';
 import 'widgets/market_tab_stack.dart';
+import 'widgets/meta_consent_sheet.dart';
 
 class HomePage extends StatefulWidget {
   final int initialTabIndex;
@@ -38,14 +39,21 @@ class _HomePageState extends State<HomePage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthViewModel>();
-      if (auth.isLoggedIn && auth.user == null) {
+      final currentUser = auth.user;
+      if (auth.isLoggedIn &&
+          (currentUser == null || currentUser.id.isEmpty)) {
         auth.updateProfile();
       }
       context.read<CategoryViewModel>().loadCategories();
       context.read<HomePageViewModel>().loadHomeProducts();
       context.read<BannerViewModel>().loadBanners();
-      // Sipariş sonrası anket veya mağaza puan penceresi (oturum başına bir kez)
-      OrderFeedbackCoordinator.run(context);
+      // Reklam ölçümü izni (karar verilmediyse bir kez sorulur), ardından
+      // sipariş sonrası anket veya mağaza puan penceresi (oturum başına bir
+      // kez). Pencereler üst üste açılmasın diye sırayla çalışır; karar
+      // verilmişse izin adımı hiç beklemeden geçilir.
+      maybeAskMetaConsent(context).whenComplete(() {
+        if (mounted) OrderFeedbackCoordinator.run(context);
+      });
 
       if (widget.openOrders && mounted) {
         Future<void>.delayed(const Duration(milliseconds: 120), () {

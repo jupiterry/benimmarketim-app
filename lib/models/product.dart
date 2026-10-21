@@ -41,10 +41,18 @@ class Product {
     final price = (json['price'] ?? 0.0).toDouble();
     final apiActualPrice = (json['actualPrice'] as num?)?.toDouble();
     final rawDiscountedPrice = (json['discountedPrice'] as num?)?.toDouble();
-    final actualPrice = apiActualPrice ?? rawDiscountedPrice ?? price;
-    final isDiscounted = (json['isDiscounted'] ?? false) || actualPrice < price;
-    final discountedPrice =
-        rawDiscountedPrice ?? (actualPrice < price ? actualPrice : null);
+    // Sunucu (sipariş fiyatı) ile aynı kural: indirim yalnızca isDiscounted
+    // açıkken ve indirimli fiyat normal fiyattan düşükken geçerlidir. Panelde
+    // kapatılmış ama alanı temizlenmemiş bir indirim uygulamada da görünmez.
+    final serverDiscountedPrice = json['isDiscounted'] == true &&
+            rawDiscountedPrice != null &&
+            rawDiscountedPrice >= 0 &&
+            rawDiscountedPrice < price
+        ? rawDiscountedPrice
+        : null;
+    final actualPrice = apiActualPrice ?? serverDiscountedPrice ?? price;
+    final isDiscounted = actualPrice < price;
+    final discountedPrice = isDiscounted ? actualPrice : null;
 
     return Product(
       id: json['_id'] ?? '',

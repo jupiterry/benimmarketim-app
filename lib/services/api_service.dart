@@ -1,19 +1,47 @@
-import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../models/product.dart';
 import '../models/user.dart';
 import '../models/order.dart';
 import '../models/category.dart' as models;
 import '../models/flash_sale.dart';
+import '../models/home_feed.dart';
 import '../models/search_result.dart';
 import '../models/banner.dart';
 import '../models/referral.dart';
 import '../models/coupon.dart';
 import 'token_manager.dart';
 import 'app_logger.dart';
+import 'socket_service.dart';
+
+/// Sunucudan gelen anlaşılır hata (ör. "Sipariş saatleri dışında"). [message]
+/// doğrudan kullanıcıya gösterilebilir; [statusCode] HTTP durum kodudur
+/// (ağ hatasında null).
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  const ApiException(this.message, {this.statusCode});
+
+  @override
+  String toString() => message;
+}
+
+/// Geri bildirim gönderiminin sonucu
+class FeedbackSubmitResult {
+  /// Gönderilemediyse kullanıcıya gösterilecek mesaj
+  final String? error;
+
+  /// Düşük puan / 👎 / ürün sorunu sonrası açılan destek görüşmesi
+  final String? supportChatId;
+
+  const FeedbackSubmitResult({this.error, this.supportChatId});
+
+  bool get ok => error == null;
+}
 
 class ApiService {
   // Gerçek API base URL'i
@@ -26,7 +54,18 @@ class ApiService {
   // Aynı anda gelen 401'lerde refresh isteği yalnızca bir kez atılır.
   static Future<String?>? _refreshInFlight;
 
+  // Token yenilenemeyip oturum düştüğünde yayınlanır; AuthViewModel dinler.
+  static final StreamController<void> _sessionExpiredController =
+      StreamController<void>.broadcast();
+
+  /// Oturum sunucu tarafında geçersiz sayılıp token'lar silindiğinde tetiklenir.
+  static Stream<void> get onSessionExpired => _sessionExpiredController.stream;
+
   late final Dio _dio = _sharedDio ??= _createDio();
+
+  /// Paylaşılan Dio (auth/refresh interceptor'ları dahil). Fotokopi gibi
+  /// ayrı servisler kendi Dio'sunu kurmak yerine bunu kullanır.
+  static Dio get sharedDio => _sharedDio ??= _createDio();
 
   /// Yalnızca testler/ekran görüntüleri için: ağ yerine sahte yanıt verir.
   @visibleForTesting
@@ -38,50 +77,14 @@ class ApiService {
     final dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 60), // 60 saniye
-        receiveTimeout: const Duration(seconds: 60), // 60 saniye
-        sendTimeout: const Duration(seconds: 60), // 60 saniye
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 20),
+        sendTimeout: const Duration(seconds: 30),
         headers: {'Content-Type': 'application/json'},
       ),
     );
 
-    // NOT: badCertificateCallback yalnızca sertifika sistem doğrulamasından
-    // GEÇEMEDİĞİNDE çağrılır. Geçerli (CA imzalı) sertifikalarda bu kontrol
-    // hiç çalışmaz; yani bu blok gerçek bir SSL pinning sağlamaz.
-    // Aşağıdaki parmak izi sunucunun güncel Let's Encrypt zincirindeki hiçbir
-    // sertifikayla eşleşmiyor (2026-10-05 kontrolü). Zorunlu pinning açılırsa
-    // uygulama sunucuya bağlanamaz. Gerçek pinning için yedek pin'li
-    // public-key (SPKI) pinning gerekir.
-    const String knownFingerprint =
-        'EE:EB:A5:75:11:B3:AF:3F:C3:E3:FC:3B:FB:4F:98:D0:03:46:94:E4:C6:DD:5C:02:C2:47:2E:EA:91:0B:C2:81';
-
-    (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-        (client) {
-      client.badCertificateCallback =
-          (X509Certificate cert, String host, int port) {
-        // Fingerprint kontrolü:
-        // Sertifikanın DER formatındaki verisini SHA256 ile hashle
-        final digest = sha256.convert(cert.der).toString().toUpperCase();
-
-        // Beklenen fingerprint'i formatla (aradaki : işaretlerini kaldır)
-        final expectedFingerprint =
-            knownFingerprint.replaceAll(':', '').toUpperCase();
-
-        // Hash'i karşılaştır
-        final isValid = digest == expectedFingerprint;
-
-        if (!isValid) {
-          AppLogger.debug('GÜVENLİK UYARISI: Sertifika parmak izi eşleşmedi!');
-          AppLogger.debug('Beklenen: $expectedFingerprint');
-          AppLogger.debug('Gelen: $digest');
-        } else {
-          AppLogger.debug('GÜVENLİK: SSL Pinning başarılı, sertifika doğrulandı.');
-        }
-
-        return isValid;
-      };
-      return client;
-    };
+    // Sertifika doğrulaması platformun varsayılan CA zinciriyle yapılır.
 
     // Interceptor ekle (token için)
     dio.interceptors.add(
@@ -96,15 +99,31 @@ class ApiService {
         },
         onError: (error, handler) async {
           if (error.response?.statusCode == 401) {
-            AppLogger.debug('401 hatası - Token geçersiz, yenileniyor...');
-
-            // Sonsuz döngüyü engelle - sadece bir kez yenile
+            // Refresh uç noktasının kendisi 401 verdiyse döngüye girme;
+            // temizlik ve oturum-düştü yayını özgün isteğin akışında yapılır.
             if (error.requestOptions.path.contains('/auth/refresh-token')) {
-              AppLogger.debug('Refresh token endpoint\'i, döngüyü durdur');
-              _clearStoredToken();
+              AppLogger.debug('Refresh token geçersiz');
               handler.next(error);
               return;
             }
+
+            // Misafir (token yok): yenilenecek/temizlenecek bir oturum yok.
+            final storedToken = await _getStoredToken();
+            if (storedToken == null || storedToken.isEmpty) {
+              handler.next(error);
+              return;
+            }
+
+            // Yenilenmiş token ile tekrar denenen istek yine 401 verdiyse
+            // ikinci kez yenileme yapma (sonsuz döngü koruması).
+            if (error.requestOptions.extra['tokenRetried'] == true) {
+              await _clearStoredToken();
+              _sessionExpiredController.add(null);
+              handler.next(error);
+              return;
+            }
+
+            AppLogger.debug('401 hatası - Token geçersiz, yenileniyor...');
 
             // Token yenilemeyi dene
             final newToken = await _refreshAccessToken(dio);
@@ -112,6 +131,7 @@ class ApiService {
               // Yeni token ile isteği tekrar dene
               final originalRequest = error.requestOptions;
               originalRequest.headers['Authorization'] = 'Bearer $newToken';
+              originalRequest.extra['tokenRetried'] = true;
 
               try {
                 final response = await dio.fetch(originalRequest);
@@ -119,11 +139,14 @@ class ApiService {
                 return;
               } catch (e) {
                 AppLogger.debug('Token yenilendikten sonra istek başarısız: $e');
+                handler.next(error);
+                return;
               }
             }
 
-            // Token yenilenemedi, temizle
-            _clearStoredToken();
+            // Token yenilenemedi: oturumu kapat ve dinleyenlere haber ver
+            await _clearStoredToken();
+            _sessionExpiredController.add(null);
           }
           handler.next(error);
         },
@@ -170,9 +193,11 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final newToken = response.data['accessToken'];
-        if (newToken != null) {
+        if (newToken is String && newToken.isNotEmpty) {
           await TokenManager.saveAccessToken(newToken);
           AppLogger.debug('Token başarıyla yenilendi');
+          // Canlı sohbet soketi eski token ile kurulduysa yenisiyle bağlan
+          SocketService.instance.reconnectWithToken(newToken);
           return newToken;
         }
       }
@@ -191,95 +216,117 @@ class ApiService {
 
       AppLogger.debug('Login Response Status: ${response.statusCode}');
 
-      // HTTP hata kodları kontrolü
-      if (response.statusCode == 400) {
-        throw Exception('E-posta veya şifre hatalı');
-      } else if (response.statusCode == 401) {
-        throw Exception('E-posta veya şifre hatalı');
-      } else if (response.statusCode == 404) {
-        throw Exception('Kullanıcı bulunamadı');
-      } else if (response.statusCode == 500) {
-        throw Exception('Sunucu hatası. Lütfen daha sonra tekrar deneyin');
-      } else if (response.statusCode != 200) {
-        throw Exception('Giriş yapılamadı. Lütfen bilgilerinizi kontrol edin');
-      }
-
       // Response null ise hata fırlat
-      if (response.data == null) {
-        throw Exception('API\'den yanıt alınamadı');
+      if (response.data is! Map) {
+        throw const ApiException('API\'den yanıt alınamadı');
       }
 
-      final authResponse = AuthResponse.fromJson(response.data);
+      final authResponse =
+          AuthResponse.fromJson(Map<String, dynamic>.from(response.data as Map));
 
       // Token kontrolü
       if (authResponse.accessToken.isEmpty) {
-        throw Exception('Geçersiz token alındı');
+        throw const ApiException('Geçersiz token alındı');
       }
 
       await TokenManager.saveAccessToken(authResponse.accessToken);
       await TokenManager.saveRefreshToken(authResponse.refreshToken);
 
       return authResponse;
-    } catch (e) {
+    } on DioException catch (e) {
       AppLogger.debug('Login Error: $e');
-
-      // Timeout ve bağlantı hataları kontrolü
-      if (e.toString().contains('receive timeout') ||
-          e.toString().contains('connect timeout') ||
-          e.toString().contains('SocketException') ||
-          e.toString().contains('Connection refused') ||
-          e.toString().contains('Failed host lookup')) {
-        AppLogger.debug('API çalışmıyor, gerçek hata fırlatılıyor...');
-        throw Exception(
+      final status = e.response?.statusCode;
+      if (status == 400 || status == 401) {
+        throw const ApiException('E-posta veya şifre hatalı', statusCode: 400);
+      }
+      if (status == 429) {
+        throw ApiException(
+          _serverMessage(e) ??
+              'Çok fazla deneme yaptınız. Lütfen biraz sonra tekrar deneyin.',
+          statusCode: 429,
+        );
+      }
+      if (status == 404) {
+        throw const ApiException('Kullanıcı bulunamadı', statusCode: 404);
+      }
+      if (e.response == null) {
+        throw const ApiException(
           'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.',
         );
       }
-
-      throw Exception('Giriş yapılırken hata oluştu. Lütfen tekrar deneyin.');
+      throw ApiException(
+        'Giriş yapılırken hata oluştu. Lütfen tekrar deneyin.',
+        statusCode: status,
+      );
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      AppLogger.debug('Login Error: $e');
+      throw const ApiException(
+        'Giriş yapılırken hata oluştu. Lütfen tekrar deneyin.',
+      );
     }
   }
 
-  Future<AuthResponse> register(RegisterRequest request) async {
-    try {
-      // Telefon numarası kontrolü
-      if (request.phone.isEmpty) {
-        throw Exception('Telefon numarası zorunludur');
-      }
+  /// Sunucu yanıtındaki `message` alanı (varsa).
+  static String? _serverMessage(DioException e) {
+    final data = e.response?.data;
+    if (data is Map && data['message'] is String) {
+      final message = (data['message'] as String).trim();
+      if (message.isNotEmpty) return message;
+    }
+    return null;
+  }
 
+  Future<AuthResponse> register(RegisterRequest request) async {
+    // Telefon numarası kontrolü
+    if (request.phone.isEmpty) {
+      throw const ApiException('Telefon numarası zorunludur');
+    }
+
+    try {
       final response = await _dio.post('/auth/signup', data: request.toJson());
 
       AppLogger.debug('Register Response Status: ${response.statusCode}');
 
-      // HTTP hata kodları kontrolü
-      if (response.statusCode == 400) {
-        throw Exception('Bu e-posta adresi zaten kullanılıyor');
-      } else if (response.statusCode == 401) {
-        throw Exception('Kayıt bilgileri hatalı');
-      } else if (response.statusCode == 500) {
-        throw Exception('Sunucu hatası. Lütfen daha sonra tekrar deneyin');
-      } else if (response.statusCode != 200 && response.statusCode != 201) {
-        throw Exception('Kayıt olunamadı. Lütfen bilgilerinizi kontrol edin');
+      if (response.data is! Map) {
+        throw const ApiException('API\'den yanıt alınamadı');
       }
 
-      if (response.data == null) {
-        throw Exception('API\'den yanıt alınamadı');
-      }
-
-      return AuthResponse.fromJson(response.data);
-    } catch (e) {
+      return AuthResponse.fromJson(
+          Map<String, dynamic>.from(response.data as Map));
+    } on DioException catch (e) {
       AppLogger.debug('Register Error: $e');
-
-      // Bağlantı hataları kontrolü
-      if (e.toString().contains('SocketException') ||
-          e.toString().contains('Connection refused') ||
-          e.toString().contains('Failed host lookup')) {
-        AppLogger.debug('API çalışmıyor, gerçek hata fırlatılıyor...');
-        throw Exception(
+      final status = e.response?.statusCode;
+      final message = _serverMessage(e);
+      if (status == 400) {
+        throw ApiException(
+          message ?? 'Bu e-posta adresi zaten kullanılıyor',
+          statusCode: 400,
+        );
+      }
+      if (status == 429) {
+        throw ApiException(
+          message ?? 'Çok fazla deneme yaptınız. Lütfen biraz sonra tekrar deneyin.',
+          statusCode: 429,
+        );
+      }
+      if (e.response == null) {
+        throw const ApiException(
           'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.',
         );
       }
-
-      throw Exception('Kayıt olurken hata oluştu. Lütfen tekrar deneyin.');
+      throw ApiException(
+        message ?? 'Kayıt olurken hata oluştu. Lütfen tekrar deneyin.',
+        statusCode: status,
+      );
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      AppLogger.debug('Register Error: $e');
+      throw const ApiException(
+        'Kayıt olurken hata oluştu. Lütfen tekrar deneyin.',
+      );
     }
   }
 
@@ -307,9 +354,15 @@ class ApiService {
       final user = User.fromJson(userData);
       AppLogger.debug('getProfile: Kullanıcı yüklendi');
       return user;
+    } on DioException catch (e) {
+      AppLogger.debug('getProfile: Hata: $e');
+      throw ApiException(
+        _serverMessage(e) ?? 'Profil bilgileri alınırken hata oluştu.',
+        statusCode: e.response?.statusCode,
+      );
     } catch (e) {
       AppLogger.debug('getProfile: Hata: $e');
-      throw Exception('Profil bilgileri alınırken hata oluştu: $e');
+      throw ApiException('Profil bilgileri alınırken hata oluştu: $e');
     }
   }
 
@@ -347,6 +400,118 @@ class ApiService {
 
   // Token yenileme metodu (web projesindeki refresh token sistemi)
   Future<String?> refreshToken() => _refreshAccessToken(_dio);
+
+  // ========================
+  // PROFİL: TELEFON VE FOTOĞRAF
+  // ========================
+
+  /// Telefon numarasını günceller (biçim 05XXXXXXXXX). Sunucudaki kayıtlı
+  /// numarayı döndürür; hata mesajı [ApiException] ile gelir.
+  Future<String> updatePhone(String phone) async {
+    try {
+      final response =
+          await _dio.put('/auth/update-phone', data: {'phone': phone});
+      final data = response.data;
+      if (data is Map && data['phone'] is String) {
+        return data['phone'] as String;
+      }
+      return phone;
+    } on DioException catch (e) {
+      throw ApiException(
+        _serverMessage(e) ?? 'Telefon numarası güncellenemedi.',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  /// Profil fotoğrafını yükler (JPEG/PNG/WebP baytları, en fazla 5 MB).
+  /// Yeni fotoğraf URL'sini döndürür.
+  Future<String> uploadProfilePhoto(Uint8List bytes, {String? mimeType}) async {
+    try {
+      final type = mimeType ?? _imageMimeType(bytes);
+      final image = 'data:$type;base64,${base64Encode(bytes)}';
+      final response = await _dio.put(
+        '/auth/profile-photo',
+        data: {'image': image},
+        // Görsel sunucusuna (Cloudinary) yükleme birkaç saniye sürebilir.
+        options: Options(receiveTimeout: const Duration(seconds: 45)),
+      );
+      final data = response.data;
+      if (data is Map && data['avatar'] is String) {
+        return data['avatar'] as String;
+      }
+      throw const ApiException('Fotoğraf yüklendi ama adres alınamadı.');
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      AppLogger.debug('Profil fotoğrafı yüklenemedi: status=$status type=${e.type}');
+      throw ApiException(
+        _serverMessage(e) ?? _photoUploadError(e),
+        statusCode: status,
+      );
+    }
+  }
+
+  /// Sunucu açıklama göndermediğinde kullanıcıya anlaşılır neden söylenir.
+  static String _photoUploadError(DioException e) {
+    switch (e.response?.statusCode) {
+      case 401:
+        return 'Oturumun sona ermiş. Çıkış yapıp tekrar giriş yap.';
+      case 404:
+        return 'Fotoğraf yükleme şu an kullanılamıyor. Lütfen daha sonra tekrar dene.';
+      case 413:
+        return 'Fotoğraf çok büyük. Daha küçük bir fotoğraf seç.';
+      case 502:
+      case 503:
+      case 504:
+        return 'Görsel sunucusuna ulaşılamadı. Lütfen biraz sonra tekrar dene.';
+    }
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return 'Yükleme zaman aşımına uğradı. Bağlantını kontrol edip tekrar dene.';
+      case DioExceptionType.connectionError:
+        return 'İnternet bağlantısı yok gibi görünüyor.';
+      default:
+        return 'Fotoğraf yüklenemedi. Lütfen tekrar deneyin.';
+    }
+  }
+
+  /// Baytlardan görsel türünü bulur; seçici bazen PNG/WebP döndürür.
+  static String _imageMimeType(Uint8List bytes) {
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 && // R
+        bytes[1] == 0x49 && // I
+        bytes[2] == 0x46 && // F
+        bytes[3] == 0x46 && // F
+        bytes[8] == 0x57 && // W
+        bytes[9] == 0x45 && // E
+        bytes[10] == 0x42 && // B
+        bytes[11] == 0x50) {
+      // P
+      return 'image/webp';
+    }
+    return 'image/jpeg';
+  }
+
+  /// Profil fotoğrafını kaldırır.
+  Future<void> removeProfilePhoto() async {
+    try {
+      await _dio.delete('/auth/profile-photo');
+    } on DioException catch (e) {
+      throw ApiException(
+        _serverMessage(e) ?? 'Fotoğraf kaldırılamadı. Lütfen tekrar deneyin.',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
 
   // Kategori işlemleri
   Future<List<models.Category>> getCategories() async {
@@ -484,7 +649,16 @@ class ApiService {
   }
 
   // Ürün işlemleri
-  Future<List<Product>> getProducts({String? category}) async {
+  /// [limit] verilirse sunucunun sırasıyla (`order`) ilk [limit] ürün gelir;
+  /// [page] 1'den başlar. [cardFields] liste ekranları için açıklama gibi
+  /// kartta gösterilmeyen alanların gönderilmemesini ister (destekleyen
+  /// sunucuda yanıt küçülür; desteklemeyen sunucu parametreyi yok sayar).
+  Future<List<Product>> getProducts({
+    String? category,
+    int? limit,
+    int? page,
+    bool cardFields = false,
+  }) async {
     try {
       AppLogger.debug('Getting products for category: $category');
 
@@ -492,6 +666,9 @@ class ApiService {
       if (category != null && category.isNotEmpty) {
         queryParams['category'] = category;
       }
+      if (limit != null) queryParams['limit'] = limit;
+      if (page != null) queryParams['page'] = page;
+      if (cardFields) queryParams['fields'] = 'card';
 
       final response = await _dio.get(
         '/products',
@@ -546,9 +723,39 @@ class ApiService {
     }
   }
 
-  Future<List<Product>> getPersonalizedProducts() async {
+  /// Ana sayfa rafları tek istekte. Sunucu bu uç noktayı henüz
+  /// desteklemiyorsa (404) ya da istek başarısızsa null döner; çağıran eski
+  /// uç noktalarla devam eder.
+  Future<HomeFeed?> getHomeFeed({String? deliveryPoint, int limit = 24}) async {
     try {
-      final response = await _dio.get('/products/personalized');
+      final response = await _dio.get(
+        '/products/home-feed',
+        queryParameters: {
+          'limit': limit,
+          if (deliveryPoint != null && deliveryPoint.isNotEmpty)
+            'deliveryPoint': deliveryPoint,
+          'fields': 'card',
+        },
+      );
+      final data = response.data;
+      if (data is! Map) return null;
+      final feed = HomeFeed.fromJson(Map<String, dynamic>.from(data));
+      return feed.isEmpty ? null : feed;
+    } catch (e) {
+      AppLogger.debug('Home feed unavailable: $e');
+      return null;
+    }
+  }
+
+  Future<List<Product>> getPersonalizedProducts({String? deliveryPoint}) async {
+    try {
+      final response = await _dio.get(
+        '/products/personalized',
+        queryParameters: {
+          if (deliveryPoint != null && deliveryPoint.isNotEmpty)
+            'deliveryPoint': deliveryPoint,
+        },
+      );
       final data = response.data;
       if (data is Map && data['products'] is List) {
         return (data['products'] as List)
@@ -604,36 +811,22 @@ class ApiService {
     }
   }
 
-  // Kullanıcının geri bildirimlerini getir
-  Future<List<Map<String, dynamic>>> getUserFeedbacks() async {
-    try {
-      AppLogger.debug('Getting user feedbacks...');
-
-      final response = await _dio.get('/feedback/user');
-
-      AppLogger.debug('User Feedbacks Response Status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        if (response.data is List) {
-          return List<Map<String, dynamic>>.from(response.data);
-        } else if (response.data is Map && response.data['feedbacks'] != null) {
-          return List<Map<String, dynamic>>.from(response.data['feedbacks']);
-        }
-      }
-
-      return [];
-    } catch (e) {
-      AppLogger.debug('Get User Feedbacks Error: $e');
-      return [];
-    }
-  }
-
+  /// Ürün detayı. Ürün kaldırılmışsa [ApiException] `statusCode: 404` ile
+  /// gelir; ağ hatasında statusCode null'dır.
   Future<Product> getProductById(String id) async {
     try {
       final response = await _dio.get('/products/$id');
       return Product.fromJson(response.data);
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      throw ApiException(
+        status == 404
+            ? 'Ürün bulunamadı.'
+            : 'Ürün detayları alınırken hata oluştu. Lütfen tekrar deneyin.',
+        statusCode: status,
+      );
     } catch (e) {
-      throw Exception(
+      throw const ApiException(
         'Ürün detayları alınırken hata oluştu. Lütfen tekrar deneyin.',
       );
     }
@@ -703,13 +896,18 @@ class ApiService {
   }
 
   // Sipariş iptal et
-  Future<bool> cancelOrder(String orderId) async {
+  /// [reason]: iptal nedeni kimliği (gec, fikir, yanlis_siparis, fiyat, baska_yer, diger)
+  Future<bool> cancelOrder(String orderId, {String? reason, String? note}) async {
     try {
       AppLogger.debug('Cancelling order: $orderId');
 
       final response = await _dio.put(
         '/orders-analytics/cancel-order',
-        data: {'orderId': orderId},
+        data: {
+          'orderId': orderId,
+          if (reason != null) 'reason': reason,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        },
       );
 
       AppLogger.debug('Cancel Order Response Status: ${response.statusCode}');
@@ -726,13 +924,16 @@ class ApiService {
     try {
       // Telefon numarası kontrolü
       if (request.phone.isEmpty) {
-        throw Exception('Telefon numarası zorunludur');
+        throw const ApiException('Telefon numarası zorunludur');
       }
 
       // Token kontrolü
       final token = await _getStoredToken();
       if (token == null) {
-        throw Exception('Token bulunamadı, lütfen tekrar giriş yapın');
+        throw const ApiException(
+          'Oturum bulunamadı, lütfen tekrar giriş yapın',
+          statusCode: 401,
+        );
       }
 
       // Web projenizdeki doğru endpoint: /cart/place-order
@@ -762,17 +963,40 @@ class ApiService {
         AppLogger.debug('Parsed Order ID (direct): ${order.id}');
         return order;
       } else {
-        throw Exception('Sipariş oluşturulamadı: ${response.statusCode}');
+        throw ApiException(
+          'Sipariş oluşturulamadı: ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
       }
+    } on DioException catch (e) {
+      AppLogger.debug('Create Order Error: $e');
+      final status = e.response?.statusCode;
+      if (status == 401) {
+        throw const ApiException(
+          'Oturum süresi doldu, lütfen tekrar giriş yapın',
+          statusCode: 401,
+        );
+      }
+      // Sunucu 4xx ile anlaşılır mesaj döner (sipariş saatleri, minimum
+      // tutar, kupon 409 vb.); aynen göster.
+      final message = _serverMessage(e);
+      if (message != null) {
+        throw ApiException(message, statusCode: status);
+      }
+      if (e.response == null) {
+        throw const ApiException(
+          'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.',
+        );
+      }
+      throw ApiException(
+        'Sipariş oluşturulurken hata oluştu. Lütfen tekrar deneyin.',
+        statusCode: status,
+      );
+    } on ApiException {
+      rethrow;
     } catch (e) {
       AppLogger.debug('Create Order Error: $e');
-
-      // 401 hatası durumunda özel mesaj
-      if (e.toString().contains('401')) {
-        throw Exception('Oturum süresi doldu, lütfen tekrar giriş yapın');
-      }
-
-      throw Exception(
+      throw const ApiException(
         'Sipariş oluşturulurken hata oluştu. Lütfen tekrar deneyin.',
       );
     }
@@ -795,27 +1019,6 @@ class ApiService {
     } catch (e) {
       AppLogger.debug('hasUserGivenFeedback error: $e');
       return false;
-    }
-  }
-
-  Future<Order> getOrderById(String orderId) async {
-    try {
-      AppLogger.debug('Getting order: $orderId');
-
-      final response = await _dio.get('/orders/$orderId');
-
-      AppLogger.debug('Order Detail Response Status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        return Order.fromJson(response.data);
-      } else {
-        throw Exception('Sipariş bulunamadı: ${response.statusCode}');
-      }
-    } catch (e) {
-      AppLogger.debug('Get Order Error: $e');
-      throw Exception(
-        'Sipariş detayı alınırken hata oluştu. Lütfen tekrar deneyin.',
-      );
     }
   }
 
@@ -905,116 +1108,28 @@ class ApiService {
 
   // Eski arama metodu kaldırıldı - yeni gelişmiş arama kullanılıyor
 
-  // Flash Sale API'leri
-  Future<List<FlashSale>> getFlashSales() async {
+  /// Şu an süren flash sale'ler (herkese açık; web sitesiyle aynı uç nokta).
+  /// İstek başarısızsa null döner; çağıran son bilinen listeyi korur.
+  Future<List<FlashSale>?> getActiveFlashSales() async {
     try {
-      AppLogger.debug('Getting flash sales from API...');
-
-      final response = await _dio.get('/flash-sales');
-
-      AppLogger.debug('Flash Sales Response Status: ${response.statusCode}');
-      if (response.statusCode == 200) {
-        if (response.data is List) {
-          return response.data.map((json) => FlashSale.fromJson(json)).toList();
-        } else if (response.data is Map &&
-            response.data['flashSales'] != null) {
-          return (response.data['flashSales'] as List)
-              .map((json) => FlashSale.fromJson(json))
-              .toList();
+      final response = await _dio.get('/flash-sales/active');
+      final data = response.data;
+      final list = data is Map ? data['flashSales'] : data;
+      if (list is! List) return null;
+      final sales = <FlashSale>[];
+      for (final json in list) {
+        if (json is! Map) continue;
+        try {
+          final sale = FlashSale.fromJson(Map<String, dynamic>.from(json));
+          if (sale.productId.isNotEmpty) sales.add(sale);
+        } catch (e) {
+          AppLogger.debug('Flash sale okunamadı: $e');
         }
       }
-
-      return [];
+      return sales;
     } catch (e) {
-      AppLogger.debug('Flash Sales API Error: $e');
-      return [];
-    }
-  }
-
-  Future<FlashSale> createFlashSale({
-    required String productId,
-    required String name,
-    required double discountPercentage,
-    required DateTime startDate,
-    required DateTime endDate,
-  }) async {
-    try {
-      AppLogger.debug(
-        'Creating flash sale: productId=$productId, discount=$discountPercentage%',
-      );
-
-      final response = await _dio.post(
-        '/flash-sales',
-        data: {
-          'product': productId,
-          'name': name,
-          'discountPercentage': discountPercentage,
-          'startDate': startDate.toIso8601String(),
-          'endDate': endDate.toIso8601String(),
-          'isActive': true,
-        },
-      );
-
-      AppLogger.debug('Create Flash Sale Response Status: ${response.statusCode}');
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        return FlashSale.fromJson(response.data);
-      }
-
-      throw Exception('Flash sale oluşturulamadı');
-    } catch (e) {
-      AppLogger.debug('Create Flash Sale Error: $e');
-      rethrow;
-    }
-  }
-
-  Future<FlashSale> updateFlashSale({
-    required String id,
-    required String name,
-    required double discountPercentage,
-    required DateTime startDate,
-    required DateTime endDate,
-    required bool isActive,
-  }) async {
-    try {
-      AppLogger.debug('Updating flash sale: id=$id');
-
-      final response = await _dio.put(
-        '/flash-sales/$id',
-        data: {
-          'name': name,
-          'discountPercentage': discountPercentage,
-          'startDate': startDate.toIso8601String(),
-          'endDate': endDate.toIso8601String(),
-          'isActive': isActive,
-        },
-      );
-
-      AppLogger.debug('Update Flash Sale Response Status: ${response.statusCode}');
-      if (response.statusCode == 200) {
-        return FlashSale.fromJson(response.data);
-      }
-
-      throw Exception('Flash sale güncellenemedi');
-    } catch (e) {
-      AppLogger.debug('Update Flash Sale Error: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> deleteFlashSale(String id) async {
-    try {
-      AppLogger.debug('Deleting flash sale: id=$id');
-
-      final response = await _dio.delete('/flash-sales/$id');
-
-      AppLogger.debug('Delete Flash Sale Response Status: ${response.statusCode}');
-
-      if (response.statusCode != 200 && response.statusCode != 204) {
-        throw Exception('Flash sale silinemedi');
-      }
-    } catch (e) {
-      AppLogger.debug('Delete Flash Sale Error: $e');
-      rethrow;
+      AppLogger.debug('Active Flash Sales API Error: $e');
+      return null;
     }
   }
 
@@ -1058,22 +1173,6 @@ class ApiService {
     } catch (e) {
       AppLogger.debug('Arama API Error: $e');
       rethrow;
-    }
-  }
-
-  // Arama önerileri
-  Future<List<String>> getSearchSuggestions() async {
-    try {
-      final response = await _dio.get('/products/search/suggestions');
-
-      if (response.statusCode == 200) {
-        return List<String>.from(response.data['categories'] ?? []);
-      }
-
-      return [];
-    } catch (e) {
-      AppLogger.debug('Arama önerileri hatası: $e');
-      return [];
     }
   }
 
@@ -1253,6 +1352,17 @@ class ApiService {
     }
   }
 
+  /// Telefondaki sepetin son hâlini sunucuya bildirir (sepet hatırlatması ve
+  /// sepete özel bildirimler bunu kullanır). Başarısız olursa sessizce geçer.
+  Future<bool> syncCart(List<Map<String, dynamic>> items) async {
+    try {
+      final response = await _dio.put('/cart/sync', data: {'items': items});
+      return response.data is Map && response.data['success'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Favori sepetler. {success, carts, message} döner; hata fırlatmaz.
   Future<Map<String, dynamic>> getSavedCarts() async {
     try {
@@ -1351,31 +1461,86 @@ class ApiService {
     }
   }
 
-  /// Sipariş sonrası anketi gönderir. Başarılıysa null, değilse hata mesajı döner.
-  Future<String?> submitOrderFeedback({
+  /// Sipariş sonrası anketi gönderir. Sonuç: hata mesajı ya da destek görüşmesi kimliği.
+  Future<FeedbackSubmitResult> submitOrderFeedback({
     required int rating,
     required int milestone,
     required List<String> tags,
     required String comment,
+    int? deliveryRating,
+    List<Map<String, String>> problemItems = const [],
     String? orderId,
-  }) async {
+  }) {
+    return _postFeedback('/feedback/order', {
+      'rating': rating,
+      'milestone': milestone,
+      'tags': tags,
+      'comment': comment,
+      if (deliveryRating != null) 'deliveryRating': deliveryRating,
+      if (problemItems.isNotEmpty) 'problemItems': problemItems,
+      if (orderId != null) 'orderId': orderId,
+    });
+  }
+
+  /// Sipariş sonrası tek dokunuşluk 👍/👎 (thumb: 'up' | 'down')
+  Future<FeedbackSubmitResult> submitQuickFeedback({
+    required String orderId,
+    required String thumb,
+    List<String> tags = const [],
+    String comment = '',
+    List<Map<String, String>> problemItems = const [],
+  }) {
+    return _postFeedback('/feedback/quick', {
+      'orderId': orderId,
+      'thumb': thumb,
+      if (tags.isNotEmpty) 'tags': tags,
+      if (comment.trim().isNotEmpty) 'comment': comment.trim(),
+      if (problemItems.isNotEmpty) 'problemItems': problemItems,
+    });
+  }
+
+  /// "Bizi bir arkadaşına önerir misin?" (0-10)
+  Future<FeedbackSubmitResult> submitNps({required int score, String comment = ''}) {
+    return _postFeedback('/feedback/nps', {
+      'score': score,
+      if (comment.trim().isNotEmpty) 'comment': comment.trim(),
+    });
+  }
+
+  /// Sepetini boşaltan müşteri: "Neden vazgeçtin?"
+  Future<FeedbackSubmitResult> submitAbandonReason({required String reason, String note = ''}) {
+    return _postFeedback('/feedback/abandon', {
+      'reason': reason,
+      if (note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  Future<FeedbackSubmitResult> _postFeedback(String path, Map<String, dynamic> body) async {
     try {
-      await _dio.post('/feedback/order', data: {
-        'rating': rating,
-        'milestone': milestone,
-        'tags': tags,
-        'comment': comment,
-        if (orderId != null) 'orderId': orderId,
-      });
-      return null;
+      final response = await _dio.post(path, data: body);
+      final data = response.data;
+      final chatId = data is Map ? data['supportChatId'] : null;
+      return FeedbackSubmitResult(supportChatId: chatId is String && chatId.isNotEmpty ? chatId : null);
     } on DioException catch (error) {
       final data = error.response?.data;
       if (data is Map && data['message'] is String) {
-        return data['message'] as String;
+        return FeedbackSubmitResult(error: data['message'] as String);
       }
-      return 'Geri bildirim gönderilemedi. Lütfen tekrar dene.';
+      return const FeedbackSubmitResult(error: 'Geri bildirim gönderilemedi. Lütfen tekrar dene.');
     } catch (_) {
-      return 'Geri bildirim gönderilemedi. Lütfen tekrar dene.';
+      return const FeedbackSubmitResult(error: 'Geri bildirim gönderilemedi. Lütfen tekrar dene.');
+    }
+  }
+
+  /// Kullanıcının kendi geri bildirimleri (yönetici yanıtlarıyla birlikte)
+  Future<List<Map<String, dynamic>>> getMyFeedbacks() async {
+    try {
+      final response = await _dio.get('/feedback/user');
+      final data = response.data;
+      if (data is! List) return [];
+      return data.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+    } catch (_) {
+      return [];
     }
   }
 

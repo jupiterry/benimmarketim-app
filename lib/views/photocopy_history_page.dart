@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/photocopy.dart';
+import '../services/api_service.dart';
 import '../services/app_logger.dart';
 import '../services/photocopy_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
@@ -81,19 +82,27 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
     } catch (e) {
       AppLogger.debug('Fotokopi iptal hatası: $e');
       if (!mounted) return;
-      showMarketSnack(context, 'İstek iptal edilemedi. Lütfen tekrar dene.', error: true);
+      showMarketSnack(
+        context,
+        e is ApiException ? e.message : 'İstek iptal edilemedi. Lütfen tekrar dene.',
+        error: true,
+      );
     }
   }
 
   Future<void> _downloadPhotocopy(Photocopy photocopy) async {
     try {
-      final filePath = await PhotocopyService.downloadPhotocopy(photocopy.id);
+      final filePath = await PhotocopyService.downloadPhotocopy(photocopy);
       if (!mounted) return;
       showMarketSnack(context, 'Dosya indirildi: $filePath');
     } catch (e) {
       AppLogger.debug('Fotokopi indirme hatası: $e');
       if (!mounted) return;
-      showMarketSnack(context, 'Dosya indirilemedi. Lütfen tekrar dene.', error: true);
+      showMarketSnack(
+        context,
+        e is ApiException ? e.message : 'Dosya indirilemedi. Lütfen tekrar dene.',
+        error: true,
+      );
     }
   }
 
@@ -206,7 +215,7 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
           Row(
             children: [
               MarketIconTile(
-                icon: _getFileIcon(photocopy.fileType),
+                icon: _getFileIcon(photocopy.fileKind),
                 size: 44,
                 background: MarketPalette.blueSoft,
                 foreground: MarketPalette.blue,
@@ -260,7 +269,9 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
               if (photocopy.price != null)
                 MarketPill(
                   icon: Icons.sell_outlined,
-                  label: formatTl(photocopy.price!),
+                  label: photocopy.isPaid
+                      ? '${formatTl(photocopy.price!)} • Ödendi'
+                      : formatTl(photocopy.price!),
                 ),
             ],
           ),
@@ -269,6 +280,13 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
             MarketNotice.warning(
               icon: Icons.sticky_note_2_outlined,
               text: photocopy.notes,
+            ),
+          ],
+          if (photocopy.adminNotes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            MarketNotice(
+              icon: Icons.storefront_outlined,
+              text: 'Market notu: ${photocopy.adminNotes}',
             ),
           ],
           _buildActionButtons(photocopy),
@@ -281,6 +299,7 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
     final (Color fg, Color bg, String text) = switch (status) {
       'pending' => (MarketPalette.orangeInk, MarketPalette.orangeSoft, 'Beklemede'),
       'processing' => (MarketPalette.blue, MarketPalette.blueSoft, 'Hazırlanıyor'),
+      'ready' => (MarketPalette.greenDark, MarketPalette.greenSoft, 'Hazır'),
       'completed' => (MarketPalette.greenDark, MarketPalette.greenSoft, 'Tamamlandı'),
       'failed' => (MarketPalette.red, MarketPalette.redSoft, 'Başarısız'),
       _ => (MarketPalette.muted, MarketPalette.surfaceMuted, 'Bilinmiyor'),
@@ -305,7 +324,7 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
       );
     }
 
-    if (photocopy.status == 'completed') {
+    if (photocopy.status == 'ready' || photocopy.status == 'completed') {
       return Padding(
         padding: const EdgeInsets.only(top: 14),
         child: FilledButton.icon(
@@ -320,18 +339,13 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
     return const SizedBox.shrink();
   }
 
-  IconData _getFileIcon(String fileType) {
-    switch (fileType.toLowerCase()) {
+  IconData _getFileIcon(String fileKind) {
+    switch (fileKind) {
       case 'pdf':
         return Icons.picture_as_pdf_rounded;
       case 'doc':
-      case 'docx':
         return Icons.description_rounded;
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'tiff':
-      case 'bmp':
+      case 'image':
         return Icons.image_rounded;
       default:
         return Icons.insert_drive_file_rounded;

@@ -1,8 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/token_manager.dart';
-import '../services/network_service.dart';
 import '../services/app_logger.dart';
 import '../services/notification_service.dart';
 
@@ -10,11 +11,34 @@ import '../services/notification_service.dart';
 class AuthViewModel extends ChangeNotifier {
   final ApiService _apiService = ApiService();
 
+  // Token yenilenemeyince ApiService oturumu düşürür; burada ekran durumu
+  // da buna uydurulur (kullanıcı tekrar giriş yapana kadar misafir).
+  late final StreamSubscription<void> _sessionExpiredSubscription;
 
   User? _user;
   bool _isLoading = false;
   String? _error;
   bool _isLoggedIn = false;
+
+  AuthViewModel() {
+    _sessionExpiredSubscription =
+        ApiService.onSessionExpired.listen((_) => _onSessionExpired());
+  }
+
+  @override
+  void dispose() {
+    _sessionExpiredSubscription.cancel();
+    super.dispose();
+  }
+
+  Future<void> _onSessionExpired() async {
+    if (!_isLoggedIn && _user == null) return;
+    AppLogger.debug('Oturum süresi doldu, yerel oturum kapatılıyor');
+    _user = null;
+    _isLoggedIn = false;
+    await NotificationService.instance.clearUser();
+    notifyListeners();
+  }
 
   // Getters
   User? get user => _user;
@@ -28,18 +52,6 @@ class AuthViewModel extends ChangeNotifier {
     _error = null;
 
     try {
-      // Çoklu internet kontrolü
-      AppLogger.debug('İnternet bağlantısı kontrol ediliyor...');
-      final hasInternet = await NetworkService.hasInternetConnection();
-      if (!hasInternet) {
-        _error =
-            'İnternet bağlantısı bulunamadı. Lütfen bağlantınızı kontrol edin.';
-        notifyListeners();
-        return false;
-      }
-
-      AppLogger.debug('İnternet bağlantısı başarılı, API denemesi yapılıyor...');
-
       final request = LoginRequest(
         email: email,
         password: password,
@@ -57,7 +69,7 @@ class AuthViewModel extends ChangeNotifier {
       );
       await TokenManager.saveRefreshToken(response.refreshToken);
 
-      AppLogger.debug('Giriş başarılı - 10 günlük otomatik giriş aktif');
+      AppLogger.debug('Giriş başarılı');
       NotificationService.instance.identifyUser(response.user.id);
 
 
@@ -106,7 +118,7 @@ class AuthViewModel extends ChangeNotifier {
       );
       await TokenManager.saveRefreshToken(response.refreshToken);
 
-      AppLogger.debug('Telefon ile kayıt yapıldı - 10 günlük otomatik giriş aktif');
+      AppLogger.debug('Kayıt başarılı');
       NotificationService.instance.identifyUser(response.user.id);
 
 
@@ -114,7 +126,7 @@ class AuthViewModel extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
     } finally {
@@ -194,51 +206,103 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       AppLogger.debug('updateProfile: Profil bilgileri yükleniyor...');
-      _user = await _apiService.getProfile();
+      final user = await _apiService.getProfile();
+      _user = user;
       AppLogger.debug('updateProfile: Profil bilgileri yüklendi');
+      if (user.id.isNotEmpty) {
+        NotificationService.instance.identifyUser(user.id);
+      }
       notifyListeners();
     } catch (e) {
       AppLogger.debug('updateProfile: Hata: $e');
       _error = e.toString();
-      notifyListeners();
+      // Bilerek notifyListeners çağrılmaz: profil ekranı kullanıcı yokken
+      // her çizimde updateProfile'ı yeniden dener; bildirim yapılsaydı ağ
+      // hatasında sonsuz istek döngüsü oluşurdu.
+    }
+  }
+
+  /// Telefon numarasını günceller. Başarılıysa null, değilse hata mesajı döner.
+  Future<String?> updatePhone(String phone) async {
+    try {
+      final savedPhone = await _apiService.updatePhone(phone);
+      final current = _user;
+      if (current != null) {
+        _user = current.copyWith(phone: savedPhone);
+        notifyListeners();
+      }
+      return null;
+    } catch (e) {
+      return e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
+  /// Profil fotoğrafını yükler. Başarılıysa null, değilse hata mesajı döner.
+  Future<String?> uploadProfilePhoto(Uint8List bytes) async {
+    try {
+      final avatar = await _apiService.uploadProfilePhoto(bytes);
+      final current = _user;
+      if (current != null) {
+        _user = current.copyWith(avatar: avatar);
+        notifyListeners();
+      }
+      return null;
+    } catch (e) {
+      return e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
+  /// Profil fotoğrafını kaldırır. Başarılıysa null, değilse hata mesajı döner.
+  Future<String?> removeProfilePhoto() async {
+    try {
+      await _apiService.removeProfilePhoto();
+      final current = _user;
+      if (current != null) {
+        _user = current.copyWith(clearAvatar: true);
+        notifyListeners();
+      }
+      return null;
+    } catch (e) {
+      return e.toString().replaceAll('Exception: ', '');
     }
   }
 
   // Uygulama başlatıldığında token kontrolü
   Future<void> checkAuthStatus() async {
     final hasToken = await TokenManager.hasToken();
-    if (hasToken) {
-      try {
-        // Token geçerliyse (10 gün içindeyse) otomatik giriş yap
-        final isValid = await TokenManager.isTokenValid();
-        if (!isValid) {
-          // Token süresi dolmuş, temizle
-          AppLogger.debug('Token süresi dolmuş, temizleniyor...');
-          await TokenManager.clearAllTokens();
-          _isLoggedIn = false;
-          _user = null;
-          notifyListeners();
-          return;
-        }
+    if (!hasToken) {
+      AppLogger.debug('checkAuthStatus: Token bulunamadı');
+      _isLoggedIn = false;
+      _user = null;
+      return;
+    }
 
-        AppLogger.debug('checkAuthStatus: Profil bilgileri yükleniyor...');
-        _user = await _apiService.getProfile();
-        _isLoggedIn = true;
-        AppLogger.debug('checkAuthStatus: Otomatik giriş başarılı');
-        NotificationService.instance.identifyUser(_user!.id);
-        notifyListeners();
-      } catch (e) {
-        // Token geçersiz veya API hatası, logout yap
-        AppLogger.debug('checkAuthStatus: Token kontrolü hatası: $e');
+    try {
+      AppLogger.debug('checkAuthStatus: Profil bilgileri yükleniyor...');
+      final user = await _apiService.getProfile();
+      _user = user;
+      _isLoggedIn = true;
+      AppLogger.debug('checkAuthStatus: Otomatik giriş başarılı');
+      if (user.id.isNotEmpty) {
+        NotificationService.instance.identifyUser(user.id);
+      }
+      notifyListeners();
+    } catch (e) {
+      AppLogger.debug('checkAuthStatus: Token kontrolü hatası: $e');
+      final status = e is ApiException ? e.statusCode : null;
+      final stillHasToken = await TokenManager.hasToken();
+      if (status == 401 || status == 403 || !stillHasToken) {
+        // Sunucu oturumu reddetti (refresh de başarısız): çıkış yap
         await TokenManager.clearAllTokens();
         _isLoggedIn = false;
         _user = null;
-        notifyListeners();
+      } else {
+        // Ağ/sunucu hatası: token'lar korunur; profil ana sayfada tekrar
+        // denenir (HomePage, kullanıcı yoksa updateProfile çağırır).
+        _isLoggedIn = true;
+        _user = null;
       }
-    } else {
-      AppLogger.debug('checkAuthStatus: Token bulunamadı veya geçersiz');
-      _isLoggedIn = false;
-      _user = null;
+      notifyListeners();
     }
   }
 

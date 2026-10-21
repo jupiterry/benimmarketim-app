@@ -88,3 +88,56 @@ workflows:
         
         # App Store'a otomatik gönderme (isteğe bağlı)
         # submit_to_app_store: true
+
+  # Google Play için imzalı Android App Bundle
+  android-release:
+    name: Android Release (Play Store)
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      flutter: 3.47.2
+      groups:
+        # Codemagic'te oluşturulacak environment group. İçinde:
+        #   CM_KEYSTORE          (base64 kodlu .jks)
+        #   CM_KEYSTORE_PASSWORD
+        #   CM_KEY_ALIAS
+        #   CM_KEY_PASSWORD
+        - android_keystore_credentials
+      vars:
+        PACKAGE_NAME: "com.jupi.benimapp.benimmarketim_app"
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/android/local.properties"
+      - name: Set up key.properties
+        script: |
+          # Keystore ve key.properties yalnızca derleme makinesinde oluşturulur;
+          # build.gradle.kts dosya yoksa debug imzasına düşer (mağaza için uygun değil).
+          echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/keystore.jks
+          cat > "$CM_BUILD_DIR/android/key.properties" <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_BUILD_DIR/keystore.jks
+          EOF
+      - name: Get Flutter dependencies
+        script: |
+          flutter pub get
+      - name: Run tests
+        script: flutter test
+      - name: Flutter build appbundle (Signed)
+        script: |
+          flutter build appbundle --release
+    artifacts:
+      - build/**/outputs/**/*.aab
+      - build/**/outputs/**/mapping.txt
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - benimmarketimmm@gmail.com
+      # Play Console'a otomatik yükleme için Codemagic'te Google Play
+      # entegrasyonu (servis hesabı JSON'u) tanımlandıktan sonra açın:
+      # google_play:
+      #   credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+      #   track: internal

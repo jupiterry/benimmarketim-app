@@ -38,20 +38,37 @@ android {
         versionName = flutter.versionName
     }
 
+    // key.properties (storeFile, storePassword, keyAlias, keyPassword) varsa
+    // release imzası onunla yapılır; yoksa debug anahtarıyla imzalanır ve
+    // uyarı basılır (CI/yerel derleme kırılmaz, mağazaya yüklenemez).
+    val hasReleaseSigning = signingProperties.getProperty("storeFile") != null
+
     signingConfigs {
         create("release") {
-            // Release signing configuration
-            storeFile = signingProperties.getProperty("storeFile")?.let { file(it) }
-            storePassword = signingProperties.getProperty("storePassword")
-            keyAlias = signingProperties.getProperty("keyAlias")
-            keyPassword = signingProperties.getProperty("keyPassword")
+            if (hasReleaseSigning) {
+                storeFile = file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
         }
     }
 
     buildTypes {
         release {
-            // Release signing configuration
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                logger.warn("UYARI: android/key.properties bulunamadı; release derlemesi debug anahtarıyla imzalanıyor.")
+                signingConfig = signingConfigs.getByName("debug")
+            }
+            // Kod küçültme ve kaynak budama (R8). Kurallar: proguard-rules.pro
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

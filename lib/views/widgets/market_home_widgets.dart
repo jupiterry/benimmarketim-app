@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../../viewmodels/banner_viewmodel.dart';
 import '../../viewmodels/cart_viewmodel.dart';
 import '../../viewmodels/category_viewmodel.dart';
+import '../../viewmodels/flash_sale_viewmodel.dart';
 import '../../viewmodels/home_page_viewmodel.dart';
+import 'flash_sale_widgets.dart';
 import 'home_assistant_card.dart';
 import 'home_quick_carts.dart';
 import 'market_discovery_section.dart';
@@ -57,6 +59,8 @@ class ModernMarketHome extends StatelessWidget {
                   children: [
                     MarketHomeHeader(),
                     MarketPromoSection(),
+                    // Panelden girilen süren flash sale'ler (yoksa yer kaplamaz)
+                    FlashSaleShelf(),
                     MissionSection(),
                     MarketQuickActions(),
                     MarketQuickDiscovery(),
@@ -84,6 +88,7 @@ class ModernMarketHome extends StatelessWidget {
       context.read<HomePageViewModel>().refreshProducts(),
       context.read<CategoryViewModel>().loadCategories(),
       context.read<BannerViewModel>().loadBanners(),
+      context.read<FlashSaleViewModel>().refreshActive(),
     ]);
   }
 }

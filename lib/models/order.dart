@@ -1,3 +1,25 @@
+/// Sipariş ödeme yöntemi. Sunucu anahtarları: cash, card, bank_transfer.
+enum PaymentMethod {
+  cash('cash', 'Kapıda nakit', 'Teslimatta nakit ödersin'),
+  card('card', 'Kapıda kart (POS)', 'Teslimatta POS cihazıyla kartla ödersin'),
+  bankTransfer('bank_transfer', 'Havale / EFT', 'Sipariş sonrası hesabımıza gönderirsin');
+
+  const PaymentMethod(this.key, this.label, this.description);
+
+  /// Sunucuya gönderilen ve sunucudan gelen anahtar
+  final String key;
+  final String label;
+  final String description;
+
+  static PaymentMethod? fromKey(Object? value) {
+    if (value is! String) return null;
+    for (final method in PaymentMethod.values) {
+      if (method.key == value) return method;
+    }
+    return null;
+  }
+}
+
 class Order {
   final String id;
   final String userId;
@@ -12,6 +34,13 @@ class Order {
   final String phone;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  // Kupon bilgileri (sunucu: couponCode, couponDiscount, subtotalAmount)
+  final String? couponCode;
+  final double couponDiscount;
+  /// İndirim öncesi ara toplam (kupon yoksa 0 gelebilir)
+  final double subtotalAmount;
+  /// Ödeme yöntemi; bu özellikten önce verilen siparişlerde null
+  final PaymentMethod? paymentMethod;
 
   Order({
     required this.id,
@@ -26,7 +55,18 @@ class Order {
     required this.phone,
     required this.createdAt,
     this.updatedAt,
+    this.couponCode,
+    this.couponDiscount = 0,
+    this.subtotalAmount = 0,
+    this.paymentMethod,
   });
+
+  /// Kupon uygulandıysa indirim satırı gösterilir
+  bool get hasDiscount => couponDiscount > 0;
+
+  /// İndirim öncesi tutar: sunucu göndermediyse toplam + indirim
+  double get subtotalOrDerived =>
+      subtotalAmount > 0 ? subtotalAmount : totalAmount + couponDiscount;
 
   factory Order.fromJson(Map<String, dynamic> json) {
     return Order(
@@ -47,6 +87,12 @@ class Order {
           DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
       updatedAt:
           json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      couponCode: json['couponCode'] is String && (json['couponCode'] as String).isNotEmpty
+          ? json['couponCode'] as String
+          : null,
+      couponDiscount: (json['couponDiscount'] as num?)?.toDouble() ?? 0,
+      subtotalAmount: (json['subtotalAmount'] as num?)?.toDouble() ?? 0,
+      paymentMethod: PaymentMethod.fromKey(json['paymentMethod']),
     );
   }
 
@@ -64,6 +110,10 @@ class Order {
       'phone': phone,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
+      'couponCode': couponCode,
+      'couponDiscount': couponDiscount,
+      'subtotalAmount': subtotalAmount,
+      'paymentMethod': paymentMethod?.key,
     };
   }
 }
@@ -157,6 +207,7 @@ class CreateOrderRequest {
   final String? couponCode; // Kupon kodu
   final double? discountAmount; // İndirim miktarı
   final Map<String, dynamic>? device; // Cihaz bilgisi
+  final PaymentMethod paymentMethod; // Zorunlu: nakit, kart (POS) ya da havale/EFT
 
   CreateOrderRequest({
     required this.products,
@@ -169,10 +220,12 @@ class CreateOrderRequest {
     this.couponCode,
     this.discountAmount,
     this.device,
+    required this.paymentMethod,
   });
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> json = {
+      'paymentMethod': paymentMethod.key,
       'products': products,
       'totalAmount': totalAmount,
       'city': city,

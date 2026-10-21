@@ -14,6 +14,10 @@ class Photocopy {
   final DateTime? completedAt;
   final double? price;
   final String? downloadUrl;
+  /// Ödeme alındı mı (admin işaretler)
+  final bool isPaid;
+  /// Marketin isteğe yazdığı not (varsa)
+  final String adminNotes;
 
   Photocopy({
     required this.id,
@@ -31,27 +35,37 @@ class Photocopy {
     this.completedAt,
     this.price,
     this.downloadUrl,
+    this.isPaid = false,
+    this.adminNotes = '',
   });
 
+  /// Sunucu belgesi: {_id, originalName, mimeType, fileSize, copies, color,
+  /// paperSize, notes, adminNotes, status, isPaid, price, createdAt, updatedAt}
   factory Photocopy.fromJson(Map<String, dynamic> json) {
+    final rawPrice = json['price'];
+    final price = rawPrice is num ? rawPrice.toDouble() : null;
     return Photocopy(
-      id: json['id'] ?? '',
-      fileName: json['fileName'] ?? '',
-      originalName: json['originalName'] ?? '',
-      filePath: json['filePath'] ?? '',
-      fileType: json['fileType'] ?? '',
-      fileSize: json['fileSize'] ?? 0,
-      copies: json['copies'] ?? 1,
-      color: json['color'] ?? 'black_white',
-      paperSize: json['paperSize'] ?? 'A4',
-      notes: json['notes'] ?? '',
-      status: json['status'] ?? 'pending',
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      completedAt: json['completedAt'] != null 
-          ? DateTime.parse(json['completedAt']) 
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      fileName: (json['fileName'] ?? json['originalName'] ?? '').toString(),
+      originalName: (json['originalName'] ?? '').toString(),
+      filePath: (json['filePath'] ?? '').toString(),
+      fileType: (json['mimeType'] ?? json['fileType'] ?? '').toString(),
+      fileSize: (json['fileSize'] as num?)?.toInt() ?? 0,
+      copies: (json['copies'] as num?)?.toInt() ?? 1,
+      color: (json['color'] ?? 'black_white').toString(),
+      paperSize: (json['paperSize'] ?? 'A4').toString(),
+      notes: (json['notes'] ?? '').toString(),
+      status: (json['status'] ?? 'pending').toString(),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      completedAt: json['completedAt'] != null
+          ? DateTime.tryParse(json['completedAt'].toString())
           : null,
-      price: json['price']?.toDouble(),
-      downloadUrl: json['downloadUrl'],
+      // Sunucuda fiyat varsayılan 0'dır; henüz belirlenmemişse gösterilmez.
+      price: (price != null && price > 0) ? price : null,
+      downloadUrl: json['downloadUrl']?.toString(),
+      isPaid: json['isPaid'] == true,
+      adminNotes: (json['adminNotes'] ?? '').toString(),
     );
   }
 
@@ -72,6 +86,8 @@ class Photocopy {
       'completedAt': completedAt?.toIso8601String(),
       'price': price,
       'downloadUrl': downloadUrl,
+      'isPaid': isPaid,
+      'adminNotes': adminNotes,
     };
   }
 
@@ -91,6 +107,8 @@ class Photocopy {
     DateTime? completedAt,
     double? price,
     String? downloadUrl,
+    bool? isPaid,
+    String? adminNotes,
   }) {
     return Photocopy(
       id: id ?? this.id,
@@ -108,6 +126,8 @@ class Photocopy {
       completedAt: completedAt ?? this.completedAt,
       price: price ?? this.price,
       downloadUrl: downloadUrl ?? this.downloadUrl,
+      isPaid: isPaid ?? this.isPaid,
+      adminNotes: adminNotes ?? this.adminNotes,
     );
   }
 
@@ -116,7 +136,9 @@ class Photocopy {
       case 'pending':
         return 'Beklemede';
       case 'processing':
-        return 'İşleniyor';
+        return 'Hazırlanıyor';
+      case 'ready':
+        return 'Hazır';
       case 'completed':
         return 'Tamamlandı';
       case 'failed':
@@ -135,6 +157,21 @@ class Photocopy {
       default:
         return 'Siyah-Beyaz';
     }
+  }
+
+  /// Dosya türü simgesi için sade ad: mime ("application/pdf") ya da uzantı
+  /// ("pdf") gelebilir; ikisini de "pdf", "doc", "image" gibi gruplara indirger.
+  String get fileKind {
+    final type = fileType.toLowerCase();
+    if (type.contains('pdf')) return 'pdf';
+    if (type.contains('word') || type.contains('msword') || type == 'doc' || type == 'docx') {
+      return 'doc';
+    }
+    if (type.startsWith('image/') ||
+        const ['jpg', 'jpeg', 'png', 'tiff', 'bmp'].contains(type)) {
+      return 'image';
+    }
+    return 'other';
   }
 
   String get fileSizeText {

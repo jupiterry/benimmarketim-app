@@ -87,13 +87,17 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     if (mounted) setState(() => _recentSearches = []);
   }
 
-  // Arama önerileri yükle
+  // Kategori önerileri (filtre ve "Kategorilerde keşfet" çipleri):
+  // aktif kategoriler sunucudan okunur.
   Future<void> _loadSuggestions() async {
     try {
-      final suggestions = await _apiService.getSearchSuggestions();
+      final categories = await _apiService.getCategories();
       if (!mounted) return;
       setState(() {
-        _suggestions = suggestions;
+        _suggestions = [
+          for (final category in categories)
+            if (category.isActive) category.name,
+        ];
       });
     } catch (e) {
       AppLogger.debug('Öneriler yüklenemedi: $e');

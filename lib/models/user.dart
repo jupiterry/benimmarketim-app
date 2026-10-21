@@ -6,6 +6,8 @@ class User {
   final String? address;
   final String role; // 'user' veya 'admin'
   final DateTime createdAt;
+  /// Profil fotoğrafı URL'si (yoksa null; baş harfler gösterilir)
+  final String? avatar;
 
   User({
     required this.id,
@@ -15,6 +17,7 @@ class User {
     this.address,
     required this.role,
     required this.createdAt,
+    this.avatar,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -25,9 +28,31 @@ class User {
       phone: json['phone'],
       address: json['address'],
       role: json['role'] ?? 'user',
-      createdAt: json['createdAt'] != null 
-          ? DateTime.parse(json['createdAt'])
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      avatar: (json['avatar'] is String && (json['avatar'] as String).isNotEmpty)
+          ? json['avatar'] as String
+          : null,
+    );
+  }
+
+  User copyWith({
+    String? name,
+    String? phone,
+    String? address,
+    String? avatar,
+    bool clearAvatar = false,
+  }) {
+    return User(
+      id: id,
+      name: name ?? this.name,
+      email: email,
+      phone: phone ?? this.phone,
+      address: address ?? this.address,
+      role: role,
+      createdAt: createdAt,
+      avatar: clearAvatar ? null : (avatar ?? this.avatar),
     );
   }
 
@@ -40,6 +65,7 @@ class User {
       'address': address,
       'role': role,
       'createdAt': createdAt.toIso8601String(),
+      'avatar': avatar,
     };
   }
 }
@@ -110,8 +136,12 @@ class AuthResponse {
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
+    // Sunucu kullanıcı alanlarını üst düzeyde döndürür ({_id, name, ...,
+    // accessToken}); eski `user` sarmalayıcısı da desteklenir.
+    final rawUser =
+        json['user'] ?? (json['_id'] != null ? json : (json['data']?['user'] ?? {}));
     return AuthResponse(
-      user: User.fromJson(json['user'] ?? json['data']?['user'] ?? {}),
+      user: User.fromJson(Map<String, dynamic>.from(rawUser as Map)),
       accessToken: json['accessToken'] ?? json['token'] ?? json['data']?['accessToken'] ?? '',
       refreshToken: json['refreshToken'] ?? json['data']?['refreshToken'] ?? '',
       referralCoupon: json['referralCoupon'],

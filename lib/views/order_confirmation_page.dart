@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
+import '../models/order.dart';
+import '../viewmodels/settings_viewmodel.dart';
+import 'widgets/bank_transfer_card.dart';
 import 'widgets/market_ui.dart';
 
 class OrderConfirmationPage extends StatefulWidget {
   final String? orderId;
+  final PaymentMethod? paymentMethod;
 
-  const OrderConfirmationPage({super.key, this.orderId});
+  const OrderConfirmationPage({super.key, this.orderId, this.paymentMethod});
 
   @override
   State<OrderConfirmationPage> createState() => _OrderConfirmationPageState();
@@ -145,6 +150,16 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                   ),
                   const SizedBox(height: 26),
                   _buildOrderCard(),
+                  if (widget.paymentMethod == PaymentMethod.bankTransfer) ...[
+                    const SizedBox(height: 16),
+                    Consumer<SettingsViewModel>(
+                      builder: (context, settings, _) => BankTransferCard(
+                        settings: settings,
+                        orderNumber:
+                            _shortOrderId == '—' ? null : '#$_shortOrderId',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(15),
@@ -252,6 +267,20 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
               ),
             ],
           ),
+          if (widget.paymentMethod != null) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Icon(Icons.account_balance_wallet_outlined,
+                    size: 18, color: MarketPalette.muted),
+                const SizedBox(width: 8),
+                Text('Ödeme', style: MarketText.caption()),
+                const Spacer(),
+                Text(widget.paymentMethod!.label,
+                    style: MarketText.label(size: 13)),
+              ],
+            ),
+          ],
           const SizedBox(height: 22),
           const _OrderProgress(),
         ],

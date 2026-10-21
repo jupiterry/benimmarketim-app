@@ -1,18 +1,20 @@
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'app_logger.dart';
 
 class NotificationService {
   static NotificationService? _instance;
-  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+
+  /// Bildirim izni bir kez sorulur; sonucu ne olursa olsun tekrar sorulmaz
+  /// (kullanıcı isterse sistem ayarlarından açar).
+  static const String _permissionAskedKey = 'notif_permission_asked';
 
   bool _oneSignalReady = false;
   String? _pendingUserId;
 
   // Bildirime dokununca açılabilecek ekranlar (sunucudaki listeyle aynı)
   static final RegExp _allowedRoute = RegExp(
-      r'^/(home|cart|orders|referral|photocopy-history|rate-app|chat(/[a-fA-F0-9]{24})?)$');
+      r'^/(home|cart|orders|referral|feedback|photocopy-history|rate-app|chat(/[a-fA-F0-9]{24})?)$');
   void Function(String route)? _onOpenRoute;
   String? _pendingRoute;
 
@@ -50,116 +52,33 @@ class NotificationService {
       await identifyUser(pending);
     }
 
-    // Bildirim izni iste (OneSignal) - UI hazır olana kadar bekle
-    await Future.delayed(const Duration(seconds: 1));
-    var accepted = await OneSignal.Notifications.requestPermission(true);
-    AppLogger.debug("OneSignal Permission accepted: $accepted");
-
-    // İzin iste (Local) - Kaldırıldı, OneSignal halletmeli
-    // await _requestPermissions();
-
-    // Local notifications ayarla
-    await _initLocalNotifications();
+    // Bildirim izni burada İSTENMEZ: açılışta sistem penceresi çıkmasın
+    // diye izin, onboarding bitince ya da ilk sepet/sipariş ekranında
+    // [requestPermissionIfNeeded] ile sorulur.
   }
 
-
-
-  Future<void> _initLocalNotifications() async {
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-
-    const DarwinInitializationSettings initializationSettingsIOS =
-        DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-
-    const InitializationSettings initializationSettings =
-        InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
-    );
-
-    await _localNotifications.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-    );
-  }
-
-  void _onNotificationTapped(NotificationResponse response) {
-    // Bildirime tıklandığında yapılacak işlemler
-    AppLogger.debug('Notification tapped');
-  }
-
-  // Local notification göster
-  Future<void> showLocalNotification({
-    required String title,
-    required String body,
-    String? payload,
-  }) async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'benimmarketim_channel',
-      'Benim Marketim Bildirimleri',
-      channelDescription: 'Benim Marketim uygulaması bildirimleri',
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
-    );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch.remainder(100000),
-      title,
-      body,
-      details,
-      payload: payload,
-    );
-  }
-
-  // Sipariş bildirimi göster
-  Future<void> showOrderNotification({
-    required String orderId,
-    required String status,
-    required String message,
-  }) async {
-    await showLocalNotification(
-      title: 'Sipariş Güncellemesi',
-      body: message,
-      payload: 'order:$orderId',
-    );
-  }
-
-  // Promosyon bildirimi göster
-  Future<void> showPromotionNotification({
-    required String title,
-    required String message,
-  }) async {
-    await showLocalNotification(
-      title: title,
-      body: message,
-      payload: 'promotion',
-    );
-  }
-
-  // Bildirimleri temizle
-  Future<void> clearAllNotifications() async {
-    await _localNotifications.cancelAll();
-  }
-
-  // Belirli bildirimi iptal et
-  Future<void> cancelNotification(int id) async {
-    await _localNotifications.cancel(id);
+  /// Bildirim izni daha önce sorulmadıysa sorar. Sorulduysa (ya da OneSignal
+  /// hazır değilse) hiçbir şey yapmaz. Dönüş: izin verildi mi.
+  Future<bool> requestPermissionIfNeeded() async {
+    if (!_oneSignalReady) return false;
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_permissionAskedKey) == true) {
+        return OneSignal.Notifications.permission;
+      }
+    } catch (e) {
+      AppLogger.debug('Bildirim izni bayrağı okunamadı: $e');
+    }
+    try {
+      final accepted = await OneSignal.Notifications.requestPermission(true);
+      AppLogger.debug('OneSignal Permission accepted: $accepted');
+      await prefs?.setBool(_permissionAskedKey, true);
+      return accepted;
+    } catch (e) {
+      AppLogger.debug('OneSignal izin isteği hatası: $e');
+      return false;
+    }
   }
 
   // --- OneSignal Bildirim Olayları ---

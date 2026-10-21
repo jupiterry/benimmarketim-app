@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../services/api_service.dart';
 import '../services/app_logger.dart';
 import '../services/photocopy_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
@@ -25,7 +26,10 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
   String _selectedColor = 'black_white';
   String _selectedPaperSize = 'A4';
   bool _isUploading = false;
-  Map<String, dynamic>? _pricing;
+
+  // Tahmini birim fiyatlar (kesin tutar market hazırladığında belirlenir)
+  static const double _blackWhiteUnitPrice = 0.5;
+  static const double _colorUnitPrice = 1.0;
 
   static const _colorOptions = {
     'black_white': 'Siyah-beyaz',
@@ -35,33 +39,15 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
   static const _paperSizeOptions = ['A4', 'A3', 'A5', 'Letter'];
 
   @override
-  void initState() {
-    super.initState();
-    _loadPricing();
-  }
-
-  @override
   void dispose() {
     _notesController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadPricing() async {
-    try {
-      final pricing = await PhotocopyService.getPhotocopyPricing();
-      if (!mounted) return;
-      setState(() {
-        _pricing = pricing;
-      });
-    } catch (e) {
-      // Fiyatlandırma yüklenemezse varsayılan değerler kullanılır
-    }
-  }
-
   double _calculatePrice() {
-    final colorMultiplier = _selectedColor == 'color' ? 2.0 : 1.0;
-    final basePrice = (_pricing?['basePrice'] as num?)?.toDouble() ?? 0.5;
-    return _copies * basePrice * colorMultiplier;
+    final unitPrice =
+        _selectedColor == 'color' ? _colorUnitPrice : _blackWhiteUnitPrice;
+    return _copies * unitPrice;
   }
 
   Future<void> _uploadFile() async {
@@ -90,7 +76,9 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
       if (mounted) {
         showMarketSnack(
           context,
-          'Dosya yüklenemedi. Bağlantını kontrol edip tekrar dene.',
+          e is ApiException
+              ? e.message
+              : 'Dosya yüklenemedi. Bağlantını kontrol edip tekrar dene.',
           error: true,
         );
       }

@@ -33,7 +33,7 @@ class FlashSale {
         : (rawProduct ?? json['productId'] ?? '').toString();
 
     return FlashSale(
-      id: json['_id'] ?? '',
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
       productId: productId,
       name: json['name'] ?? '',
       discountPercentage: (json['discountPercentage'] ?? 0.0).toDouble(),
@@ -65,10 +65,18 @@ class FlashSale {
   }
 
   // Aktif mi kontrolü
-  bool get isCurrentlyActive {
-    final now = DateTime.now();
-    return now.isAfter(startDate) && now.isBefore(endDate) && isActive;
-  }
+  bool get isCurrentlyActive => isLiveAt(DateTime.now());
+
+  /// Sunucudaki `isLive` ile aynı: başlamış, bitmemiş ve kapatılmamış.
+  bool isLiveAt(DateTime now) =>
+      isActive && !startDate.isAfter(now) && endDate.isAfter(now);
+
+  /// Kampanya fiyatı. Sunucu indirimi ürüne uyguladıysa ürünün güncel
+  /// fiyatı esas alınır; uygulanmadıysa sunucudaki formülle hesaplanır.
+  double get flashPrice => product.isDiscounted
+      ? product.actualPrice
+      : (product.price * (1 - discountPercentage / 100) * 100).roundToDouble() /
+          100;
 
   // İndirimli fiyat hesaplama
   double get discountedPrice {

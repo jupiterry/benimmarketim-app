@@ -57,6 +57,40 @@
 		<string>Profil fotoğrafı çekmek ve fotokopi belgesi taramak için kamera erişimi gereklidir.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>OneSignal bildirimleri kapsamında konum tabanlı özellikler için izin gereklidir.</string>
+		<!-- Meta (Facebook) App Events. Client Token gizli değildir (App Secret
+		     değildir); Android strings.xml'deki değerle aynıdır.
+		     FacebookAutoInitEnabled=false: SDK, kullanıcı uygulama içi izni ve
+		     iOS izleme iznini (ATT) verene kadar başlatılmaz, Meta'ya bağlanmaz.
+		     Otomatik olay kaydı ve reklam kimliği toplama kapalı başlar; izin
+		     gelince MetaAppEventsService açar. -->
+		<key>FacebookAppID</key>
+		<string>911432225234141</string>
+		<key>FacebookClientToken</key>
+		<string>8f55046911247fa9c4aedd7144bbb52a</string>
+		<key>FacebookDisplayName</key>
+		<string>Benim Marketim</string>
+		<key>FacebookAutoInitEnabled</key>
+		<false/>
+		<key>FacebookAutoLogAppEventsEnabled</key>
+		<false/>
+		<key>FacebookAdvertiserIDCollectionEnabled</key>
+		<false/>
+		<!-- iOS izleme izni (ATT) penceresindeki açıklama -->
+		<key>NSUserTrackingUsageDescription</key>
+		<string>Reklamlarımızın işe yarayıp yaramadığını ölçmek için uygulama açılışı, sepete ekleme ve sipariş bilgileri reklam kimliğinle birlikte Meta (Facebook) ile paylaşılır. Adın, telefonun ve adresin paylaşılmaz.</string>
+		<!-- Meta reklamlarından gelen kurulumların Apple SKAdNetwork ile
+		     ölçülmesi (izleme izni gerektirmez, kişisel veri içermez). -->
+		<key>SKAdNetworkItems</key>
+		<array>
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>v9wttpbfk9.skadnetwork</string>
+			</dict>
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>n38lu8286q.skadnetwork</string>
+			</dict>
+		</array>
 		<!-- Export Compliance -->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>

@@ -3,12 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/flash_sale.dart';
 import '../../models/product.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/cart_viewmodel.dart';
 import '../../viewmodels/favorites_viewmodel.dart';
+import '../../viewmodels/flash_sale_viewmodel.dart';
 import 'category_presentation.dart';
+import 'flash_sale_widgets.dart';
 import 'market_ui.dart';
+import '../../services/image_url.dart';
 
 /// Ürün ızgaralarında kullanılan kart yüksekliği.
 const double marketProductCardHeight = 300;
@@ -65,16 +69,59 @@ class MarketProductGridSkeleton extends StatelessWidget {
 }
 
 class MarketProductCard extends StatelessWidget {
+  /// Listeden gelen ürün. Gösterilen fiyat ve stok, flash sale başlayıp
+  /// bittiyse [FlashSaleViewModel.latest] ile güncellenmiş halidir.
   final Product product;
 
-  const MarketProductCard({super.key, required this.product});
+  /// Aynı ürün sayfada birden çok rafta görünebiliyorsa (flash sale rafı,
+  /// fırsatlar, ızgara) yalnızca birinde Hero geçişi açık olmalı; aynı
+  /// etiketli iki Hero sayfa geçişinde hata verir.
+  final bool hero;
+
+  const MarketProductCard({
+    super.key,
+    required this.product,
+    this.hero = true,
+  });
+
+  /// Flash sale durumundan yalnızca bu kartı ilgilendiren alanlar değişince
+  /// yeniden çizilir (liste her yenilendiğinde yeni nesneler gelir; aynı
+  /// fiyat/stok/kampanya ise kart dokunulmaz).
+  static bool _flashStateChanged(_FlashState prev, _FlashState next) {
+    final a = prev.product;
+    final b = next.product;
+    if (a.id != b.id ||
+        a.actualPrice != b.actualPrice ||
+        a.price != b.price ||
+        a.isDiscounted != b.isDiscounted ||
+        a.isOutOfStock != b.isOutOfStock ||
+        a.name != b.name ||
+        a.image != b.image ||
+        a.updatedAt != b.updatedAt) {
+      return true;
+    }
+    final sa = prev.sale;
+    final sb = next.sale;
+    if ((sa == null) != (sb == null)) return true;
+    if (sa != null && sb != null) {
+      return sa.id != sb.id ||
+          sa.endDate != sb.endDate ||
+          sa.discountPercentage != sb.discountPercentage;
+    }
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<FavoritesViewModel, CartViewModel>(
-      builder: (context, favorites, cart, _) {
-        final isFavorite = favorites.isFavorite(product.id);
-        final quantity = cart.getProductQuantity(product.id);
+    return Selector<FlashSaleViewModel, _FlashState>(
+      selector: (_, flash) => (
+        product: flash.latest(this.product),
+        sale: flash.saleFor(this.product.id),
+      ),
+      shouldRebuild: _flashStateChanged,
+      builder: (context, flashState, _) {
+        final product = flashState.product;
+        final sale = flashState.sale;
         final discount = product.isDiscounted ? product.discountPercentage : 0.0;
 
         return Semantics(
@@ -105,20 +152,36 @@ class MarketProductCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(MarketRadius.md),
                             ),
                             child: product.image.isNotEmpty
-                                ? Hero(
-                                    tag: 'product_image_${product.id}',
-                                    child: Image.network(
-                                      product.image,
-                                      fit: BoxFit.contain,
-                                      cacheWidth: 380,
-                                      errorBuilder: (_, __, ___) =>
-                                          const _ProductImageFallback(),
+                                ? HeroMode(
+                                    enabled: hero,
+                                    child: Hero(
+                                      tag: 'product_image_${product.id}',
+                                      child: Image.network(
+                                        optimizedImageUrl(
+                                          product.image,
+                                          width: MarketImageSize.card,
+                                        ),
+                                        fit: BoxFit.contain,
+                                        cacheWidth: 380,
+                                        errorBuilder: (_, __, ___) =>
+                                            const _ProductImageFallback(),
+                                      ),
                                     ),
                                   )
                                 : const _ProductImageFallback(),
                           ),
                         ),
-                        if (discount > 0)
+                        if (sale != null)
+                          Positioned(
+                            left: 13,
+                            top: 13,
+                            child: FlashBadge(
+                              discountPercentage: discount > 0
+                                  ? discount
+                                  : sale.discountPercentage,
+                            ),
+                          )
+                        else if (discount > 0)
                           Positioned(
                             left: 13,
                             top: 13,
@@ -140,34 +203,44 @@ class MarketProductCard extends StatelessWidget {
                         Positioned(
                           right: 11,
                           top: 11,
-                          child: Material(
-                            color: Colors.white,
-                            shape: const CircleBorder(),
-                            elevation: 0,
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () => _toggleFavorite(context, favorites),
-                              child: Tooltip(
-                                message: isFavorite
-                                    ? 'Favorilerden çıkar'
-                                    : 'Favorilere ekle',
-                                child: SizedBox(
-                                  width: 38,
-                                  height: 38,
-                                  child: Icon(
-                                    isFavorite
-                                        ? Icons.favorite_rounded
-                                        : Icons.favorite_border_rounded,
-                                    color: isFavorite
-                                        ? MarketPalette.red
-                                        : MarketPalette.muted,
-                                    size: 20,
+                          child: Selector<FavoritesViewModel, bool>(
+                            selector: (_, favorites) =>
+                                favorites.isFavorite(product.id),
+                            builder: (context, isFavorite, _) => Material(
+                              color: Colors.white,
+                              shape: const CircleBorder(),
+                              elevation: 0,
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () => _toggleFavorite(context),
+                                child: Tooltip(
+                                  message: isFavorite
+                                      ? 'Favorilerden çıkar'
+                                      : 'Favorilere ekle',
+                                  child: SizedBox(
+                                    width: 38,
+                                    height: 38,
+                                    child: Icon(
+                                      isFavorite
+                                          ? Icons.favorite_rounded
+                                          : Icons.favorite_border_rounded,
+                                      color: isFavorite
+                                          ? MarketPalette.red
+                                          : MarketPalette.muted,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
+                        if (sale != null && !product.isOutOfStock)
+                          Positioned(
+                            left: 13,
+                            bottom: 13,
+                            child: FlashTimerChip(endDate: sale.endDate),
+                          ),
                         if (product.isOutOfStock)
                           Positioned.fill(
                             child: Container(
@@ -232,23 +305,34 @@ class MarketProductCard extends StatelessWidget {
                             const SizedBox(width: 6),
                             if (product.isOutOfStock)
                               const _DisabledAddButton()
-                            else if (quantity > 0)
-                              MarketStepper(
-                                quantity: quantity,
-                                compact: true,
-                                onMinus: () => cart.removeFromCart(product),
-                                onPlus: () => cart.addToCart(product),
-                              )
                             else
-                              _AddButton(
-                                productName: product.name,
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  cart.addToCart(product);
-                                  showMarketSnack(
-                                    context,
-                                    '${product.name} sepete eklendi',
-                                    aboveNavigation: true,
+                              Selector<CartViewModel, int>(
+                                selector: (_, cart) =>
+                                    cart.getProductQuantity(product.id),
+                                builder: (context, quantity, _) {
+                                  if (quantity > 0) {
+                                    return MarketStepper(
+                                      quantity: quantity,
+                                      compact: true,
+                                      onMinus: () => context
+                                          .read<CartViewModel>()
+                                          .removeFromCart(product),
+                                      onPlus: () => context
+                                          .read<CartViewModel>()
+                                          .addToCart(product),
+                                    );
+                                  }
+                                  return _AddButton(
+                                    productName: product.name,
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      context.read<CartViewModel>().addToCart(product);
+                                      showMarketSnack(
+                                        context,
+                                        '${product.name} sepete eklendi',
+                                        aboveNavigation: true,
+                                      );
+                                    },
                                   );
                                 },
                               ),
@@ -266,10 +350,8 @@ class MarketProductCard extends StatelessWidget {
     );
   }
 
-  void _toggleFavorite(
-    BuildContext context,
-    FavoritesViewModel favorites,
-  ) {
+  void _toggleFavorite(BuildContext context) {
+    final favorites = context.read<FavoritesViewModel>();
     final auth = context.read<AuthViewModel>();
     if (!auth.isLoggedIn) {
       showDialog<void>(
@@ -304,9 +386,15 @@ class MarketProductCard extends StatelessWidget {
       );
       return;
     }
-    favorites.toggleFavorite(product);
+    favorites.toggleFavorite(flashLatest(context, product));
   }
 }
+
+Product flashLatest(BuildContext context, Product product) =>
+    context.read<FlashSaleViewModel>().latest(product);
+
+/// Kartın flash sale'den aldığı durum: güncel ürün ve (varsa) kampanya.
+typedef _FlashState = ({Product product, FlashSale? sale});
 
 class _ProductPrice extends StatelessWidget {
   final Product product;
