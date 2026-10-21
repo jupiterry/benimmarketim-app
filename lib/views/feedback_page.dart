@@ -19,6 +19,7 @@ class FeedbackPage extends StatefulWidget {
 class _FeedbackPageState extends State<FeedbackPage> {
   final _formKey = GlobalKey<FormState>();
   final _messageController = TextEditingController();
+  final _messageFocus = FocusNode();
   final _ratingKey = GlobalKey();
   int _rating = 0;
   bool _ratingMissing = false;
@@ -27,6 +28,12 @@ class _FeedbackPageState extends State<FeedbackPage> {
   /// Yönetici yanıtı ya da telafi kuponu olan önceki geri bildirimler
   List<Map<String, dynamic>> _answered = [];
   bool _loadingAnswered = true;
+
+  /// Yanıtlar formun ÜSTÜNDE mi. Ekip yanıtı / telafi kuponu bildirimi bu
+  /// sayfayı açar; yanıt varsa ilk görülen o olmalı. Kullanıcı yüklenme
+  /// bitmeden forma başladıysa (puan, yazı, odak) form yerinden oynamasın
+  /// diye yanıtlar altta kalır.
+  bool _historyAbove = false;
 
   @override
   void initState() {
@@ -49,12 +56,17 @@ class _FeedbackPageState extends State<FeedbackPage> {
         return (reply is Map && (reply['text'] ?? '').toString().trim().isNotEmpty) ||
             (comp is Map && (comp['code'] ?? '').toString().isNotEmpty);
       }).take(5).toList();
+      _historyAbove = _answered.isNotEmpty &&
+          _rating == 0 &&
+          _messageController.text.isEmpty &&
+          !_messageFocus.hasFocus;
     });
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _messageFocus.dispose();
     super.dispose();
   }
 
@@ -146,6 +158,24 @@ class _FeedbackPageState extends State<FeedbackPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Yanıtlar üstteyse yumuşakça açılır (hareket azaltmada anında)
+                        FeedbackReveal(
+                          child: _historyAbove
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    ..._buildHistory(above: true),
+                                    const SizedBox(height: MarketSpace.xl),
+                                    Semantics(
+                                      header: true,
+                                      child: Text('Yeni geri bildirim',
+                                          style: MarketText.heading(size: 18)),
+                                    ),
+                                    const SizedBox(height: MarketSpace.md),
+                                  ],
+                                )
+                              : const SizedBox(width: double.infinity),
+                        ),
                         MarketCard(
                           key: _ratingKey,
                           borderColor: _ratingMissing ? MarketPalette.red : MarketPalette.line,
@@ -187,6 +217,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                               const SizedBox(height: 12),
                               TextFormField(
                                 controller: _messageController,
+                                focusNode: _messageFocus,
                                 enabled: !_isSubmitting,
                                 style: MarketText.body(size: 14),
                                 textCapitalization: TextCapitalization.sentences,
@@ -217,7 +248,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                           busy: _isSubmitting,
                           onPressed: _submitFeedback,
                         ),
-                        ..._buildHistory(),
+                        if (!_historyAbove) ..._buildHistory(),
                       ],
                     ),
                   ),
@@ -227,11 +258,13 @@ class _FeedbackPageState extends State<FeedbackPage> {
     );
   }
 
-  /// Önceki geri bildirimler formun ALTINDA: yüklenince form yerinden oynamaz.
-  List<Widget> _buildHistory() {
+  /// Önceki geri bildirimler. Yüklenirken iskelet formun ALTINDA durur (çoğu
+  /// kullanıcının yanıtı yoktur; form yerinden oynamaz). Yanıt varsa
+  /// [_historyAbove] ile formun üstüne alınır ([above]).
+  List<Widget> _buildHistory({bool above = false}) {
     if (!_loadingAnswered && _answered.isEmpty) return const [];
     return [
-      const SizedBox(height: MarketSpace.section),
+      if (!above) const SizedBox(height: MarketSpace.section),
       Semantics(
         header: true,
         child: Text('Önceki geri bildirimlerin', style: MarketText.heading(size: 18)),

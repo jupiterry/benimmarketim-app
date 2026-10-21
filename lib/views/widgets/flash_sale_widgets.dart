@@ -454,48 +454,95 @@ class _FlashHeader extends StatelessWidget {
 
   const _FlashHeader({required this.count, required this.endsAt});
 
+  /// [FlashTimerChip]'in yazı dışındaki genişliği (iç boşluk + simge).
+  static const double _chipChrome = 6 + 8 + 13 + 4;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            gradient: flashSaleGradient,
-            borderRadius: BorderRadius.circular(MarketRadius.sm),
-          ),
-          child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(
-                header: true,
-                child: Text(
-                  'Flash Sale',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: MarketText.heading(size: 18),
-                ),
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final titleStyle = MarketText.heading(size: 18);
+    final subtitle = count == 1
+        ? 'Sınırlı süreli indirim'
+        : '$count üründe sınırlı süreli indirim';
+
+    double textWidth(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Geri sayım başlığın yanına sığmıyorsa (dar ekran, büyük yazı, gün
+        // süren kampanya) alt başlığın altına iner; "Flash Sale" kesilmez.
+        final remaining = endsAt.difference(DateTime.now());
+        final chipWidth = _chipChrome +
+            textWidth(
+              formatFlashRemaining(remaining),
+              MarketText.code(color: Colors.white, size: 11)
+                  .copyWith(letterSpacing: 0),
+            );
+        final besideTitle = constraints.maxWidth - 36 - 10 - 8 - chipWidth >=
+            textWidth('Flash Sale', titleStyle);
+        final timer = FlashTimerChip(endDate: endsAt);
+
+        return Row(
+          crossAxisAlignment: besideTitle
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: flashSaleGradient,
+                borderRadius: BorderRadius.circular(MarketRadius.sm),
               ),
-              const SizedBox(height: 2),
-              Text(
-                count == 1
-                    ? 'Sınırlı süreli indirim'
-                    : '$count üründe sınırlı süreli indirim',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: MarketText.caption(),
+              child:
+                  const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      'Flash Sale',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.caption(),
+                  ),
+                  if (!besideTitle) ...[
+                    const SizedBox(height: 6),
+                    timer,
+                  ],
+                ],
               ),
+            ),
+            if (besideTitle) ...[
+              const SizedBox(width: 8),
+              timer,
             ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        FlashTimerChip(endDate: endsAt),
-      ],
+          ],
+        );
+      },
     );
   }
 }

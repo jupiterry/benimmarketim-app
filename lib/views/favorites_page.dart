@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/favorites_viewmodel.dart';
+import '../viewmodels/flash_sale_viewmodel.dart';
 import 'widgets/browse_cart_bar.dart';
 import 'widgets/custom_dialog.dart';
 import 'widgets/market_ui.dart';
@@ -196,6 +197,10 @@ class _RestockBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Favori kaydı eski olabilir: fiyat ve stok, kartlardaki gibi flash
+    // sale'in bildiği en güncel üründen okunur (sepete de o eklenir).
+    final flash = context.watch<FlashSaleViewModel>();
+    final latest = [for (final product in favorites) flash.latest(product)];
     // Yalnızca sepette olup olmama değişince yeniden çizilir.
     final inCart = context.select<CartViewModel, String>(
       (cart) => [
@@ -206,7 +211,7 @@ class _RestockBar extends StatelessWidget {
     final inCartIds =
         inCart.isEmpty ? const <String>{} : inCart.split(',').toSet();
     final missing = [
-      for (final product in favorites)
+      for (final product in latest)
         if (!product.isOutOfStock && !inCartIds.contains(product.id)) product,
     ];
     if (missing.isEmpty) return const SizedBox.shrink();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/product.dart';
@@ -180,11 +181,19 @@ class MarketDealsSection extends StatelessWidget {
     );
   }
 
-  void _showDeals(BuildContext context, List<Product> products) {
+  void _showDeals(BuildContext pageContext, List<Product> products) {
     showMarketSheet<void>(
-      context,
+      pageContext,
       backgroundColor: MarketPalette.canvas,
-      builder: (_) => _DealsSheet(products: products),
+      builder: (sheetContext) => _DealsSheet(
+        products: products,
+        // Alt sayfa ürün sayfasının altında açık kalmaz: ürün sayfasından
+        // "Sepete git" ile ana sayfaya dönülünce sepetin üstünde kalıyordu.
+        onOpen: (product) {
+          Navigator.pop(sheetContext);
+          pageContext.push('/product', extra: product);
+        },
+      ),
     );
   }
 }
@@ -192,8 +201,9 @@ class MarketDealsSection extends StatelessWidget {
 /// İndirimli ürünlerin tamamı (rafta en çok 10 gösterilir).
 class _DealsSheet extends StatelessWidget {
   final List<Product> products;
+  final ValueChanged<Product> onOpen;
 
-  const _DealsSheet({required this.products});
+  const _DealsSheet({required this.products, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +230,7 @@ class _DealsSheet extends StatelessWidget {
             itemBuilder: (context, index) => MarketProductCard(
               product: products[index],
               hero: false,
+              onOpen: onOpen,
             ),
           );
         },

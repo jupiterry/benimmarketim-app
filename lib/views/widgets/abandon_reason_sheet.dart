@@ -135,11 +135,14 @@ class _AbandonReasonSheetState extends State<_AbandonReasonSheet> {
 
   Widget _buildAsk() {
     final other = _picked == 'diger';
-    return MarketSheetScaffold(
+    return FeedbackFormScaffold(
       key: const ValueKey('ask'),
-      header: const MarketSheetHeader(
+      header: MarketSheetHeader(
         title: 'Sepetini neden boşalttın?',
-        subtitle: 'Tek dokunuş yeter; daha iyisini yapmamıza yardım eder.',
+        // Kısa ekranda alt yazı yok: seçeneklere (ve "Diğer" notuna) yer kalsın
+        subtitle: feedbackShortScreen(context)
+            ? null
+            : 'Tek dokunuş yeter; daha iyisini yapmamıza yardım eder.',
       ),
       body: Column(
         mainAxisSize: MainAxisSize.min,
@@ -160,30 +163,29 @@ class _AbandonReasonSheetState extends State<_AbandonReasonSheet> {
                 ? const SizedBox(width: double.infinity)
                 : Padding(
                     padding: const EdgeInsets.only(top: MarketSpace.md),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        FeedbackCommentField(
-                          controller: _note,
-                          hint: 'Kısaca yazar mısın? (isteğe bağlı)',
-                          maxLength: 200,
-                          minLines: 1,
-                          maxLines: 3,
-                        ),
-                        const SizedBox(height: MarketSpace.md),
-                        FeedbackSubmitButton(
-                          busy: false,
-                          height: MarketSize.tapTarget,
-                          onPressed: () => _send('diger'),
-                        ),
-                      ],
+                    child: FeedbackCommentField(
+                      controller: _note,
+                      hint: 'Kısaca yazar mısın? (isteğe bağlı)',
+                      maxLength: 200,
+                      minLines: 1,
+                      maxLines: 3,
                     ),
                   ),
           ),
-          const SizedBox(height: MarketSpace.sm),
-          Center(child: FeedbackLaterButton(onPressed: () => Navigator.of(context).pop())),
+          if (!other) ...[
+            const SizedBox(height: MarketSpace.sm),
+            Center(child: FeedbackLaterButton(onPressed: () => Navigator.of(context).pop())),
+          ],
         ],
       ),
+      // "Diğer" seçiliyken "Gönder" sabit alt kısımda: klavye açıkken de görünür
+      footer: other
+          ? FeedbackSheetFooter(
+              busy: false,
+              onSubmit: () => _send('diger'),
+              onLater: () => Navigator.of(context).pop(),
+            )
+          : null,
     );
   }
 }

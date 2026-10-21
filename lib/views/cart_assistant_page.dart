@@ -57,8 +57,10 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
     final initial = widget.initialPrompt?.trim() ?? '';
     if (initial.length >= 3) {
       _prompt.text = initial;
+      // Misafirde istek hazır bekler; girişten sonra kendiliğinden gönderilir
+      // (üstteki kilit notu ve "Giriş yap ve başla" düğmesi bunu anlatır).
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _submit();
+        if (mounted && context.read<AuthViewModel>().isLoggedIn) _submit();
       });
     }
   }
@@ -122,7 +124,9 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
     final budget = _budgetValue;
 
     if (!context.read<AuthViewModel>().isLoggedIn) {
-      _showError('Sepet hazırlayabilmem için önce giriş yapmalısın.');
+      // Klavyeden gönderilince de ana düğme gibi girişe gider; kilit notu
+      // zaten açıklıyor, ayrıca hata gösterilmez.
+      _loginAndSubmit();
       return;
     }
     if (prompt.length < 3 && budget == null) {

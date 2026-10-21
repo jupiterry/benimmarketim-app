@@ -106,7 +106,7 @@ class _NpsSheetState extends State<_NpsSheet> {
 
   Widget _buildForm() {
     final score = _score;
-    return MarketSheetScaffold(
+    return FeedbackFormScaffold(
       key: const ValueKey('form'),
       busy: _sending,
       header: MarketSheetHeader(
@@ -169,12 +169,14 @@ class _NpsScale extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 8.0;
+        // Dar ekranda (320 pt → 280 pt gövde) aralık daralır, hücreler 44 pt'nin
+        // altına inmez: (280 - 5 × 3) / 6 ≈ 44,2
+        final gap = constraints.maxWidth >= 6 * MarketSize.control + 5 * 8 ? 8.0 : 3.0;
         final cell = ((constraints.maxWidth - 5 * gap) / 6).clamp(36.0, 56.0);
         Widget row(int from, int to) => Row(
               children: [
                 for (var v = from; v <= to; v++) ...[
-                  if (v > from) const SizedBox(width: gap),
+                  if (v > from) SizedBox(width: gap),
                   _NpsCell(
                     value: v,
                     width: cell,
@@ -195,7 +197,7 @@ class _NpsScale extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               row(0, 5),
-              const SizedBox(height: gap),
+              const SizedBox(height: 8),
               row(6, 10),
             ],
           ),

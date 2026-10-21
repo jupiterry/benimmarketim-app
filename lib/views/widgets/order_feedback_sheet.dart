@@ -148,14 +148,22 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
   }
 
   void _scrollTo(GlobalKey key) {
-    final target = key.currentContext;
-    if (target == null) return;
-    Scrollable.ensureVisible(
-      target,
-      duration: feedbackMotion(context, const Duration(milliseconds: 300)),
-      curve: Curves.easeOutCubic,
-      alignment: .2,
-    );
+    void reveal() {
+      final target = key.currentContext;
+      if (!mounted || target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: feedbackMotion(context, const Duration(milliseconds: 300)),
+        curve: Curves.easeOutCubic,
+        // Klavye açıkken yer dar: alan en üste gelsin, altındaki hata da görünsün
+        alignment: feedbackTypingCompact(context) ? 0 : .2,
+      );
+    }
+
+    reveal();
+    // Hata metni açılırken bölüm (FeedbackReveal) yumuşakça büyür; ilk
+    // kaydırma eski yüksekliğe göre kısıtlanır. Büyüme bitince yeniden hizala.
+    Future<void>.delayed(feedbackMotion(context), reveal);
   }
 
   Future<void> _submit() async {
@@ -239,7 +247,7 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
   Widget _buildForm(BuildContext context) {
     final order = widget.order;
     final tags = _isLow ? feedbackNegativeTags : feedbackPositiveTags;
-    return MarketSheetScaffold(
+    return FeedbackFormScaffold(
       key: const ValueKey('form'),
       busy: _sending,
       header: MarketSheetHeader(
@@ -331,7 +339,8 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
                                 ? 'Neyi daha iyi yapabileceğimizi kısaca yazar mısın?'
                                 : 'Deneyimini birkaç kelimeyle yazar mısın?')
                             : null,
-                        minLines: 3,
+                        // Klavye açıkken yer darsa alan kısalır: hata metni de görünsün
+                        minLines: feedbackTypingCompact(context) ? 2 : 3,
                         maxLines: 5,
                       ),
                     ],

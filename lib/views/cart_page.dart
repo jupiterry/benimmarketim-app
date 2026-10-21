@@ -88,33 +88,41 @@ class _CartPageState extends State<CartPage> {
                 else
                   SliverPadding(
                     padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 24),
-                    sliver: SliverList.list(
-                      children: [
-                        const _StoreClosedNotice(),
-                        const _MinimumOrderProgress(),
-                        // Sepetteki ürünler tek kartta, ilk bakışta görünür.
-                        MarketCard(
-                          padding: EdgeInsets.zero,
-                          child: Column(
-                            children: [
-                              for (var i = 0; i < items.length; i++) ...[
-                                if (i > 0)
-                                  const Divider(
-                                      height: 1, indent: 16, endIndent: 16),
-                                _CartItemCard(item: items[i], cart: cart),
+                    // Tembel liste değil: "Bunu da ekle" rafı ekranın altında
+                    // kalsa da kurulur, alttaki "daha ekle" düğmesi ona kayar.
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const _StoreClosedNotice(),
+                          const _MinimumOrderProgress(),
+                          // Sepetteki ürünler tek kartta, ilk bakışta görünür.
+                          MarketCard(
+                            padding: EdgeInsets.zero,
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < items.length; i++) ...[
+                                  if (i > 0)
+                                    const Divider(
+                                        height: 1, indent: 16, endIndent: 16),
+                                  _CartItemCard(item: items[i], cart: cart),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                        _CartActions(cart: cart),
-                        _MinimumOrderSuggestions(anchorKey: _suggestionsKey),
-                        const SizedBox(height: MarketSpace.md),
-                        const _CouponSection(),
-                        const SizedBox(height: MarketSpace.lg),
-                        _PriceSummary(cart: cart),
-                        // İkincil tanıtım: fiyat özetinin altında durur.
-                        const _CouponRequestCampaignCard(),
-                      ],
+                          _CartActions(
+                            cart: cart,
+                            onCleared: _askAbandonReason,
+                          ),
+                          _MinimumOrderSuggestions(anchorKey: _suggestionsKey),
+                          const SizedBox(height: MarketSpace.md),
+                          const _CouponSection(),
+                          const SizedBox(height: MarketSpace.lg),
+                          _PriceSummary(cart: cart),
+                          // İkincil tanıtım: fiyat özetinin altında durur.
+                          const _CouponRequestCampaignCard(),
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -128,6 +136,12 @@ class _CartPageState extends State<CartPage> {
         ],
       ),
     );
+  }
+
+  /// Sepet boşaltılınca sorulan "neden?" sorusu sayfanın kendi bağlamıyla
+  /// açılır: düğmelerin bulunduğu satır, sepet boşalınca ekrandan kalkar.
+  Future<void> _askAbandonReason() async {
+    if (mounted) await maybeAskAbandonReason(context);
   }
 
   /// En az tutarın altındayken: öneri rafına kaydırır; öneri yoksa
@@ -159,7 +173,10 @@ class _CartPageState extends State<CartPage> {
 class _CartActions extends StatelessWidget {
   final CartViewModel cart;
 
-  const _CartActions({required this.cart});
+  /// Sepet boşaltıldıktan sonra (bu satır ekrandan kalkmış olabilir).
+  final Future<void> Function() onCleared;
+
+  const _CartActions({required this.cart, required this.onCleared});
 
   @override
   Widget build(BuildContext context) {
@@ -220,7 +237,7 @@ class _CartActions extends StatelessWidget {
     );
     if (confirmed) {
       cart.clearCart();
-      if (context.mounted) await maybeAskAbandonReason(context);
+      await onCleared();
     }
   }
 }

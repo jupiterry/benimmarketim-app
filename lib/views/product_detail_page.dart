@@ -231,6 +231,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     unavailable: _unavailable,
                     cartQuantity: cartQuantity,
                     onRemoveFromCart: () => _removeFromCart(product),
+                    onGoToCart: _goToCart,
                     compact: compact,
                     descriptionExpanded: _descriptionExpanded,
                     onToggleDescription: () => setState(
@@ -636,8 +637,8 @@ class _FavoriteButtonState extends State<_FavoriteButton>
 /// Ürün görselinin sahnesi. Katalog fotoğraflarının çoğu beyaz zeminli olduğu
 /// için vitrin de düz beyazdır: fotoğrafın kenarı hiç görünmez, saydam
 /// görseller de aynı sahnede durur. Görsele dokununca tam ekranda açılır
-/// (yakınlaştırılabilir).
-class _Showcase extends StatelessWidget {
+/// (yakınlaştırılabilir). Görsel yüklenemezse büyütme sunulmaz.
+class _Showcase extends StatefulWidget {
   final Product product;
   final FlashSale? sale;
   final bool unavailable;
@@ -651,12 +652,38 @@ class _Showcase extends StatelessWidget {
   });
 
   @override
+  State<_Showcase> createState() => _ShowcaseState();
+}
+
+class _ShowcaseState extends State<_Showcase> {
+  /// Görsel yüklenemedi (ör. silinmiş dosya): büyütülecek bir şey yok.
+  bool _imageFailed = false;
+
+  @override
+  void didUpdateWidget(covariant _Showcase oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.product.image != widget.product.image) _imageFailed = false;
+  }
+
+  /// Hata görsel çizilirken bildirilir; durum karenin sonunda güncellenir.
+  void _onImageError() {
+    if (_imageFailed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_imageFailed) setState(() => _imageFailed = true);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final product = widget.product;
+    final sale = widget.sale;
+    final unavailable = widget.unavailable;
+    final compact = widget.compact;
     final gutter = MarketSpace.gutterOf(context);
     final discount =
         product.isDiscounted ? product.discountPercentage.round() : 0;
     final soldOut = unavailable || product.isOutOfStock;
-    final canZoom = product.image.trim().isNotEmpty;
+    final canZoom = product.image.trim().isNotEmpty && !_imageFailed;
     final top = compact ? MarketSpace.sm : MarketSpace.md;
     final bottom = _sheetOverlap + (compact ? MarketSpace.md : MarketSpace.lg);
 
@@ -666,7 +693,11 @@ class _Showcase extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           Positioned.fill(
-            child: _ProductImage(product: product, dimmed: soldOut),
+            child: _ProductImage(
+              product: product,
+              dimmed: soldOut,
+              onError: _onImageError,
+            ),
           ),
           if (soldOut)
             Align(
@@ -709,7 +740,7 @@ class _Showcase extends StatelessWidget {
                     ? FlashBadge(
                         discountPercentage: discount > 0
                             ? discount.toDouble()
-                            : sale!.discountPercentage,
+                            : sale.discountPercentage,
                       )
                     : _DiscountStamp(percent: discount),
               ),
@@ -787,7 +818,14 @@ class _ProductImage extends StatelessWidget {
   /// Stokta yok / satışta değil: görsel soluk ve renksizleşir.
   final bool dimmed;
 
-  const _ProductImage({required this.product, required this.dimmed});
+  /// Büyük görsel yüklenemediğinde (yer tutucu gösterilirken) çağrılır.
+  final VoidCallback onError;
+
+  const _ProductImage({
+    required this.product,
+    required this.dimmed,
+    required this.onError,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -812,7 +850,10 @@ class _ProductImage extends StatelessWidget {
                       : const _ImageSkeleton(),
               errorBuilder: (_, __, ___) => const _ImageSkeleton(),
             ),
-      errorBuilder: (_, __, ___) => const _LargeImageFallback(),
+      errorBuilder: (_, __, ___) {
+        onError();
+        return const _LargeImageFallback();
+      },
     );
     if (dimmed) {
       image = Opacity(
@@ -881,6 +922,7 @@ class _InfoPanel extends StatelessWidget {
   final bool unavailable;
   final int cartQuantity;
   final VoidCallback onRemoveFromCart;
+  final VoidCallback onGoToCart;
   final bool compact;
   final bool descriptionExpanded;
   final VoidCallback onToggleDescription;
@@ -895,6 +937,7 @@ class _InfoPanel extends StatelessWidget {
     required this.unavailable,
     required this.cartQuantity,
     required this.onRemoveFromCart,
+    required this.onGoToCart,
     required this.compact,
     required this.descriptionExpanded,
     required this.onToggleDescription,
@@ -980,27 +1023,15 @@ class _InfoPanel extends StatelessWidget {
                         SizedBox(height: compact ? 10 : MarketSpace.md),
                         _PriceRow(product: product, flash: sale != null),
                         // Stokta olmayan ürün sepette kaldıysa: fiyatın hemen
-                        // altında, tek dokunuşla çıkarılabilir.
+                        // altında, tek dokunuşla çıkarılabilir ya da sepete
+                        // gidilebilir (alt çubukta bu halde "Sepete git" yok).
                         if (soldOut && cartQuantity > 0) ...[
                           const SizedBox(height: MarketSpace.lg),
-                          MarketNotice.warning(
-                            icon: Icons.info_outline_rounded,
-                            text: 'Sepetinde $cartQuantity adet var ama şu an '
-                                '${unavailable ? 'satışta değil' : 'stokta yok'}.',
-                            trailing: TextButton(
-                              onPressed: onRemoveFromCart,
-                              style: TextButton.styleFrom(
-                                foregroundColor: MarketPalette.orangeInk,
-                                textStyle: MarketText.label(size: 13),
-                                minimumSize: const Size(
-                                  MarketSize.control,
-                                  MarketSize.control,
-                                ),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 10),
-                              ),
-                              child: const Text('Çıkar'),
-                            ),
+                          _SoldOutCartNotice(
+                            quantity: cartQuantity,
+                            unavailable: unavailable,
+                            onRemove: onRemoveFromCart,
+                            onGoToCart: onGoToCart,
                           ),
                         ],
                         if (sale != null) ...[
@@ -1160,6 +1191,88 @@ class _StockChip extends StatelessWidget {
   }
 }
 
+/// Stokta olmayan / satışta olmayan ürün sepette kalmışsa turuncu uyarı.
+/// İki eylem de metnin altında durur: dar ekranda ve büyük yazıda metin
+/// sıkışmaz. Görünüm `MarketNotice.warning` ile aynıdır.
+class _SoldOutCartNotice extends StatelessWidget {
+  final int quantity;
+  final bool unavailable;
+  final VoidCallback onRemove;
+  final VoidCallback onGoToCart;
+
+  const _SoldOutCartNotice({
+    required this.quantity,
+    required this.unavailable,
+    required this.onRemove,
+    required this.onGoToCart,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final buttonStyle = TextButton.styleFrom(
+      foregroundColor: MarketPalette.orangeInk,
+      textStyle: MarketText.label(size: 13),
+      minimumSize: const Size(MarketSize.control, MarketSize.control),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+    );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 4, 2),
+      decoration: BoxDecoration(
+        color: MarketPalette.orangeSoft,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: MarketPalette.orangeInk,
+                  size: 20,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    'Sepetinde $quantity adet var ama şu an '
+                    '${unavailable ? 'satışta değil' : 'stokta yok'}.',
+                    style: MarketText.body(
+                      color: MarketPalette.orangeInk,
+                      size: 13,
+                      weight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            children: [
+              TextButton(
+                onPressed: onRemove,
+                style: buttonStyle,
+                child: const Text('Çıkar'),
+              ),
+              TextButton.icon(
+                onPressed: onGoToCart,
+                style: buttonStyle,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                label: const Text('Sepete git'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Büyük fiyat; indirimde eski fiyat üstü çizili ve lime kazanç hapı.
 /// Flash sale'de üstte kırmızı "Flash Sale fiyatı" satırı.
 class _PriceRow extends StatelessWidget {
@@ -1211,19 +1324,28 @@ class _PriceRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  // Güncel fiyat değişirse (ör. sayfa açıkken yenilendi)
-                  // yeni değer yumuşakça belirir.
-                  AnimatedSwitcher(
-                    duration: reduceMotion
-                        ? Duration.zero
-                        : const Duration(milliseconds: 200),
-                    child: Text(
-                      formatTl(product.actualPrice),
-                      key: ValueKey(product.actualPrice),
-                      style: MarketText.price(
-                        color:
-                            flash ? MarketPalette.red : MarketPalette.greenDeep,
-                        size: 32,
+                  // Dar ekranda büyük yazıyla ₺1.000 üstü indirimli fiyat
+                  // satıra sığmazsa büyük fiyat küçülür; eski fiyat kesilmez.
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      // Güncel fiyat değişirse (ör. sayfa açıkken yenilendi)
+                      // yeni değer yumuşakça belirir.
+                      child: AnimatedSwitcher(
+                        duration: reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 200),
+                        child: Text(
+                          formatTl(product.actualPrice),
+                          key: ValueKey(product.actualPrice),
+                          style: MarketText.price(
+                            color: flash
+                                ? MarketPalette.red
+                                : MarketPalette.greenDeep,
+                            size: 32,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1848,7 +1970,8 @@ class _AddToCartButton extends StatelessWidget {
 }
 
 /// Ürün sepetteyken: lime "Sepete git" düğmesi ve sepetteki adet. Eklemeden
-/// hemen sonra kısa bir süre "Sepete eklendi" onayı gösterir.
+/// hemen sonra kısa bir süre "Sepete eklendi" onayı gösterir (bu sırada
+/// dokunuş sepete götürmez).
 class _GoToCartButton extends StatelessWidget {
   final int quantity;
   final bool justAdded;
@@ -1926,18 +2049,24 @@ class _GoToCartButton extends StatelessWidget {
             ],
           );
 
+    // "Sepete eklendi" onayı sürerken düğme yalnızca durum gösterir: "Sepete
+    // ekle"ye ikinci kez (çift) dokunan kişi aynı yerde beliren bu düğmeyle
+    // farkında olmadan sepete gitmez. Material dokunuşu yine yutar; alttaki
+    // eski düğme de tetiklenmez.
+    final VoidCallback? tap = justAdded ? null : onTap;
+
     return Semantics(
       button: true,
       label: justAdded
-          ? 'Sepete eklendi. Sepetinde $quantity adet. Sepete git'
+          ? 'Sepete eklendi. Sepetinde $quantity adet'
           : 'Sepete git, sepetinde $quantity adet',
       excludeSemantics: true,
-      onTap: onTap,
+      onTap: tap,
       child: Material(
         color: MarketPalette.lime,
         borderRadius: radius,
         child: InkWell(
-          onTap: onTap,
+          onTap: tap,
           borderRadius: radius,
           child: SizedBox(
             height: MarketSize.button,

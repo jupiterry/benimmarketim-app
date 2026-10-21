@@ -222,7 +222,7 @@ class _QuickFeedbackSheetState extends State<_QuickFeedbackSheet> {
   }
 
   Widget _buildWhatHappened() {
-    return MarketSheetScaffold(
+    return FeedbackFormScaffold(
       key: const ValueKey(_Step.whatHappened),
       busy: _sending,
       header: MarketSheetHeader(

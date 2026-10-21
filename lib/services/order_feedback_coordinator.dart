@@ -21,7 +21,8 @@ import 'review_service.dart';
 ///
 /// Sorular yalnızca ana sayfa en üstteyken açılır (ürün detayı, ödeme gibi bir
 /// sayfa, başka bir pencere ya da klavye açıkken araya girilmez). Aynı açılışta
-/// reklam ölçümü izni sorulduysa ikinci bir pencere açılmaz.
+/// reklam ölçümü izni sorulup yanıtlandıysa ikinci bir pencere açılmaz (izin
+/// sayfası yanıtsız kapatıldıysa anket engellenmez; bkz. meta_consent_sheet).
 class OrderFeedbackCoordinator {
   OrderFeedbackCoordinator._();
 
@@ -48,12 +49,18 @@ class OrderFeedbackCoordinator {
   static bool Function()? _isVisible;
 
   /// Ana sayfanın (context'in sayfası) üstünde başka sayfa, pencere ya da klavye yok mu.
+  ///
+  /// ModalRoute.of / MediaQuery.viewInsetsOf kullanılmaz: ikisi de context'i
+  /// (HomePage) kalıcı dinleyici yapar; sonra uygulamanın her yerindeki her
+  /// klavye karesinde ve her sayfa geçişinde HomePage baştan çizilirdi.
+  /// Ana sayfa yığındaki tek sayfadır (hep context.go('/home') ile açılır);
+  /// üstünde sayfa, alt sayfa ya da pencere varsa Navigator geri gidebilir.
   static bool _homeIsTop(BuildContext context) {
     if (!context.mounted) return false;
-    final route = ModalRoute.of(context);
-    if (route == null || !route.isCurrent) return false;
+    final navigator = Navigator.maybeOf(context);
+    if (navigator == null || navigator.canPop()) return false;
     if (!(_isVisible?.call() ?? true)) return false;
-    return MediaQuery.viewInsetsOf(context).bottom == 0;
+    return View.of(context).viewInsets.bottom == 0;
   }
 
   /// Ana sayfa [_settleFor] boyunca kesintisiz en üstte kalana kadar bekler.
@@ -77,7 +84,7 @@ class OrderFeedbackCoordinator {
   static Future<void> run(BuildContext context, {bool Function()? isVisible}) async {
     _isVisible = isVisible;
     try {
-      // Reklam ölçümü izni bu açılışta sorulduysa ikinci pencere açma
+      // Reklam ölçümü izni bu açılışta sorulup yanıtlandıysa ikinci pencere açma
       if (metaConsentPromptedThisSession) return;
       final auth = context.read<AuthViewModel>();
       if (!auth.isLoggedIn) return;

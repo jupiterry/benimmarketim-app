@@ -238,6 +238,8 @@ class _BannerCard extends StatelessWidget {
       button: hasLink,
       image: true,
       excludeSemantics: true,
+      // excludeSemantics içteki InkWell'in eylemini de düşürür; burada verilir
+      onTap: hasLink ? onTap : null,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(MarketRadius.lg),

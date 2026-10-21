@@ -86,6 +86,22 @@ class _CartBar extends StatelessWidget {
     context.go('/home', extra: <String, dynamic>{'initialTabIndex': 1});
   }
 
+  /// Metnin tek satırdaki genişliği (yazı boyutu ayarı dahil, yukarı yuvarlı).
+  static double _textWidth(BuildContext context, String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width.ceilToDouble();
+    painter.dispose();
+    return width;
+  }
+
   @override
   Widget build(BuildContext context) {
     final inset = MediaQuery.paddingOf(context).bottom;
@@ -97,6 +113,21 @@ class _CartBar extends StatelessWidget {
     final remaining = minimum - total;
     final belowMinimum = minimum > 0 && remaining > 0;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final labelStyle = MarketText.label(
+      color: Colors.white,
+      size: 15,
+      weight: FontWeight.w800,
+    );
+    // "Sepete git" kısalmaz: dar ekran + büyük yazı + 4 haneli tutarda toplam
+    // küçülerek kalan yere sığar. Satır genişliği: ekran - dış (16 + 16) ve
+    // iç (10 + 16) boşluk; sabitler: kutu 40 + 12, ara 10, ok 8 + 20.
+    final rowWidth = MediaQuery.sizeOf(context).width - 32 - 26;
+    final totalMax = math.max(
+      56.0,
+      rowWidth -
+          (40 + 12 + 10 + (compact ? 0 : 8 + 20)) -
+          _textWidth(context, 'Sepete git', labelStyle),
+    );
 
     final semantics = StringBuffer(
       'Sepete git, $count ürün, toplam ${formatTl(total)}',
@@ -177,11 +208,7 @@ class _CartBar extends StatelessWidget {
                                       'Sepete git',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: MarketText.label(
-                                        color: Colors.white,
-                                        size: 15,
-                                        weight: FontWeight.w800,
-                                      ),
+                                      style: labelStyle,
                                     ),
                                     const SizedBox(height: 1),
                                     Text(
@@ -202,17 +229,25 @@ class _CartBar extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              AnimatedSwitcher(
-                                duration: reduceMotion
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 160),
-                                child: Text(
-                                  formatTl(total),
-                                  key: ValueKey(total),
-                                  maxLines: 1,
-                                  style: MarketText.price(
-                                    color: Colors.white,
-                                    size: 17,
+                              ConstrainedBox(
+                                constraints:
+                                    BoxConstraints(maxWidth: totalMax),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: AnimatedSwitcher(
+                                    duration: reduceMotion
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 160),
+                                    child: Text(
+                                      formatTl(total),
+                                      key: ValueKey(total),
+                                      maxLines: 1,
+                                      style: MarketText.price(
+                                        color: Colors.white,
+                                        size: 17,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),

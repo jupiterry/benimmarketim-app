@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/api_service.dart';
+import '../../viewmodels/auth_viewmodel.dart';
 import 'feedback_parts.dart';
 import 'market_ui.dart';
 
@@ -16,9 +19,39 @@ import 'market_ui.dart';
 ///   [FirstOrderRating.pending] false ise hiçbir şey çizmez.
 /// * Kart gösterildiğinde (gönderilse de, geçilse de) [FirstOrderRating.pending]
 ///   değerini false yapar; istek bir kez görünür.
+/// * Kart kullanıcı başına yalnızca BİR kez gösterilir (cihazda saklanır).
+///   Sipariş artık puan vermeden de verilebildiği için kartı kapatan ya da
+///   geçen kullanıcı sunucuda hâlâ "geri bildirim vermedi" görünür; kayıt
+///   olmasa sonraki her siparişte "İlk siparişin geliyor!" yeniden çıkardı.
 abstract final class FirstOrderRating {
+  static bool _pending = false;
+  static SharedPreferences? _prefs;
+
   /// Onay ekranında ilk sipariş puan kartı gösterilecek mi.
-  static bool pending = false;
+  static bool get pending => _pending;
+  static set pending(bool value) {
+    _pending = value;
+    _prefs = null;
+    // "Daha önce gösterildi" kaydı onay ekranı açılmadan okunsun: kart ilk
+    // karede doğru çizilir (sonradan belirip düğmeleri kaydırmaz).
+    if (value) {
+      SharedPreferences.getInstance().then<void>(
+        (prefs) => _prefs = prefs,
+        onError: (Object _) {},
+      );
+    }
+  }
+
+  static String _shownKey(String userId) => 'first_order_rating_shown_$userId';
+
+  /// Bu kullanıcıya kart daha önce gösterilmediyse gösterildi diye kaydeder
+  /// ve true döner.
+  static bool _claim(SharedPreferences prefs, String userId) {
+    final key = _shownKey(userId);
+    if (prefs.getBool(key) ?? false) return false;
+    prefs.setBool(key, true).catchError((Object _) => false);
+    return true;
+  }
 }
 
 /// Sipariş onay ekranındaki ilk sipariş puan kartı (sayfanın içinde, engellemez).
@@ -48,8 +81,37 @@ class _FirstOrderRatingCardState extends State<FirstOrderRatingCard> {
     super.initState();
     // Bir kez gösterilir: bayrak hemen sıfırlanır (sayfa yeniden kurulsa da
     // ikinci kez çıkmaz, ek istek atılmaz).
-    _state = FirstOrderRating.pending ? _CardState.asking : _CardState.hidden;
-    FirstOrderRating.pending = false;
+    final wanted = FirstOrderRating._pending;
+    final prefs = FirstOrderRating._prefs;
+    FirstOrderRating._pending = false;
+    FirstOrderRating._prefs = null;
+    _state = _CardState.hidden;
+    if (!wanted) return;
+    final userId = _userId();
+    if (prefs != null) {
+      if (FirstOrderRating._claim(prefs, userId)) _state = _CardState.asking;
+    } else {
+      _claimLater(userId);
+    }
+  }
+
+  String _userId() {
+    try {
+      return context.read<AuthViewModel>().user?.id ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Kayıt henüz okunmadıysa: okununca gösterilir. Okunamazsa kart yine
+  /// gösterilir (eski davranış).
+  Future<void> _claimLater(String userId) async {
+    var show = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      show = FirstOrderRating._claim(prefs, userId);
+    } catch (_) {}
+    if (mounted && show) setState(() => _state = _CardState.asking);
   }
 
   @override

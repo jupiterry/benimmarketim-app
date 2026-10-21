@@ -98,12 +98,27 @@ class _ProductImageViewerState extends State<ProductImageViewer>
     }
     if (_reduceMotion) {
       _transform.value = target;
+      if (_dragOffset != 0) setState(() => _dragOffset = 0);
       return;
     }
-    _dragAnimation = null;
     _zoomAnimation = Matrix4Tween(begin: _transform.value, end: target)
         .animate(CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic));
+    // Bırakılan sürüklemenin geri dönüşü yarıda kaldıysa yakınlaştırmayla
+    // birlikte tamamlanır; görsel kaymış ve zemin yarı saydam kalmaz.
+    _dragAnimation = _dragOffset == 0
+        ? null
+        : Tween<double>(begin: _dragOffset, end: 0).animate(
+            CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic),
+          );
     _animation.forward(from: 0);
+  }
+
+  /// Görsel geri dönerken yeniden sürüklenirse parmağı izler: dönüş olduğu
+  /// yerde durur (süren bir yakınlaştırma da hedefine atlar).
+  void _onDragStart(DragStartDetails details) {
+    _dragAnimation = null;
+    if (_animation.isAnimating) _animation.value = 1;
+    _zoomAnimation = null;
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
@@ -151,6 +166,7 @@ class _ProductImageViewerState extends State<ProductImageViewer>
                   onDoubleTapDown: (details) =>
                       _doubleTapAt = details.localPosition,
                   onDoubleTap: _toggleZoom,
+                  onVerticalDragStart: _zoomed ? null : _onDragStart,
                   onVerticalDragUpdate: _zoomed ? null : _onDragUpdate,
                   onVerticalDragEnd: _zoomed ? null : _onDragEnd,
                   child: InteractiveViewer(

@@ -174,6 +174,9 @@ class _SortOption extends StatelessWidget {
       inMutuallyExclusiveGroup: true,
       label: label,
       excludeSemantics: true,
+      // excludeSemantics InkWell'in eylemini de düşürür; ekran okuyucu
+      // dokunuşu buradan gelir.
+      onTap: onTap,
       child: Material(
         color: selected ? MarketPalette.greenSoft : Colors.transparent,
         borderRadius: BorderRadius.circular(MarketRadius.md),

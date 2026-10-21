@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -188,72 +190,125 @@ class _StoreStatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = context.select<CartViewModel, double>((c) => c.totalPrice);
     return Consumer<SettingsViewModel>(
-      builder: (context, settings, _) {
-        final status = HomeStoreStatus.of(settings);
-        final minimum = settings.minimumOrderAmount;
-
-        final Widget statusChip;
-        if (status.allDay) {
-          statusChip = const _HeaderChip(
-            leading: _Dot(color: MarketPalette.lime),
-            label: '7/24 açık',
-          );
-        } else if (status.open && status.minutesToClose <= 60) {
-          statusChip = _HeaderChip(
-            leading: const _Dot(color: MarketPalette.orange),
-            label: 'Kapanışa ${status.minutesToClose} dk',
-            background: MarketPalette.orange.withValues(alpha: .18),
-          );
-        } else if (status.open) {
-          statusChip = _HeaderChip(
-            leading: const _Dot(color: MarketPalette.lime),
-            label: 'Açık • Kapanış ${status.closesAt}',
-          );
-        } else {
-          statusChip = _HeaderChip(
-            leading: const _Dot(color: MarketPalette.orange),
-            label: 'Kapalı • Açılış ${status.opensAt}',
-          );
-        }
-
-        final Widget basketChip;
-        if (total <= 0) {
-          basketChip = _HeaderChip(
-            leading: Icon(
-              Icons.shopping_basket_outlined,
-              size: 14,
-              color: Colors.white.withValues(alpha: .85),
-            ),
-            label: 'Min. sepet ${formatTlShort(minimum)}',
-          );
-        } else if (total < minimum) {
-          basketChip = _HeaderChip(
-            leading: Icon(
-              Icons.shopping_basket_outlined,
-              size: 14,
-              color: Colors.white.withValues(alpha: .85),
-            ),
-            label: 'Min. sepete ${formatTlShort(minimum - total)} kaldı',
-          );
-        } else {
-          basketChip = const _HeaderChip(
-            leading: Icon(
-              Icons.check_circle_rounded,
-              size: 14,
-              color: MarketPalette.lime,
-            ),
-            label: 'Min. sepet tamam',
-          );
-        }
-
-        return Wrap(
-          spacing: MarketSpace.sm,
-          runSpacing: MarketSpace.sm,
-          children: [statusChip, basketChip],
-        );
-      },
+      builder: (context, settings, _) => _MinuteTicker(
+        builder: (context) => _build(settings, total),
+      ),
     );
   }
+
+  Widget _build(SettingsViewModel settings, double total) {
+    final status = HomeStoreStatus.of(settings);
+    final minimum = settings.minimumOrderAmount;
+
+    final Widget statusChip;
+    if (status.allDay) {
+      statusChip = const _HeaderChip(
+        leading: _Dot(color: MarketPalette.lime),
+        label: '7/24 açık',
+      );
+    } else if (status.open && status.minutesToClose <= 60) {
+      statusChip = _HeaderChip(
+        leading: const _Dot(color: MarketPalette.orange),
+        label: 'Kapanışa ${status.minutesToClose} dk',
+        background: MarketPalette.orange.withValues(alpha: .18),
+      );
+    } else if (status.open) {
+      statusChip = _HeaderChip(
+        leading: const _Dot(color: MarketPalette.lime),
+        label: 'Açık • Kapanış ${status.closesAt}',
+      );
+    } else {
+      statusChip = _HeaderChip(
+        leading: const _Dot(color: MarketPalette.orange),
+        label: 'Kapalı • Açılış ${status.opensAt}',
+      );
+    }
+
+    final Widget basketChip;
+    if (total <= 0) {
+      basketChip = _HeaderChip(
+        leading: Icon(
+          Icons.shopping_basket_outlined,
+          size: 14,
+          color: Colors.white.withValues(alpha: .85),
+        ),
+        label: 'Min. sepet ${formatTlShort(minimum)}',
+      );
+    } else if (total < minimum) {
+      basketChip = _HeaderChip(
+        leading: Icon(
+          Icons.shopping_basket_outlined,
+          size: 14,
+          color: Colors.white.withValues(alpha: .85),
+        ),
+        label: 'Min. sepete ${formatTlShort(minimum - total)} kaldı',
+      );
+    } else {
+      basketChip = const _HeaderChip(
+        leading: Icon(
+          Icons.check_circle_rounded,
+          size: 14,
+          color: MarketPalette.lime,
+        ),
+        label: 'Min. sepet tamam',
+      );
+    }
+
+    return Wrap(
+      spacing: MarketSpace.sm,
+      runSpacing: MarketSpace.sm,
+      children: [statusChip, basketChip],
+    );
+  }
+}
+
+/// [builder]'ı her dakika başında yeniden çağırır: mağaza durumu ("Kapanışa
+/// N dk", kapalı uyarısı) ekranda beklerken eskimesin. Ayarlar yalnızca
+/// yüklenince bildirim verdiği için saatin ilerleyişini bu sayaç yakalar.
+/// Sekme / sayfa görünmüyorken (TickerMode kapalı) durur; görünür olunca
+/// hemen yeniden çizilir.
+class _MinuteTicker extends StatefulWidget {
+  final WidgetBuilder builder;
+
+  const _MinuteTicker({required this.builder});
+
+  @override
+  State<_MinuteTicker> createState() => _MinuteTickerState();
+}
+
+class _MinuteTickerState extends State<_MinuteTicker> {
+  Timer? _timer;
+  bool? _active;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = TickerMode.valuesOf(context).enabled;
+    if (active == _active) return;
+    _active = active;
+    _timer?.cancel();
+    _timer = null;
+    if (active) _schedule();
+  }
+
+  void _schedule() {
+    final now = DateTime.now();
+    final next = DateTime(now.year, now.month, now.day, now.hour, now.minute + 1);
+    _timer = Timer(next.difference(now) + const Duration(milliseconds: 20), () {
+      if (!mounted) return;
+      setState(() {});
+      _schedule();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }
 
 /// Sipariş saatleri durumunun tek hesabı (başlık çipi ve kapalı uyarısı).
@@ -301,7 +356,10 @@ class HomeStoreClosedNotice extends StatelessWidget {
   const HomeStoreClosedNotice({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      _MinuteTicker(builder: _buildNotice);
+
+  Widget _buildNotice(BuildContext context) {
     final status = HomeStoreStatus.of(context.watch<SettingsViewModel>());
     final show = !status.open && !status.allDay;
     final gutter = homeGutter(context);
@@ -408,12 +466,23 @@ class HomeSearchBandDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return SizedBox.expand(
-      child: ColoredBox(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
         // Köşelerin arkası, içerik henüz bandın altına girmemişken zemin
-        // rengindedir; içerik altına girince köşelerde görünür.
-        color: overlapsContent ? Colors.transparent : MarketPalette.canvas,
-        child: AnimatedContainer(
+        // rengindedir; içerik altına girince köşelerde görünür. Zemin yalnızca
+        // köşe yüksekliğinde boyanır: bandın tamamına boyanınca kesirli
+        // kaydırma konumlarında üst kenarda açık renkli bir çizgi kalıyordu.
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: MarketRadius.xl,
+          child: ColoredBox(
+            color: overlapsContent ? Colors.transparent : MarketPalette.canvas,
+          ),
+        ),
+        AnimatedContainer(
           duration:
               reduceMotion ? Duration.zero : const Duration(milliseconds: 150),
           decoration: BoxDecoration(
@@ -439,7 +508,7 @@ class HomeSearchBandDelegate extends SliverPersistentHeaderDelegate {
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -455,15 +524,19 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    void open() => context.push('/search');
+    // excludeSemantics içteki InkWell'in dokunma eylemini de düşürür; eylem
+    // burada yeniden verilir (yardımcı teknolojilerle etkinleştirilebilsin).
     return Semantics(
       button: true,
       label: 'Ürün ara',
       excludeSemantics: true,
+      onTap: open,
       child: Material(
         color: Colors.white,
         borderRadius: BorderRadius.circular(MarketRadius.md),
         child: InkWell(
-          onTap: () => context.push('/search'),
+          onTap: open,
           borderRadius: BorderRadius.circular(MarketRadius.md),
           child: SizedBox(
             height: 52,
@@ -500,10 +573,12 @@ class _AssistantButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    void open() => context.push('/cart-assistant');
     return Semantics(
       button: true,
       label: 'Benim Asistanım',
       excludeSemantics: true,
+      onTap: open,
       child: Tooltip(
         message: 'Benim Asistanım',
         excludeFromSemantics: true,
@@ -511,7 +586,7 @@ class _AssistantButton extends StatelessWidget {
           color: MarketPalette.lime,
           borderRadius: BorderRadius.circular(MarketRadius.md),
           child: InkWell(
-            onTap: () => context.push('/cart-assistant'),
+            onTap: open,
             borderRadius: BorderRadius.circular(MarketRadius.md),
             child: SizedBox(
               height: 52,

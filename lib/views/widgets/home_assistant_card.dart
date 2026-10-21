@@ -23,6 +23,7 @@ class HomeAssistantCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gutter = MarketSpace.gutterOf(context);
+    void open() => context.push('/cart-assistant');
     return Padding(
       padding: EdgeInsets.fromLTRB(gutter, MarketSpace.xxl, gutter, 0),
       child: Material(
@@ -44,8 +45,9 @@ class HomeAssistantCard extends StatelessWidget {
                   label: 'Benim Asistanım. Bütçeni ya da ne pişireceğini yaz, '
                       'sepetini hazırlayayım.',
                   excludeSemantics: true,
+                  onTap: open,
                   child: InkWell(
-                    onTap: () => context.push('/cart-assistant'),
+                    onTap: open,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                       child: Row(

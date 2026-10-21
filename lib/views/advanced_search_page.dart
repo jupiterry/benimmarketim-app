@@ -112,7 +112,9 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     // yazılmış ya da sonuçsuz sorgular kaydedilmez).
     final last = _lastSuccessfulQuery;
     if (last != null && _recentsLoaded) {
-      unawaited(_writeRecentSearches(_withRecent(_recentSearches, last)));
+      unawaited(_writeRecentSearches(
+        _withRecent(_recentSearches, last, expandPartial: true),
+      ));
     }
     _searchController.dispose();
     _searchFocus.dispose();
@@ -135,20 +137,32 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     }
   }
 
-  /// [query]'yi başa ekler; aynısını ve onun yarım yazılmış hallerini
-  /// ("çik" → "çikolata") listeden çıkarır. [query] listedeki bir aramanın
-  /// yarım hali ise onun yerine o tam arama başa alınır.
-  static List<String> _withRecent(List<String> current, String query) {
-    final key = TurkishText.normalize(query);
-    // a, b'nin kelime ortasında kesilmiş başı mı ("çik" / "çikolata")
-    bool isPartial(String a, String b) =>
-        a.length < b.length && b.startsWith(a) && b[a.length] != ' ';
+  /// a, b'nin kelime ortasında kesilmiş başı mı ("çik" / "çikolata").
+  /// İkisi de [TurkishText.normalize]'dan geçmiş olmalı.
+  static bool _isPartialOf(String a, String b) =>
+      a.length < b.length && b.startsWith(a) && b[a.length] != ' ';
 
+  /// [query]'yi başa ekler; aynısını ve onun yarım yazılmış hallerini
+  /// ("çik" → "çikolata") listeden çıkarır.
+  ///
+  /// [expandPartial]: sorgu kullanıcı bilerek aramadan kaydediliyor (sayfadan
+  /// çıkış). Listedeki bir aramanın yarım hali ise onun yerine o tam arama
+  /// başa alınır. Klavyeden / çipten bilerek yapılan arama ise yazıldığı gibi
+  /// kaydedilir ("süt" aranınca listedeki "sütlaç" yerine "süt" saklanır).
+  static List<String> _withRecent(
+    List<String> current,
+    String query, {
+    bool expandPartial = false,
+  }) {
+    final key = TurkishText.normalize(query);
     var first = query;
-    for (final entry in current) {
-      if (isPartial(key, TurkishText.normalize(entry))) {
-        first = entry;
-        break;
+    final known = current.any((entry) => TurkishText.normalize(entry) == key);
+    if (expandPartial && !known) {
+      for (final entry in current) {
+        if (_isPartialOf(key, TurkishText.normalize(entry))) {
+          first = entry;
+          break;
+        }
       }
     }
     final firstKey = TurkishText.normalize(first);
@@ -156,7 +170,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       first,
       ...current.where((entry) {
         final k = TurkishText.normalize(entry);
-        return k != firstKey && !isPartial(k, firstKey);
+        return k != firstKey && !_isPartialOf(k, firstKey);
       }),
     ].take(_maxRecentSearches).toList();
   }
@@ -183,11 +197,22 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
 
   void _removeRecentSearch(String query) {
     final updated = _recentSearches.where((item) => item != query).toList();
+    // Kaldırılan arama (ya da yarım hali) sayfadan çıkarken geri yazılmasın.
+    final last = _lastSuccessfulQuery;
+    if (last != null) {
+      final lastKey = TurkishText.normalize(last);
+      final removedKey = TurkishText.normalize(query);
+      if (lastKey == removedKey || _isPartialOf(lastKey, removedKey)) {
+        _lastSuccessfulQuery = null;
+      }
+    }
     setState(() => _recentSearches = updated);
     unawaited(_writeRecentSearches(updated));
   }
 
   void _clearRecentSearches() {
+    // Temizlenen liste sayfadan çıkarken son aramayla yeniden dolmasın.
+    _lastSuccessfulQuery = null;
     setState(() => _recentSearches = []);
     unawaited(_writeRecentSearches(const []));
   }
@@ -369,29 +394,35 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   Widget build(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
     final fieldHeight = math.max(52.0, scaler.scale(16) * 1.45 + 28);
-    final bottomGap = MediaQuery.paddingOf(context).bottom + 24;
 
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
       // Gövde sepet çubuğunun arkasına uzanır; alt boşluk paddingOf'tan gelir.
       extendBody: true,
       bottomNavigationBar: const BrowseCartBar(),
-      body: CustomScrollView(
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: MarketScrollPhysics(),
-        ),
-        slivers: [
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _SearchBarDelegate(
-              extent: fieldHeight + 24,
-              child: _buildSearchBar(fieldHeight),
+      // Çubuğun yüksekliği yalnızca Scaffold'un gövdesindeki bağlamda
+      // paddingOf'a eklenir; alt boşluk bu yüzden burada okunur.
+      body: Builder(
+        builder: (bodyContext) {
+          final bottomGap = MediaQuery.paddingOf(bodyContext).bottom + 24;
+          return CustomScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: MarketScrollPhysics(),
             ),
-          ),
-          if (_hasQuery) SliverToBoxAdapter(child: _buildFilterChips()),
-          ..._buildBody(bottomGap),
-        ],
+            slivers: [
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SearchBarDelegate(
+                  extent: fieldHeight + 24,
+                  child: _buildSearchBar(fieldHeight),
+                ),
+              ),
+              if (_hasQuery) SliverToBoxAdapter(child: _buildFilterChips()),
+              ..._buildBody(bottomGap),
+            ],
+          );
+        },
       ),
     );
   }
@@ -930,7 +961,8 @@ class _CategoryDot extends StatelessWidget {
 }
 
 /// Son arama çipi: dokununca aynı aramayı yapar, ✕ ile listeden kaldırılır.
-/// Görünüm [MarketChip] ile aynıdır (40 pt hap, 48 pt dokunma alanı).
+/// Görünüm [MarketChip] ile aynıdır (40 pt hap, 48 pt dokunma alanı). ✕'in
+/// dokunma alanı sondaki 44 pt'nin tamamıdır (üst/alt boşluk dahil 44x48).
 class _RecentSearchChip extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
@@ -941,6 +973,8 @@ class _RecentSearchChip extends StatelessWidget {
     required this.onTap,
     required this.onRemove,
   });
+
+  static const double _removeWidth = MarketSize.control;
 
   @override
   Widget build(BuildContext context) {
@@ -953,7 +987,7 @@ class _RecentSearchChip extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 40),
           child: Padding(
-            padding: const EdgeInsets.only(left: 12, right: 4),
+            padding: const EdgeInsets.only(left: 12),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -971,12 +1005,14 @@ class _RecentSearchChip extends StatelessWidget {
                     style: MarketText.label(size: 13, weight: FontWeight.w600),
                   ),
                 ),
-                const SizedBox(width: 2),
                 Semantics(
                   container: true,
                   button: true,
                   label: '“$label” aramasını kaldır',
                   excludeSemantics: true,
+                  // excludeSemantics InkWell'in eylemini de düşürür; ekran
+                  // okuyucu dokunuşu buradan gelir.
+                  onTap: onRemove,
                   child: Tooltip(
                     message: 'Kaldır',
                     excludeFromSemantics: true,
@@ -984,8 +1020,8 @@ class _RecentSearchChip extends StatelessWidget {
                       onTap: onRemove,
                       customBorder: const CircleBorder(),
                       child: const SizedBox(
-                        width: 32,
-                        height: 32,
+                        width: _removeWidth,
+                        height: 40,
                         child: Icon(
                           Icons.close_rounded,
                           size: 16,
@@ -1009,8 +1045,16 @@ class _RecentSearchChip extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         excludeFromSemantics: true,
-        onTap: onTap,
-        // Çipin üstündeki/altındaki 4 pt da dokunmayı alır (48 pt hedef).
+        // Çipin üstündeki/altındaki 4 pt da dokunmayı alır (48 pt hedef);
+        // ✕'in üstü ve altı kaldırmaya gider.
+        onTapUp: (details) {
+          final width = context.size?.width ?? 0;
+          if (details.localPosition.dx >= width - _removeWidth) {
+            onRemove();
+          } else {
+            onTap();
+          }
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: chip,

@@ -84,6 +84,16 @@ class _HomePageState extends State<HomePage> {
     super.didUpdateWidget(oldWidget);
     final newRequest =
         !identical(oldWidget.navigationRequest, widget.navigationRequest);
+    if (newRequest) {
+      // Yeni yönlendirme isteği (ör. ürün sayfasından "Sepete git") ana
+      // sayfanın üstünde açık kalmış alt sayfa / pencereleri kapatır; yoksa
+      // sekme altta değişir ama alt sayfa ekranda kalır. Sayfa rotalarına
+      // dokunulmaz. (Siparişler sayfası açılacaksa bundan sonra açılır.)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route is! PopupRoute);
+      });
+    }
     if (newRequest || oldWidget.initialTabIndex != widget.initialTabIndex) {
       final nextIndex = _safeIndex(widget.initialTabIndex);
       if (nextIndex != _selectedIndex) {

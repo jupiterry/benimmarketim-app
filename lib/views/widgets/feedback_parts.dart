@@ -81,6 +81,63 @@ Duration feedbackMotion(BuildContext context,
 /// gösterilmez), sorulara daha çok yer kalır.
 bool feedbackShortScreen(BuildContext context) => MediaQuery.sizeOf(context).height < 640;
 
+/// Klavye açık ve üstünde az yer kalmış mı (ör. 320 × 568'de ~315 pt). O zaman
+/// form sayfalarının başlığı sabit durmaz, içerikle birlikte kayar
+/// ([FeedbackFormScaffold]).
+bool feedbackTypingCompact(BuildContext context) {
+  final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+  return keyboard > 0 && MediaQuery.sizeOf(context).height - keyboard < 560;
+}
+
+/// Soru adımlarının alt sayfa iskeleti ([MarketSheetScaffold] + başlık).
+///
+/// Normalde başlık üstte sabittir. Klavye açıkken yer darsa
+/// ([feedbackTypingCompact]) başlık kaydırılan gövdenin başına geçer; böylece
+/// tutamak ile sabit alt kısım arasındaki alanın tamamı yazılan alana, sayacına
+/// ve hata metnine kalır. Gövde ağaçta hep aynı yerde durur (odak ve klavye
+/// kaybolmaz); yalnızca başlığın yeri değişir.
+class FeedbackFormScaffold extends StatelessWidget {
+  final Widget header;
+  final Widget body;
+  final Widget? footer;
+  final bool busy;
+
+  const FeedbackFormScaffold({
+    super.key,
+    required this.header,
+    required this.body,
+    this.footer,
+    this.busy = false,
+  });
+
+  // MarketSheetScaffold'un varsayılan gövde boşluğu (20, 0, 20, 20)
+  static const double _side = 20;
+  static const double _bottom = 20;
+
+  @override
+  Widget build(BuildContext context) {
+    final inline = feedbackTypingCompact(context);
+    return MarketSheetScaffold(
+      busy: busy,
+      header: inline ? null : header,
+      // Yan boşluk gövdeye verilir: satır içi başlık kendi boşluğunu kullanır
+      bodyPadding: const EdgeInsets.only(bottom: _bottom),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (inline) header,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: _side),
+            child: body,
+          ),
+        ],
+      ),
+      footer: footer,
+    );
+  }
+}
+
 /// Adım ve bölüm geçişleri için yumuşak boy değişimi.
 class FeedbackReveal extends StatelessWidget {
   final Widget child;

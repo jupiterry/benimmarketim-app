@@ -86,7 +86,7 @@ class _OrderPageState extends State<OrderPage> {
     _phoneValid = _isPhoneValid(profilePhone);
     _phoneController.addListener(_onPhoneChanged);
     _restoreLastOrderPhone(user?.id ?? '', profilePhone);
-    _restoreLastDeliveryPoint();
+    _restoreLastDeliveryPoint(user?.id ?? '');
     _startFeedbackCheck(user?.id ?? '');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<ReferralViewModel>().loadCoupons();
@@ -103,6 +103,11 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   static String _lastPhoneKey(String userId) => 'last_order_phone_$userId';
+
+  /// Hazır seçim için kullanıcıya özel son yurt. Ortak anahtar
+  /// ([lastDeliveryPointPrefsKey]) cihazdaki herkesin son siparişidir; o
+  /// yalnızca ana sayfa önerilerinde kullanılır.
+  static String _lastPointKey(String userId) => 'last_delivery_point_$userId';
 
   static bool _isPhoneValid(String value) =>
       value.replaceAll(RegExp(r'\D'), '').length >= 10;
@@ -153,12 +158,13 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
-  /// Son siparişte seçilen yurt (ana sayfa önerileri için de saklanır)
-  /// ödeme ekranında hazır seçili gelir.
-  Future<void> _restoreLastDeliveryPoint() async {
+  /// Bu kullanıcının son siparişinde seçtiği yurt ödeme ekranında hazır
+  /// seçili gelir (aynı telefondaki başka hesabın seçimi gelmez).
+  Future<void> _restoreLastDeliveryPoint(String userId) async {
+    if (userId.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(lastDeliveryPointPrefsKey) ?? '';
+      final saved = prefs.getString(_lastPointKey(userId)) ?? '';
       if (!mounted || saved.isEmpty) return;
       setState(() => _rememberedDeliveryPoint = saved);
     } catch (e) {
@@ -207,18 +213,23 @@ class _OrderPageState extends State<OrderPage> {
 
   /// Teslimat noktasına özel kuponun indirimi nokta seçilince hemen
   /// hesaplanır (siparişte yapılan doğrulamanın aynısı; o yine yapılır).
+  /// Önceki doğrulama sürerken başka yurt seçilirse yine sorulur; ekranda
+  /// son seçilen noktanın sonucu kalır.
   void _revalidateCouponFor(String deliveryPoint) {
     final cart = context.read<CartViewModel>();
     if (cart.appliedCoupon?['requiresDeliveryPoint'] != true) return;
-    if (cart.isValidatingCoupon) return;
     unawaited(cart.validateCouponForDeliveryPoint(deliveryPoint));
   }
 
-  Future<void> _rememberDeliveryPoint(String deliveryPoint) async {
+  Future<void> _rememberDeliveryPoint(
+      String userId, String deliveryPoint) async {
     if (deliveryPoint.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(lastDeliveryPointPrefsKey, deliveryPoint);
+      if (userId.isNotEmpty) {
+        await prefs.setString(_lastPointKey(userId), deliveryPoint);
+      }
     } catch (_) {
       // İsteğe bağlı; sipariş akışını etkilemez
     }
@@ -617,7 +628,7 @@ class _OrderPageState extends State<OrderPage> {
       // güncel numarayla yenilenir.
       await _rememberOrderPhone(currentUserId, orderRequest.phone);
       // Ana sayfa önerileri yurda göre istenir (Kız/Erkek KYK)
-      await _rememberDeliveryPoint(orderRequest.deliveryPoint);
+      await _rememberDeliveryPoint(currentUserId, orderRequest.deliveryPoint);
       auth.updateProfile();
 
       // Sepeti temizle
@@ -1201,9 +1212,13 @@ class _OrderPageState extends State<OrderPage> {
     if (applied != null) {
       final needsPoint = cart.appliedCoupon?['requiresDeliveryPoint'] == true &&
           cart.discountAmount <= 0;
+      // Seçilen noktada geçersizse indirim düşülmez; nedeni altta kırmızıyla.
+      final invalid = !validating && cart.couponError != null;
       final String status;
       if (validating) {
         status = 'İndirim hesaplanıyor…';
+      } else if (invalid) {
+        status = 'İndirim uygulanmadı';
       } else if (needsPoint && _selectedDeliveryPoint.isEmpty) {
         status = 'Teslimat noktasını seçince indirim hesaplanacak';
       } else {
@@ -1232,8 +1247,11 @@ class _OrderPageState extends State<OrderPage> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: MarketPalette.green),
                           )
-                        : const Icon(Icons.check_circle_rounded,
-                            color: MarketPalette.green),
+                        : invalid
+                            ? const Icon(Icons.error_outline_rounded,
+                                color: MarketPalette.red)
+                            : const Icon(Icons.check_circle_rounded,
+                                color: MarketPalette.green),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1244,7 +1262,9 @@ class _OrderPageState extends State<OrderPage> {
                         Text(
                           status,
                           style: MarketText.caption(
-                              color: MarketPalette.greenDark),
+                              color: invalid
+                                  ? MarketPalette.inkSoft
+                                  : MarketPalette.greenDark),
                         ),
                       ],
                     ),
@@ -1259,7 +1279,7 @@ class _OrderPageState extends State<OrderPage> {
                   ),
                 ],
               ),
-              if (cart.couponError != null && !validating)
+              if (invalid)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(36, 2, 10, 4),
                   child: Text(

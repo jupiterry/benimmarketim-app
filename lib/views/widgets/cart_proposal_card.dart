@@ -336,51 +336,100 @@ class _CartProposalCardState extends State<CartProposalCard> {
   }
 
   Widget _buildLine(_Line line, bool editable) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Sabit genişlikli adet sütunu: ürün adları aynı hizada başlar.
-          SizedBox(
-            width: 26,
-            child: Text(
-              '${line.quantity}×',
-              textAlign: TextAlign.right,
-              style: MarketText.label(color: MarketPalette.inkSoft).copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()]),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(productDisplayName(line.name),
-                style: MarketText.body(size: 13)),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            formatTl(line.total),
-            style: MarketText.label(color: MarketPalette.inkSoft),
-          ),
-          if (editable) ...[
-            const SizedBox(width: 2),
-            if (line.alternatives.isNotEmpty)
-              _lineButton(
-                icon: Icons.swap_horiz_rounded,
-                tooltip: 'Benzeriyle değiştir',
-                color: MarketPalette.greenDark,
-                onTap: () => _swap(line),
-              )
-            else
-              const SizedBox(width: MarketSize.control),
-            _lineButton(
-              icon: Icons.close_rounded,
-              tooltip: 'Öneriden çıkar',
-              color: MarketPalette.muted,
-              onTap: () => _remove(line),
-            ),
-          ],
-        ],
+    // Sabit genişlikli adet sütunu: ürün adları aynı hizada başlar.
+    final quantity = SizedBox(
+      width: 26,
+      child: Text(
+        '${line.quantity}×',
+        textAlign: TextAlign.right,
+        style: MarketText.label(color: MarketPalette.inkSoft)
+            .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
       ),
+    );
+    final name =
+        Text(productDisplayName(line.name), style: MarketText.body(size: 13));
+    final price = Text(
+      formatTl(line.total),
+      style: MarketText.label(color: MarketPalette.inkSoft),
+    );
+    final buttons = <Widget>[
+      if (editable) ...[
+        if (line.alternatives.isNotEmpty)
+          _lineButton(
+            icon: Icons.swap_horiz_rounded,
+            tooltip: 'Benzeriyle değiştir',
+            color: MarketPalette.greenDark,
+            onTap: () => _swap(line),
+          )
+        else
+          const SizedBox(width: MarketSize.control),
+        _lineButton(
+          icon: Icons.close_rounded,
+          tooltip: 'Öneriden çıkar',
+          color: MarketPalette.muted,
+          onTap: () => _remove(line),
+        ),
+      ],
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Adet, fiyat ve düğmelerden sonra ada en az ~100 pt kalmalı.
+        // Kalmıyorsa (sohbet balonu, küçük ekran) ad üst satırı tek başına
+        // kullanır; fiyat ve düğmeler alt satıra geçer.
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final fixed = 26 + 8 + 8 + 64 * textScale +
+            (editable ? 2 + 2 * MarketSize.control : 0);
+        if (constraints.maxWidth - fixed >= 100) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                quantity,
+                const SizedBox(width: 8),
+                Expanded(child: name),
+                const SizedBox(width: 8),
+                price,
+                if (editable) const SizedBox(width: 2),
+                ...buttons,
+              ],
+            ),
+          );
+        }
+        // Yer varsa fiyat ad hizasında başlar; çok dar alanda en soldan.
+        final indent = constraints.maxWidth >= 200 ? 34.0 : 0.0;
+        return Padding(
+          padding: EdgeInsets.only(top: 3, bottom: editable ? 0 : 3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  quantity,
+                  const SizedBox(width: 8),
+                  Expanded(child: name),
+                ],
+              ),
+              if (!editable) const SizedBox(height: 2),
+              Row(
+                children: [
+                  SizedBox(width: indent),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: FittedBox(fit: BoxFit.scaleDown, child: price),
+                    ),
+                  ),
+                  ...buttons,
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

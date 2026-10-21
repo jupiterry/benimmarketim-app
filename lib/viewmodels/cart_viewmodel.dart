@@ -27,6 +27,9 @@ class CartViewModel extends ChangeNotifier {
   // Kupon doğrulama/öneri istekleri sırayla numaralanır; sepet bu arada
   // değiştiyse eski (geç gelen) yanıt yok sayılır.
   int _couponRequestSeq = 0;
+  // Teslimat noktası doğrulamaları da numaralanır: müşteri yanıt gelmeden
+  // başka yurdu seçtiyse ekranda yalnızca son seçilen noktanın sonucu kalır.
+  int _pointRequestSeq = 0;
 
   CartViewModel() {
     _loadCart();
@@ -319,6 +322,7 @@ class CartViewModel extends ChangeNotifier {
 
   Future<bool> validateCouponForDeliveryPoint(String deliveryPoint) async {
     if (_appliedCouponCode == null) return true;
+    final requestId = ++_pointRequestSeq;
     _isValidatingCoupon = true;
     _couponError = null;
     notifyListeners();
@@ -330,7 +334,10 @@ class CartViewModel extends ChangeNotifier {
         channel: _channel,
         deliveryPoint: deliveryPoint,
       );
-      if (response['success'] == true && response['coupon'] != null) {
+      final valid = response['success'] == true && response['coupon'] != null;
+      // Bu arada başka bir nokta için soruldu: yanıt eskidir, ekrana yansımaz.
+      if (requestId != _pointRequestSeq) return valid;
+      if (valid) {
         _appliedCoupon = Map<String, dynamic>.from(response['coupon']);
         _discountAmount =
             (response['coupon']['calculatedDiscount'] ?? 0).toDouble();
@@ -338,13 +345,20 @@ class CartViewModel extends ChangeNotifier {
       }
       _couponError = response['message'] ??
           'Bu kupon seçtiğin teslimat noktasında geçerli değil';
+      // Bu noktada geçerli olmayan kuponun indirimi tutarlardan düşülmez
+      // (kupon kodu kalır; geçerli bir nokta seçilince yeniden hesaplanır).
+      _discountAmount = 0;
       return false;
     } catch (e) {
+      if (requestId != _pointRequestSeq) return false;
       _couponError = e.toString().replaceAll('Exception: ', '');
+      _discountAmount = 0;
       return false;
     } finally {
-      _isValidatingCoupon = false;
-      notifyListeners();
+      if (requestId == _pointRequestSeq) {
+        _isValidatingCoupon = false;
+        notifyListeners();
+      }
     }
   }
 

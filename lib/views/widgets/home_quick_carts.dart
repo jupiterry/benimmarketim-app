@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -31,22 +33,34 @@ class _HomeOrderSlotState extends State<HomeOrderSlot> {
   Order? _lastOrder;
   String? _loadedForUser;
   bool _adding = false;
+  bool _visible = true;
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
     homeRefreshSignal.addListener(_reload);
+    _lifecycle = AppLifecycleListener(onResume: _refreshActive);
   }
 
   @override
   void dispose() {
     homeRefreshSignal.removeListener(_reload);
+    _lifecycle.dispose();
     super.dispose();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Ana sayfa yeniden görünür olunca (ör. Siparişlerim'den, başka bir
+    // sekmeden ya da sayfadan dönünce) süren siparişin durumu tazelenir:
+    // iptal edilen ya da teslim edilen sipariş "yolda" görünmeye devam etmez.
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible != _visible) {
+      _visible = visible;
+      if (visible) _refreshActive();
+    }
     // Giriş durumu değişince (ör. açılışta profil yüklenince) yeniden yüklenir
     // didChangeDependencies içinde context.watch hata ayıklama modunda
     // izin verilmediği için Provider.of kullanılır.
@@ -65,6 +79,12 @@ class _HomeOrderSlotState extends State<HomeOrderSlot> {
   void _reload() {
     final userId = _loadedForUser;
     if (userId != null) _load(userId);
+  }
+
+  /// Yalnızca süren bir sipariş gösteriliyorsa yeniden yükler (durumu
+  /// değişebilecek tek kart odur; her sayfa dönüşünde istek atılmaz).
+  void _refreshActive() {
+    if (mounted && _active.isNotEmpty) _reload();
   }
 
   Future<void> _load(String userId) async {
@@ -200,15 +220,17 @@ class _ActiveOrderCard extends StatelessWidget {
             MediaQuery.textScalerOf(context).scale(1) >=
         330;
 
+    void track() => context.push('/orders');
     return Semantics(
       button: true,
       label: '$title, $subtitle. Takip et',
       excludeSemantics: true,
+      onTap: track,
       child: MarketCard(
         shadow: false,
         borderColor: MarketPalette.greenLine,
         padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
-        onTap: () => context.push('/orders'),
+        onTap: track,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -364,111 +386,207 @@ class _ReorderCard extends StatelessWidget {
     required this.onRepeat,
   });
 
+  static const double _size = 36;
+  static const double _step = 22;
+
   @override
   Widget build(BuildContext context) {
     final narrow = MediaQuery.sizeOf(context).width < 360;
-    final maxThumbs = narrow ? 2 : 3;
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
     final products = order.products;
-    final shown = products.take(maxThumbs).toList();
-    final extra = products.length - shown.length;
-    final circles = shown.length + (extra > 0 ? 1 : 0);
-    const size = 36.0;
-    const step = 22.0;
+    final summary = _orderSummary(order);
+    final titleStyle = MarketText.label(size: 14, weight: FontWeight.w800);
+    final summaryStyle = MarketText.caption();
+    final buttonStyle = MarketText.label(size: 13);
+
+    double textWidth(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
 
     return MarketCard(
       shadow: false,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       onTap: busy ? null : onRepeat,
-      child: Row(
-        children: [
-          ExcludeSemantics(
-            child: SizedBox(
-              width: size + step * (circles - 1),
-              height: size,
-              child: Stack(
-                children: [
-                  for (var i = 0; i < shown.length; i++)
-                    Positioned(
-                      left: step * i,
-                      child: _Thumb(image: shown[i].image, size: size),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Başlık ve tutar tek satırda tam okunmalı (müşteri tutara bakarak
+          // karar verir). Sığmazsa önce görsel sayısı azalır; yine sığmazsa
+          // "Tekrarla" alt satıra iner.
+          final textNeed = math.max(
+            textWidth('Son siparişin', titleStyle),
+            textWidth(summary, summaryStyle),
+          );
+          final buttonWidth = textWidth('Tekrarla', buttonStyle) + 14 * 2 + 2;
+          int circlesFor(int thumbs) =>
+              thumbs + (products.length > thumbs ? 1 : 0);
+          bool fits(int thumbs, {required bool inline}) {
+            final thumbsWidth = _size + _step * (circlesFor(thumbs) - 1);
+            final rest = constraints.maxWidth -
+                thumbsWidth -
+                MarketSpace.md -
+                (inline ? MarketSpace.sm + buttonWidth : 0);
+            return rest >= textNeed;
+          }
+
+          final maxThumbs = math.max(1, math.min(narrow ? 2 : 3, products.length));
+          var thumbs = maxThumbs;
+          while (thumbs > 1 && !fits(thumbs, inline: true)) {
+            thumbs--;
+          }
+          final inline = fits(thumbs, inline: true);
+          if (!inline) {
+            thumbs = maxThumbs;
+            while (thumbs > 1 && !fits(thumbs, inline: false)) {
+              thumbs--;
+            }
+          }
+
+          final info = Row(
+            children: [
+              _ThumbStack(
+                images: [
+                  for (final item in products.take(thumbs)) item.image,
+                ],
+                extra: products.length - math.min(thumbs, products.length),
+                size: _size,
+                step: _step,
+              ),
+              const SizedBox(width: MarketSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Son siparişin',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
                     ),
-                  if (extra > 0)
-                    Positioned(
-                      left: step * shown.length,
-                      child: Container(
-                        width: size,
-                        height: size,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: MarketPalette.greenSoft,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: Text(
-                          '+$extra',
-                          style: MarketText.label(
-                              color: MarketPalette.greenDark, size: 12),
-                        ),
+                    const SizedBox(height: 2),
+                    Text(
+                      busy ? 'Sepete ekleniyor…' : summary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: summaryStyle,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          final Widget action = busy
+              ? const SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: MarketPalette.green,
                       ),
                     ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: MarketSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                )
+              : FilledButton.tonal(
+                  onPressed: onRepeat,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, MarketSize.control),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    backgroundColor: MarketPalette.greenSoft,
+                    foregroundColor: MarketPalette.greenDark,
+                    textStyle: buttonStyle,
+                  ),
+                  child: Text(
+                    'Tekrarla',
+                    semanticsLabel: 'Son siparişini tekrarla, $summary',
+                  ),
+                );
+
+          if (inline) {
+            return Row(
               children: [
-                // Kısa başlık tek satıra sığar; eylemi yanındaki düğme söyler
-                Text(
-                  'Son siparişin',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: MarketText.label(size: 14, weight: FontWeight.w800),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  busy ? 'Sepete ekleniyor…' : _orderSummary(order),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: MarketText.caption(),
-                ),
+                Expanded(child: info),
+                const SizedBox(width: MarketSpace.sm),
+                action,
               ],
-            ),
-          ),
-          const SizedBox(width: MarketSpace.sm),
-          if (busy)
-            const SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    color: MarketPalette.green,
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              info,
+              const SizedBox(height: 10),
+              busy ? Center(child: action) : action,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Üst üste binen küçük ürün görselleri ve kalanlar için "+N" balonu.
+class _ThumbStack extends StatelessWidget {
+  final List<String?> images;
+  final int extra;
+  final double size;
+  final double step;
+
+  const _ThumbStack({
+    required this.images,
+    required this.extra,
+    required this.size,
+    required this.step,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final circles = images.length + (extra > 0 ? 1 : 0);
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: size + step * (circles - 1),
+        height: size,
+        child: Stack(
+          children: [
+            for (var i = 0; i < images.length; i++)
+              Positioned(
+                left: step * i,
+                child: _Thumb(image: images[i], size: size),
+              ),
+            if (extra > 0)
+              Positioned(
+                left: step * images.length,
+                child: Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: MarketPalette.greenSoft,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Text(
+                    '+$extra',
+                    maxLines: 1,
+                    style: MarketText.label(
+                        color: MarketPalette.greenDark, size: 12),
                   ),
                 ),
               ),
-            )
-          else
-            FilledButton.tonal(
-              onPressed: onRepeat,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, MarketSize.control),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                backgroundColor: MarketPalette.greenSoft,
-                foregroundColor: MarketPalette.greenDark,
-                textStyle: MarketText.label(size: 13),
-              ),
-              child: Text(
-                'Tekrarla',
-                semanticsLabel: 'Son siparişini tekrarla, ${_orderSummary(order)}',
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

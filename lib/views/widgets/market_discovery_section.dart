@@ -277,10 +277,13 @@ class _TileFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // excludeSemantics içteki InkWell'in dokunma eylemini de düşürür; eylem
+    // burada yeniden verilir (yardımcı teknolojilerle etkinleştirilebilsin).
     return Semantics(
       button: true,
       label: semanticLabel,
       excludeSemantics: true,
+      onTap: onTap,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
@@ -370,11 +373,12 @@ class MarketSectionHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Dar ekranda / büyük yazıda başlık kesilmez, iki satıra iner
               Semantics(
                 header: true,
                 child: Text(
                   title,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: MarketText.heading(size: 18),
                 ),
@@ -590,12 +594,14 @@ class _ShortcutCell extends StatelessWidget {
       background: shortcut.background,
       foreground: shortcut.foreground,
     );
+    void open() => context.push(shortcut.route);
     return Semantics(
       button: true,
       label: '${shortcut.title}, ${shortcut.subtitle}',
       excludeSemantics: true,
+      onTap: open,
       child: InkWell(
-        onTap: () => context.push(shortcut.route),
+        onTap: open,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 60),
           child: Padding(

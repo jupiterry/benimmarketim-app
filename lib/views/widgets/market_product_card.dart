@@ -121,6 +121,11 @@ class MarketProductCard extends StatelessWidget {
   /// süreyi zaten gösteriyorsa kapatılır (aynı sayaç iki kez görünmesin).
   final bool showFlashTimer;
 
+  /// Karta dokununca ürün sayfasını doğrudan açmak yerine güncel ürünle
+  /// çağrılır (ör. alt sayfadaki kart, ürün sayfasını açmadan önce alt sayfayı
+  /// kapatır).
+  final ValueChanged<Product>? onOpen;
+
   const MarketProductCard({
     super.key,
     required this.product,
@@ -128,6 +133,7 @@ class MarketProductCard extends StatelessWidget {
     this.showCategory = true,
     this.onFavoriteChanged,
     this.showFlashTimer = true,
+    this.onOpen,
   });
 
   /// Flash sale durumundan yalnızca bu kartı ilgilendiren alanlar değişince
@@ -216,7 +222,9 @@ class MarketProductCard extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => context.push('/product', extra: product),
+          onTap: onOpen != null
+              ? () => onOpen!(product)
+              : () => context.push('/product', extra: product),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -248,7 +256,22 @@ class MarketProductCard extends StatelessWidget {
                                     showFlashTimer &&
                                     !product.isOutOfStock) ...[
                                   const SizedBox(height: 4),
-                                  FlashTimerChip(endDate: sale.endDate),
+                                  // Sağ üstteki ♥ dairesinin (34 pt, köşeden
+                                  // 5 pt içeride) soluna sığar; "2 gün 03:59"
+                                  // gibi uzun süreler dar kartta küçülür.
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: (box.maxWidth - 6 - 39 - 4)
+                                          .clamp(0.0, double.infinity),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: FlashTimerChip(
+                                        endDate: sale.endDate,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ],
                             ),

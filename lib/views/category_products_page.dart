@@ -982,6 +982,9 @@ class _ProductRow extends StatelessWidget {
 
   const _ProductRow({required this.product});
 
+  /// [MarketCartButton]'ın adet seçici halinin genişliği (varsayılan maxWidth).
+  static const double _stepperWidth = 108;
+
   @override
   Widget build(BuildContext context) {
     return Consumer<FlashSaleViewModel>(
@@ -999,18 +1002,20 @@ class _ProductRow extends StatelessWidget {
         }
         if (outOfStock) label.write(', stokta yok');
 
+        final priceText = formatTl(item.actualPrice);
+        final priceStyle = MarketText.price(
+          color: hasSavings ? MarketPalette.red : MarketPalette.ink,
+          size: 17,
+        );
         final price = Wrap(
           crossAxisAlignment: WrapCrossAlignment.end,
           spacing: 6,
           children: [
             Text(
-              formatTl(item.actualPrice),
+              priceText,
               maxLines: 1,
               softWrap: false,
-              style: MarketText.price(
-                color: hasSavings ? MarketPalette.red : MarketPalette.ink,
-                size: 17,
-              ),
+              style: priceStyle,
             ),
             if (hasSavings)
               Padding(
@@ -1069,7 +1074,26 @@ class _ProductRow extends StatelessWidget {
                     // sepet düğmesi fiyatın altına iner; ad ve fiyat kırpılmaz.
                     final imageSize = box.maxWidth < 300 ? 76.0 : 92.0;
                     final textWidth = box.maxWidth - imageSize - 12;
-                    final stacked = textWidth < 210;
+                    // Fiyat, düğmenin en geniş haliyle (adet seçici) aynı
+                    // satıra sığmıyorsa da düğme alta iner (ör. 375 pt, büyük
+                    // yazı, 4 haneli fiyat). Sepete ekleyince satır zıplamaz.
+                    final actionWidth =
+                        outOfStock ? MarketSize.control : _stepperWidth;
+                    final pricePainter = TextPainter(
+                      text: TextSpan(
+                        text: priceText,
+                        style: DefaultTextStyle.of(context)
+                            .style
+                            .merge(priceStyle),
+                      ),
+                      textDirection: TextDirection.ltr,
+                      textScaler: MediaQuery.textScalerOf(context),
+                      maxLines: 1,
+                    )..layout();
+                    final priceWidth = pricePainter.width;
+                    pricePainter.dispose();
+                    final stacked = textWidth < 210 ||
+                        priceWidth > textWidth - 8 - actionWidth;
 
                     return Row(
                       children: [
@@ -1229,6 +1253,9 @@ class _ViewToggle extends StatelessWidget {
           inMutuallyExclusiveGroup: true,
           label: tooltip,
           excludeSemantics: true,
+          // excludeSemantics InkWell'in eylemini de düşürür; ekran okuyucu
+          // dokunuşu buradan gelir.
+          onTap: () => onChanged(value),
           child: InkWell(
             onTap: () => onChanged(value),
             borderRadius: BorderRadius.circular(MarketRadius.sm),
@@ -1255,7 +1282,8 @@ class _ViewToggle extends StatelessWidget {
 
     return Container(
       height: MarketSize.tapTarget,
-      padding: const EdgeInsets.all(2),
+      // Çerçeve (1) + iç boşluk (1): bölmeler tam 44x44 kalır.
+      padding: const EdgeInsets.all(1),
       decoration: BoxDecoration(
         color: MarketPalette.surface,
         borderRadius: BorderRadius.circular(MarketRadius.md),

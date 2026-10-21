@@ -248,35 +248,44 @@ class _CouponRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Future<void> copy() async {
+      await Clipboard.setData(ClipboardData(text: code));
+      if (context.mounted) {
+        showMarketSnack(context, 'Kupon kodu kopyalandı');
+      }
+    }
+
     return Semantics(
+      container: true,
       button: true,
       label: 'Kupon kodunu kopyala: $code',
       excludeSemantics: true,
+      onTap: copy,
       child: InkWell(
         borderRadius: BorderRadius.circular(MarketRadius.sm),
-        onTap: () async {
-          await Clipboard.setData(ClipboardData(text: code));
-          if (context.mounted) {
-            showMarketSnack(context, 'Kupon kodu kopyalandı');
-          }
-        },
+        onTap: copy,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: MarketSize.control),
           child: Row(
             children: [
-              Text(
-                'Kuponun hazır: ',
-                style: MarketText.label(color: MarketPalette.greenDark),
-              ),
-              Flexible(
-                child: Text(
-                  code,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: MarketText.code(size: 13),
+              // Kod hiç kesilmez: sığmazsa "Kuponun hazır:" satırının altına
+              // iner (kazanılan kupon okunabilmeli).
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        'Kuponun hazır: ',
+                        style: MarketText.label(color: MarketPalette.greenDark),
+                      ),
+                      Text(code, style: MarketText.code(size: 13)),
+                    ],
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: MarketSpace.sm),
               Text(
                 'Kopyala',
                 style: MarketText.label(color: MarketPalette.greenDark),

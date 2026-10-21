@@ -5,11 +5,15 @@ import 'legal_links.dart';
 import 'market_ui.dart';
 
 bool _askedThisSession = false;
-bool _shownThisSession = false;
+bool _answeredThisSession = false;
 
-/// Bu açılışta reklam ölçümü sayfası gerçekten gösterildi mi. Sipariş sonrası
-/// anket aynı açılışta ikinci bir pencere açmamak için buna bakar.
-bool get metaConsentPromptedThisSession => _shownThisSession;
+/// Bu açılışta reklam ölçümü sayfası gösterildi ve kullanıcı karar verdi mi.
+/// Sipariş sonrası anket aynı açılışta ikinci bir pencere açmamak için buna
+/// bakar. Karar verildiyse sayfa bir daha gelmez, anket sonraki açılışta
+/// sorulur. Sayfa karar verilmeden kapatıldıysa (Android: ✕, geri, dışarı
+/// dokunma) false kalır: sayfa her açılışta yeniden geleceği için anketi
+/// engellemek onu kapatan kullanıcıya hiç anket gösterilmemesi demek olurdu.
+bool get metaConsentPromptedThisSession => _answeredThisSession;
 
 /// Reklam ölçümü (Meta) kararı henüz verilmediyse bir kez sorar. Karar
 /// verilmeden kapatılırsa ölçüm kapalı kalır ve bir sonraki açılışta yeniden
@@ -31,7 +35,6 @@ Future<void> maybeAskMetaConsent(BuildContext context) async {
   if (!context.mounted) return;
 
   final ios = service.isIos;
-  _shownThisSession = true;
   final granted = await showMarketSheet<bool>(
     context,
     isDismissible: !ios,
@@ -39,6 +42,7 @@ Future<void> maybeAskMetaConsent(BuildContext context) async {
     builder: (_) => _MetaConsentSheet(ios: ios),
   );
   if (granted == null) return;
+  _answeredThisSession = true;
   await service.setConsent(granted);
 }
 
