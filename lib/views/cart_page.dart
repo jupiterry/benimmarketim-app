@@ -961,7 +961,7 @@ class _EmptyCartSuggestions extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (_, index) => SizedBox(
                 width: 172,
-                child: MarketProductCard(product: products[index]),
+                child: MarketProductCard(product: products[index], hero: false),
               ),
             ),
           ),

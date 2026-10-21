@@ -54,9 +54,15 @@ class _MarketTabStackState extends State<MarketTabStack>
           for (var i = 0; i < widget.children.length; i++)
             TickerMode(
               enabled: i == widget.index,
-              child: _visited.contains(i)
-                  ? RepaintBoundary(child: widget.children[i])
-                  : const SizedBox.shrink(),
+              // Gizli sekmelerdeki ürün görselleri Hero geçişine katılmaz;
+              // aynı ürün hem ana sayfada hem sepet önerilerinde olunca
+              // "aynı etiketli birden fazla Hero" hatası oluşuyordu.
+              child: HeroMode(
+                enabled: i == widget.index,
+                child: _visited.contains(i)
+                    ? RepaintBoundary(child: widget.children[i])
+                    : const SizedBox.shrink(),
+              ),
             ),
         ],
       ),
