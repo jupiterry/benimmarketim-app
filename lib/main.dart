@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -25,10 +26,19 @@ import 'services/meta_app_events_service.dart';
 import 'router/app_router.dart';
 import 'views/widgets/market_scroll.dart';
 import 'views/widgets/market_system_frame.dart';
+import 'views/widgets/market_ui.dart' show MarketPalette, MarketText;
 import 'services/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Ekranlar telefonda dikey kullanım için tasarlandı (ızgaralar, alt
+  // çubuklar); yan çevrilince düzen bozulmasın.
+  try {
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  } catch (e) {
+    AppLogger.debug('⚠️ Ekran yönü sabitlenemedi: $e');
+  }
 
   // Hata yakalama ile güvenli başlatma
   try {
@@ -68,51 +78,12 @@ void main() async {
     }
   };
 
-  // Error widget builder - hata durumunda gösterilecek ekran
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    return MaterialApp(
-      home: Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: Colors.red,
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Bir hata oluştu',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  details.exception.toString(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    // Uygulamayı yeniden başlat
-                    runApp(const MyApp());
-                  },
-                  child: const Text('Yeniden Dene'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  };
+  // Bir parçanın çizimi hata verirse: geliştirirken Flutter'ın ayrıntılı hata
+  // kutusu, yayında ise yalnızca o bölümün yerine sade bir not gösterilir
+  // (teknik metin yok, uygulama yeniden başlatılmaz).
+  final debugErrorBuilder = ErrorWidget.builder;
+  ErrorWidget.builder = (FlutterErrorDetails details) =>
+      kReleaseMode ? const _MarketErrorFallback() : debugErrorBuilder(details);
 
   // Bildirime dokununca ilgili ekranı aç
   NotificationService.instance.currentLocation = _currentRoutePath;
@@ -224,16 +195,55 @@ class _MyAppState extends State<MyApp> {
               GlobalCupertinoLocalizations.delegate,
             ],
             builder: (context, child) {
-              return GestureDetector(
-                onTap: () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                },
-                child: MarketSystemFrame(child: child!),
+              // Sistem yazı boyutu en fazla 1.3 kat büyütülür; daha büyüğünde
+              // iki sütunlu ızgaralar ve alt çubuklar sığmaz.
+              return MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: GestureDetector(
+                  onTap: () {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  },
+                  child: MarketSystemFrame(child: child!),
+                ),
               );
             },
           );
         },
+      ),
+    );
+  }
+}
+
+/// Yayın sürümünde çizimi hata veren bölümün yerine gösterilir. Hata bir ürün
+/// kartı gibi küçük bir alanda da olabilir; bu yüzden tek satırlık, her
+/// boyuta sığan sade bir nottur.
+class _MarketErrorFallback extends StatelessWidget {
+  const _MarketErrorFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ClipRect(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, size: 20, color: MarketPalette.muted),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Bu bölüm şu an gösterilemiyor',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.caption(),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

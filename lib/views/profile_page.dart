@@ -8,9 +8,11 @@ import '../models/user.dart';
 import '../services/app_logger.dart';
 import '../services/image_url.dart';
 import '../viewmodels/auth_viewmodel.dart';
+import '../viewmodels/chat_viewmodel.dart';
 import '../viewmodels/favorites_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
-import 'widgets/custom_dialog.dart';
+import 'widgets/account_actions.dart';
+import 'widgets/auth_ui.dart';
 import 'widgets/market_ui.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -35,18 +37,20 @@ class ProfilePage extends StatelessWidget {
               if (auth.isLoggedIn && user != null)
                 _ProfileHeader(user: user)
               else if (auth.isLoggedIn)
-                const MarketHeader(
+                MarketHeader(
                   title: 'Hesabım',
                   subtitle: 'Bilgilerin yükleniyor…',
                   icon: Icons.person_rounded,
                   showBack: false,
+                  actions: [_settingsButton(context)],
                 )
               else
-                const MarketHeader(
+                MarketHeader(
                   title: 'Hesabım',
                   subtitle: 'Siparişlerini ve tercihlerini yönet',
                   icon: Icons.person_rounded,
                   showBack: false,
+                  actions: [_settingsButton(context)],
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
@@ -61,6 +65,13 @@ class ProfilePage extends StatelessWidget {
     );
   }
 }
+
+/// Başlıktaki dişli: bildirim tercihleri, gizlilik ve yasal metinler.
+Widget _settingsButton(BuildContext context) => MarketHeaderButton(
+      icon: Icons.settings_outlined,
+      tooltip: 'Ayarlar',
+      onTap: () => context.push('/settings'),
+    );
 
 // ---------------------------------------------------------------------------
 // Giriş yapılmış
@@ -87,41 +98,30 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
 
   Future<void> _showPhotoSheet() async {
     final hasAvatar = widget.user.avatar != null;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: MarketPalette.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(MarketRadius.xl)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              MarketSpace.xl, MarketSpace.lg, MarketSpace.xl, MarketSpace.sm),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Profil fotoğrafı', style: MarketText.heading(size: 17)),
-              const SizedBox(height: MarketSpace.sm),
+    final action = await showMarketSheet<String>(
+      context,
+      builder: (sheetContext) => MarketSheetScaffold(
+        header: const MarketSheetHeader(title: 'Profil fotoğrafı'),
+        body: MarketMenuGroup(
+          children: [
+            MarketMenuTile(
+              icon: Icons.photo_camera_outlined,
+              title: 'Fotoğraf çek',
+              onTap: () => Navigator.pop(sheetContext, 'camera'),
+            ),
+            MarketMenuTile(
+              icon: Icons.photo_library_outlined,
+              title: 'Galeriden seç',
+              onTap: () => Navigator.pop(sheetContext, 'gallery'),
+            ),
+            if (hasAvatar)
               MarketMenuTile(
-                icon: Icons.photo_camera_outlined,
-                title: 'Fotoğraf çek',
-                onTap: () => Navigator.pop(sheetContext, 'camera'),
+                icon: Icons.delete_outline_rounded,
+                title: 'Fotoğrafı kaldır',
+                destructive: true,
+                onTap: () => Navigator.pop(sheetContext, 'remove'),
               ),
-              MarketMenuTile(
-                icon: Icons.photo_library_outlined,
-                title: 'Galeriden seç',
-                onTap: () => Navigator.pop(sheetContext, 'gallery'),
-              ),
-              if (hasAvatar)
-                MarketMenuTile(
-                  icon: Icons.delete_outline_rounded,
-                  title: 'Fotoğrafı kaldır',
-                  destructive: true,
-                  onTap: () => Navigator.pop(sheetContext, 'remove'),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -151,7 +151,6 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
           context,
           'Fotoğraf seçilemedi. Kamera/galeri iznini kontrol et.',
           error: true,
-          aboveNavigation: true,
         );
       }
       return;
@@ -164,7 +163,7 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
       if (bytes.length > 5 * 1024 * 1024) {
         if (mounted) {
           showMarketSnack(context, 'Fotoğraf en fazla 5 MB olabilir.',
-              error: true, aboveNavigation: true);
+              error: true);
         }
         return;
       }
@@ -172,10 +171,9 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
       final error = await context.read<AuthViewModel>().uploadProfilePhoto(bytes);
       if (!mounted) return;
       if (error == null) {
-        showMarketSnack(context, 'Profil fotoğrafın güncellendi.',
-            aboveNavigation: true);
+        showMarketSnack(context, 'Profil fotoğrafın güncellendi.');
       } else {
-        showMarketSnack(context, error, error: true, aboveNavigation: true);
+        showMarketSnack(context, error, error: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -188,10 +186,9 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
       final error = await context.read<AuthViewModel>().removeProfilePhoto();
       if (!mounted) return;
       if (error == null) {
-        showMarketSnack(context, 'Profil fotoğrafın kaldırıldı.',
-            aboveNavigation: true);
+        showMarketSnack(context, 'Profil fotoğrafın kaldırıldı.');
       } else {
-        showMarketSnack(context, error, error: true, aboveNavigation: true);
+        showMarketSnack(context, error, error: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -207,8 +204,10 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
 
     return MarketHeader(
       title: name,
-      subtitle: user.email,
+      // Uzun adres satıra sığmazsa "@" işaretinden bölünür (harf ortasından değil)
+      subtitle: user.email.replaceFirst('@', '\u200B@'),
       showBack: false,
+      actions: [_settingsButton(context)],
       leading: Semantics(
         button: true,
         label: 'Profil fotoğrafını değiştir',
@@ -284,62 +283,59 @@ class _LoggedInContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final favoriteCount =
         context.select<FavoritesViewModel, int>((f) => f.favoritesCount);
+    final unreadCount =
+        context.select<ChatViewModel, int>((c) => c.totalUnreadCount);
+    final phone = (auth.user?.phone ?? '').trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _ShortcutCard(
-                icon: Icons.receipt_long_rounded,
-                label: 'Siparişlerim',
-                color: MarketPalette.greenDark,
-                background: MarketPalette.greenSoft,
-                onTap: () => context.push('/orders'),
+        // Satırdaki kartlar en uzun etikete göre aynı boyda kalır
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _ShortcutCard(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Siparişlerim',
+                  color: MarketPalette.greenDark,
+                  background: MarketPalette.greenSoft,
+                  onTap: () => context.push('/orders'),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _ShortcutCard(
-                icon: Icons.favorite_rounded,
-                label: favoriteCount > 0 ? 'Favoriler ($favoriteCount)' : 'Favoriler',
-                color: MarketPalette.pink,
-                background: MarketPalette.pinkSoft,
-                onTap: () => context.push('/favorites'),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ShortcutCard(
+                  icon: Icons.favorite_rounded,
+                  label: 'Favorilerim',
+                  color: MarketPalette.pink,
+                  background: MarketPalette.pinkSoft,
+                  badgeCount: favoriteCount,
+                  badgeLabel: '$favoriteCount ürün',
+                  onTap: () => context.push('/favorites'),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _ShortcutCard(
-                icon: Icons.support_agent_rounded,
-                label: 'Destek',
-                color: MarketPalette.blue,
-                background: MarketPalette.blueSoft,
-                onTap: () => context.push('/chat'),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ShortcutCard(
+                  icon: Icons.support_agent_rounded,
+                  label: 'Destek',
+                  color: MarketPalette.blue,
+                  background: MarketPalette.blueSoft,
+                  badgeCount: unreadCount,
+                  badgeLabel: '$unreadCount okunmamış mesaj',
+                  onTap: () => context.push('/chat'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         _InviteBanner(onTap: () => context.push('/referral')),
         const SizedBox(height: 24),
         MarketMenuGroup(
-          title: 'Hesap bilgileri',
-          children: [
-            MarketMenuTile(
-              icon: Icons.phone_outlined,
-              title: 'Telefon numarası',
-              subtitle: (auth.user?.phone ?? '').trim().isEmpty
-                  ? 'Siparişlerin için numaranı ekle'
-                  : auth.user!.phone!.trim(),
-              onTap: () => _editPhone(context),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        MarketMenuGroup(
-          title: 'Hizmetler',
+          title: 'Alışveriş',
           children: [
             MarketMenuTile(
               icon: Icons.bookmarks_outlined,
@@ -350,17 +346,28 @@ class _LoggedInContent extends StatelessWidget {
             MarketMenuTile(
               icon: Icons.print_outlined,
               title: 'Fotokopi hizmeti',
-              subtitle: 'Belgeni yükle, siparişinle gelsin',
+              subtitle: 'Belge yükle, isteklerini takip et',
               iconColor: MarketPalette.blue,
               iconBackground: MarketPalette.blueSoft,
               onTap: () => context.push('/photocopy-upload'),
             ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        MarketMenuGroup(
+          title: 'Hesap',
+          children: [
             MarketMenuTile(
-              icon: Icons.history_rounded,
-              title: 'Fotokopi geçmişi',
-              iconColor: MarketPalette.blue,
-              iconBackground: MarketPalette.blueSoft,
-              onTap: () => context.push('/photocopy-history'),
+              icon: Icons.phone_outlined,
+              title: 'Telefon numarası',
+              subtitle: phone.isEmpty ? 'Siparişlerin için numaranı ekle' : formatPhoneTr(phone),
+              onTap: () => _editPhone(context),
+            ),
+            MarketMenuTile(
+              icon: Icons.settings_outlined,
+              title: 'Ayarlar',
+              subtitle: 'Bildirimler, gizlilik ve yasal metinler',
+              onTap: () => context.push('/settings'),
             ),
             MarketMenuTile(
               icon: Icons.rate_review_outlined,
@@ -373,80 +380,79 @@ class _LoggedInContent extends StatelessWidget {
         const SizedBox(height: 24),
         const _StoreInfoGroup(),
         const SizedBox(height: 24),
-        MarketMenuGroup(
-          title: 'Hesap',
-          children: [
-            MarketMenuTile(
-              icon: Icons.logout_rounded,
-              title: 'Çıkış yap',
-              iconColor: MarketPalette.inkSoft,
-              iconBackground: MarketPalette.surfaceMuted,
-              onTap: () => _confirmLogout(context),
-            ),
-            MarketMenuTile(
-              icon: Icons.delete_outline_rounded,
-              title: 'Hesabımı sil',
-              subtitle: 'Tüm verilerin kalıcı olarak silinir',
-              destructive: true,
-              onTap: () => _showDeleteAccountDialog(context),
-            ),
-          ],
+        OutlinedButton.icon(
+          onPressed: () => confirmLogout(context),
+          icon: const Icon(Icons.logout_rounded, size: 20),
+          label: const Text('Çıkış yap'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: MarketPalette.inkSoft,
+            backgroundColor: MarketPalette.surface,
+            side: const BorderSide(color: MarketPalette.lineStrong),
+            minimumSize: const Size.fromHeight(52),
+          ),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 20),
         const _VersionFooter(),
       ],
     );
   }
 
-  static final RegExp _phonePattern = RegExp(r'^05\d{9}$');
-
   Future<void> _editPhone(BuildContext context) async {
-    final controller = TextEditingController(
-      text: (auth.user?.phone ?? '').replaceAll(RegExp(r'\D'), ''),
-    );
+    // Kayıtta başında 0 olmadan yazılmış numaralar da (5XX…) düzenlenebilsin
+    var digits = (auth.user?.phone ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 10 && digits.startsWith('5')) digits = '0$digits';
+    final controller = TextEditingController(text: TrPhoneInputFormatter.group(digits));
     String? validationError;
     final phone = await showDialog<String>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Telefon numarası'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.phone,
-            maxLength: 11,
-            style: MarketText.body(size: 15),
-            decoration: InputDecoration(
-              hintText: '05XXXXXXXXX',
-              counterText: '',
-              errorText: validationError,
-              fillColor: MarketPalette.canvas,
-            ),
-            onChanged: (_) {
-              if (validationError != null) {
-                setDialogState(() => validationError = null);
-              }
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Vazgeç'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = controller.text.replaceAll(RegExp(r'\D'), '');
-                if (!_phonePattern.hasMatch(value)) {
-                  setDialogState(() => validationError =
-                      'Numara 05 ile başlamalı ve 11 haneli olmalı');
-                  return;
+        builder: (dialogContext, setDialogState) {
+          void save() {
+            final error = validateTrMobile(controller.text);
+            if (error != null) {
+              setDialogState(() => validationError = error);
+              return;
+            }
+            final value = controller.text.replaceAll(RegExp(r'\D'), '');
+            Navigator.pop(dialogContext, value.startsWith('0') ? value : '0$value');
+          }
+
+          return AlertDialog(
+            title: const Text('Telefon numarası'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.telephoneNumber],
+              inputFormatters: const [TrPhoneInputFormatter()],
+              style: MarketText.body(size: 16, weight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: '05XX XXX XX XX',
+                prefixIcon: const Icon(Icons.phone_outlined, color: MarketPalette.green, size: 21),
+                errorText: validationError,
+                errorMaxLines: 2,
+                fillColor: MarketPalette.canvas,
+              ),
+              onChanged: (_) {
+                if (validationError != null) {
+                  setDialogState(() => validationError = null);
                 }
-                Navigator.pop(dialogContext, value);
               },
-              child: const Text('Kaydet'),
+              onSubmitted: (_) => save(),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: save,
+                child: const Text('Kaydet'),
+              ),
+            ],
+          );
+        },
       ),
     );
     // Diyalog kapanış animasyonu bitince kontrolcü serbest bırakılır
@@ -455,97 +461,24 @@ class _LoggedInContent extends StatelessWidget {
     final error = await auth.updatePhone(phone);
     if (!context.mounted) return;
     if (error == null) {
-      showMarketSnack(context, 'Telefon numaran güncellendi.', aboveNavigation: true);
+      showMarketSnack(context, 'Telefon numaran güncellendi.');
     } else {
-      showMarketSnack(context, error, error: true, aboveNavigation: true);
+      showMarketSnack(context, error, error: true);
     }
-  }
-
-  Future<void> _confirmLogout(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const MarketIconTile(
-          icon: Icons.logout_rounded,
-          size: 52,
-          background: MarketPalette.surfaceMuted,
-          foreground: MarketPalette.inkSoft,
-        ),
-        title: const Text('Çıkış yapılsın mı?', textAlign: TextAlign.center),
-        content: const Text(
-          'Sepetin bu cihazda saklanmaya devam eder.',
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Çıkış yap'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await auth.logout();
-    if (context.mounted) context.go('/login');
-  }
-
-  void _showDeleteAccountDialog(BuildContext context) {
-    CustomDialog.show(
-      context: context,
-      title: 'Hesabını silmek istiyor musun?',
-      message:
-          'Hesabını sildiğinde tüm verilerin kalıcı olarak silinir. Bu işlem geri alınamaz.',
-      confirmButtonText: 'Hesabımı sil',
-      isDestructive: true,
-      icon: Icons.warning_amber_rounded,
-      onConfirm: () async {
-        // Dialogu kapat
-        Navigator.of(context, rootNavigator: true).pop();
-
-        // Loading göster
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(color: MarketPalette.red),
-          ),
-        );
-
-        final authViewModel = context.read<AuthViewModel>();
-        final success = await authViewModel.deleteAccount();
-
-        // Loading kapat
-        if (context.mounted) {
-          Navigator.of(context, rootNavigator: true).pop();
-        }
-
-        if (success && context.mounted) {
-          showMarketSnack(context, 'Hesabın silindi.');
-          context.go('/');
-        } else if (context.mounted) {
-          showMarketSnack(
-            context,
-            authViewModel.error ?? 'Hesap silinirken bir hata oluştu.',
-            error: true,
-            aboveNavigation: true,
-          );
-        }
-      },
-    );
   }
 }
 
+/// Hesabım'daki üç kısayol. Sayı varsa simgenin köşesinde rozet çıkar.
 class _ShortcutCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final Color background;
   final VoidCallback onTap;
+  final int badgeCount;
+
+  /// Rozetin ekran okuyucudaki karşılığı ("12 ürün").
+  final String? badgeLabel;
 
   const _ShortcutCard({
     required this.icon,
@@ -553,26 +486,47 @@ class _ShortcutCard extends StatelessWidget {
     required this.color,
     required this.background,
     required this.onTap,
+    this.badgeCount = 0,
+    this.badgeLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    return MarketCard(
-      shadow: false,
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-      radius: MarketRadius.lg,
-      onTap: onTap,
-      child: Column(
-        children: [
-          MarketIconTile(icon: icon, size: 42, background: background, foreground: color),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: MarketText.label(size: 12),
-          ),
-        ],
+    final hasBadge = badgeCount > 0;
+    return Semantics(
+      button: true,
+      label: hasBadge && badgeLabel != null ? '$label, $badgeLabel' : label,
+      excludeSemantics: true,
+      child: MarketCard(
+        shadow: false,
+        padding: const EdgeInsets.fromLTRB(6, 14, 6, 12),
+        radius: MarketRadius.lg,
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                MarketIconTile(icon: icon, size: 42, background: background, foreground: color),
+                if (hasBadge)
+                  Positioned(
+                    top: -6,
+                    right: -8,
+                    child: MarketCountBadge(count: badgeCount),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: MarketText.label(size: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -684,6 +638,18 @@ class _GuestContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 24),
+        MarketMenuGroup(
+          title: 'Uygulama',
+          children: [
+            MarketMenuTile(
+              icon: Icons.settings_outlined,
+              title: 'Ayarlar',
+              subtitle: 'Gizlilik tercihleri ve yasal metinler',
+              onTap: () => context.push('/settings'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
         const _StoreInfoGroup(),
         const SizedBox(height: 22),
         const _VersionFooter(),
@@ -727,14 +693,36 @@ class _StoreInfoGroup extends StatelessWidget {
     final settings = context.watch<SettingsViewModel>();
     String hhmm(int h, int m) =>
         '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
-    final hours =
-        '${hhmm(settings.orderStartHour, settings.orderStartMinute)} – ${hhmm(settings.orderEndHour, settings.orderEndMinute)}';
+    // 00:00 – 00:00, yönetim panelinde 24 saat açık demektir (ana sayfadaki
+    // "7/24 açık" ile aynı kural).
+    final allDay = settings.orderStartHour == 0 &&
+        settings.orderStartMinute == 0 &&
+        settings.orderEndHour == 0 &&
+        settings.orderEndMinute == 0;
+    final opensAt = hhmm(settings.orderStartHour, settings.orderStartMinute);
+    final hours = '$opensAt – ${hhmm(settings.orderEndHour, settings.orderEndMinute)}';
+    final open = settings.isWithinOrderHours;
     final points = [
       if (settings.girlsDormEnabled) settings.girlsDormName,
       if (settings.boysDormEnabled) settings.boysDormName,
     ];
 
-    Widget value(String text) => Text(text, style: MarketText.label(size: 14));
+    final String hoursText;
+    final Widget status;
+    if (allDay) {
+      hoursText = 'Günün her saati sipariş verebilirsin';
+      status = const MarketPill(label: '7/24 açık');
+    } else if (open) {
+      hoursText = 'Her gün $hours';
+      status = const MarketPill(label: 'Açık');
+    } else {
+      hoursText = 'Açılış $opensAt • Her gün $hours';
+      status = const MarketPill(
+        label: 'Kapalı',
+        background: MarketPalette.redSoft,
+        foreground: MarketPalette.red,
+      );
+    }
 
     return MarketMenuGroup(
       title: 'Mağaza bilgileri',
@@ -742,13 +730,16 @@ class _StoreInfoGroup extends StatelessWidget {
         MarketMenuTile(
           icon: Icons.schedule_rounded,
           title: 'Sipariş saatleri',
-          subtitle: settings.isWithinOrderHours ? 'Şu an açık' : 'Şu an kapalı',
-          trailing: value(hours),
+          subtitle: hoursText,
+          trailing: status,
         ),
         MarketMenuTile(
           icon: Icons.shopping_basket_outlined,
           title: 'Minimum sepet tutarı',
-          trailing: value(formatTlShort(settings.minimumOrderAmount)),
+          trailing: Text(
+            formatTlShort(settings.minimumOrderAmount),
+            style: MarketText.label(size: 14),
+          ),
         ),
         MarketMenuTile(
           icon: Icons.location_on_outlined,

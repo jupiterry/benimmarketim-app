@@ -10,6 +10,13 @@ void main() {
     expect(TurkishText.contains('Süt', 'ekmek'), isFalse);
   });
 
+  test('Türkçe büyük harf', () {
+    expect(TurkishText.toUpper('Bildirimler · Diğer'), 'BİLDİRİMLER · DİĞER');
+    expect(TurkishText.toUpper('Hesap bilgileri'), 'HESAP BİLGİLERİ');
+    expect(TurkishText.toUpper('ılık çiğ süt'), 'ILIK ÇİĞ SÜT');
+    expect(TurkishText.toUpper('KATEGORİLER'), 'KATEGORİLER');
+  });
+
   test('Türk alfabesine göre sıralama', () {
     final names = ['Zeytin', 'Şeker', 'Çay', 'Ayran', 'Süt', 'Cips', 'Ödeme', 'Ozon', 'Irmik', 'İncir', 'Ürün', 'Un', 'Quinoa', 'Peynir', 'Reçel'];
     names.sort(TurkishText.compare);

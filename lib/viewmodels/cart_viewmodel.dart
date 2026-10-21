@@ -273,7 +273,7 @@ class CartViewModel extends ChangeNotifier {
   // Kupon kodu doğrula ve uygula
   Future<bool> applyCoupon(String code) async {
     if (code.trim().isEmpty) {
-      _couponError = 'Kupon kodu giriniz';
+      _couponError = 'Kupon kodunu yaz';
       notifyListeners();
       return false;
     }
@@ -304,7 +304,7 @@ class CartViewModel extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        _couponError = response['message'] ?? 'Kupon geçersiz';
+        _couponError = response['message'] ?? 'Bu kupon geçerli değil';
         _isValidatingCoupon = false;
         notifyListeners();
         return false;
@@ -337,7 +337,7 @@ class CartViewModel extends ChangeNotifier {
         return true;
       }
       _couponError = response['message'] ??
-          'Bu kupon seçtiğiniz teslimat noktasında geçerli değil';
+          'Bu kupon seçtiğin teslimat noktasında geçerli değil';
       return false;
     } catch (e) {
       _couponError = e.toString().replaceAll('Exception: ', '');
@@ -421,7 +421,7 @@ class CartViewModel extends ChangeNotifier {
           _couponError = null;
         } else {
           _couponError =
-              response['message'] ?? 'Kupon artık sepetiniz için geçerli değil';
+              response['message'] ?? 'Kupon artık sepetin için geçerli değil';
           _appliedCouponCode = null;
           _appliedCoupon = null;
           _discountAmount = 0;

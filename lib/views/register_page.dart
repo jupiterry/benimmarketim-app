@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -26,14 +27,41 @@ class _RegisterPageState extends State<RegisterPage> {
   final _confirmPasswordController = TextEditingController();
   final _referralCodeController = TextEditingController();
 
+  // Gönderimde ilk hatalı alana kaydırıp odaklanmak için
+  final _nameKey = GlobalKey();
+  final _emailKey = GlobalKey();
+  final _phoneKey = GlobalKey();
+  final _passwordKey = GlobalKey();
+  final _confirmKey = GlobalKey();
+  final _consentKey = GlobalKey();
+  final _nameFocus = FocusNode();
+  final _emailFocus = FocusNode();
+  final _phoneFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _confirmFocus = FocusNode();
+  final _referralFocus = FocusNode();
+
+  // Onay metnindeki yasal metin bağlantıları
+  late final TapGestureRecognizer _termsLink = TapGestureRecognizer()
+    ..onTap = () => LegalLinks.open(context, LegalLinks.terms);
+  late final TapGestureRecognizer _kvkkLink = TapGestureRecognizer()
+    ..onTap = () => LegalLinks.open(context, LegalLinks.kvkk);
+  late final TapGestureRecognizer _privacyLink = TapGestureRecognizer()
+    ..onTap = () => LegalLinks.open(context, LegalLinks.privacy);
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   Timer? _debounceTimer;
   bool? _isReferralCodeValid;
   String? _referralMessage;
   bool _isCheckingReferralCode = false;
+  bool _showReferralField = false;
   bool _acceptedTerms = false;
   bool _showTermsError = false;
+  bool _submitted = false;
+
+  // Kayıt başarısızsa formun içinde gösterilen hata
+  String? _error;
 
   @override
   void dispose() {
@@ -43,11 +71,25 @@ class _RegisterPageState extends State<RegisterPage> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _referralCodeController.dispose();
+    _nameFocus.dispose();
+    _emailFocus.dispose();
+    _phoneFocus.dispose();
+    _passwordFocus.dispose();
+    _confirmFocus.dispose();
+    _referralFocus.dispose();
+    _termsLink.dispose();
+    _kvkkLink.dispose();
+    _privacyLink.dispose();
     _debounceTimer?.cancel();
     super.dispose();
   }
 
+  void _clearError([String _ = '']) {
+    if (_error != null) setState(() => _error = null);
+  }
+
   void _checkReferralCode(String code) {
+    _clearError();
     _debounceTimer?.cancel();
     final normalizedCode = code.trim();
 
@@ -74,11 +116,81 @@ class _RegisterPageState extends State<RegisterPage> {
     });
   }
 
+  static String? _validateName(String? value) {
+    final words = (value ?? '')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (words.length < 2 || words.any((word) => word.length < 2)) {
+      return 'Adını ve soyadını eksiksiz yaz';
+    }
+    return null;
+  }
+
+  static String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+    if (email.isEmpty) return 'E-posta adresini yaz';
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      return 'Geçerli bir e-posta adresi yaz (ör. ad@mail.com)';
+    }
+    return null;
+  }
+
+  static String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) return 'Bir şifre belirle';
+    if (value.length < 6) return 'Şifre en az 6 karakter olmalı';
+    if (value.length > 50) return 'Şifre en fazla 50 karakter olabilir';
+    return null;
+  }
+
+  String? _validateConfirm(String? value) {
+    if (value == null || value.isEmpty) return 'Şifreni tekrar yaz';
+    if (value != _passwordController.text) return 'Şifreler aynı değil';
+    return null;
+  }
+
+  /// İlk hatalı alanı (ya da onay kutusunu) görünür yapar ve odaklar; uzun
+  /// formda hata ekran dışında kalmaz.
+  void _revealFirstProblem() {
+    final checks = <(GlobalKey, FocusNode?, bool)>[
+      (_nameKey, _nameFocus, _validateName(_nameController.text) != null),
+      (_emailKey, _emailFocus, _validateEmail(_emailController.text) != null),
+      (_phoneKey, _phoneFocus, validateTrMobile(_phoneController.text) != null),
+      (_passwordKey, _passwordFocus, _validatePassword(_passwordController.text) != null),
+      (_confirmKey, _confirmFocus, _validateConfirm(_confirmPasswordController.text) != null),
+      (_consentKey, null, !_acceptedTerms),
+    ];
+    for (final (key, focus, invalid) in checks) {
+      if (!invalid) continue;
+      final target = key.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: .15,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+        );
+      }
+      focus?.requestFocus();
+      return;
+    }
+  }
+
   Future<void> _register() async {
     FocusScope.of(context).unfocus();
+    setState(() {
+      _submitted = true;
+      _error = null;
+    });
     final formValid = _formKey.currentState?.validate() ?? false;
     if (!_acceptedTerms) setState(() => _showTermsError = true);
-    if (!formValid || !_acceptedTerms) return;
+    if (!formValid || !_acceptedTerms) {
+      _revealFirstProblem();
+      return;
+    }
 
     final auth = context.read<AuthViewModel>();
     final referralCode = _referralCodeController.text.trim();
@@ -96,42 +208,10 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MarketRadius.lg)),
-        icon: Container(
-          width: 52,
-          height: 52,
-          decoration: const BoxDecoration(
-            color: MarketPalette.redSoft,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.error_outline_rounded,
-            color: MarketPalette.red,
-          ),
-        ),
-        title: const Text(
-          'Kayıt tamamlanamadı',
-          textAlign: TextAlign.center,
-        ),
-        content: Text(
-          auth.error ?? 'Bilgilerini kontrol edip tekrar deneyebilirsin.',
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            style: FilledButton.styleFrom(
-              backgroundColor: MarketPalette.green,
-            ),
-            child: const Text('Tekrar dene'),
-          ),
-        ],
-      ),
-    );
+    final message = auth.error?.trim();
+    setState(() => _error = message == null || message.isEmpty
+        ? 'Kayıt tamamlanamadı. Bilgilerini kontrol edip tekrar dene.'
+        : message);
   }
 
   void _openLogin() {
@@ -146,174 +226,149 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget build(BuildContext context) {
     return AuthPageShell(
       onBack: _openLogin,
-      child: Form(
-        key: _formKey,
-        child: AutofillGroup(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const AuthBrandHeader(
-                icon: Icons.person_add_alt_1_rounded,
-                title: 'Aramıza katıl',
-                subtitle:
-                    'Siparişlerini kolayca takip et, favorilerini sakla ve alışverişini hızlandır.',
-              ),
-              const SizedBox(height: 30),
-              AuthFormCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+      header: const AuthBrandHeader(title: 'Aramıza katıl', compact: true),
+      child: AuthFormCard(
+        child: Form(
+          key: _formKey,
+          autovalidateMode:
+              _submitted ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
+          child: AutofillGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AuthTextField(
+                  key: _nameKey,
+                  controller: _nameController,
+                  focusNode: _nameFocus,
+                  label: 'Ad soyad',
+                  hint: 'Adın ve soyadın',
+                  icon: Icons.person_outline_rounded,
+                  textInputAction: TextInputAction.next,
+                  textCapitalization: TextCapitalization.words,
+                  autofillHints: const [AutofillHints.name],
+                  onChanged: _clearError,
+                  validator: _validateName,
+                ),
+                const SizedBox(height: 17),
+                AuthTextField(
+                  key: _emailKey,
+                  controller: _emailController,
+                  focusNode: _emailFocus,
+                  label: 'E-posta adresi',
+                  hint: 'ornek@email.com',
+                  icon: Icons.alternate_email_rounded,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
+                  onChanged: _clearError,
+                  validator: _validateEmail,
+                ),
+                const SizedBox(height: 17),
+                AuthTextField(
+                  key: _phoneKey,
+                  controller: _phoneController,
+                  focusNode: _phoneFocus,
+                  label: 'Cep telefonu',
+                  hint: '05XX XXX XX XX',
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.telephoneNumber],
+                  inputFormatters: const [TrPhoneInputFormatter()],
+                  onChanged: _clearError,
+                  validator: validateTrMobile,
+                ),
+                const SizedBox(height: 17),
+                AuthTextField(
+                  key: _passwordKey,
+                  controller: _passwordController,
+                  focusNode: _passwordFocus,
+                  label: 'Şifre',
+                  hint: 'En az 6 karakter',
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: _obscurePassword,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.newPassword],
+                  onToggleVisibility: () => setState(
+                    () => _obscurePassword = !_obscurePassword,
+                  ),
+                  onChanged: _clearError,
+                  validator: _validatePassword,
+                ),
+                const SizedBox(height: 17),
+                AuthTextField(
+                  key: _confirmKey,
+                  controller: _confirmPasswordController,
+                  focusNode: _confirmFocus,
+                  label: 'Şifre tekrarı',
+                  hint: 'Şifreni tekrar yaz',
+                  icon: Icons.lock_reset_rounded,
+                  obscureText: _obscureConfirmPassword,
+                  textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.newPassword],
+                  onToggleVisibility: () => setState(
+                    () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                  ),
+                  onChanged: _clearError,
+                  validator: _validateConfirm,
+                ),
+                const SizedBox(height: 14),
+                if (_showReferralField || _referralCodeController.text.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  _buildReferralField(),
+                  const SizedBox(height: 14),
+                ] else
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() => _showReferralField = true);
+                        WidgetsBinding.instance.addPostFrameCallback(
+                          (_) => _referralFocus.requestFocus(),
+                        );
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: MarketPalette.greenDark,
+                        minimumSize: const Size(0, MarketSize.tapTarget),
+                        padding: const EdgeInsets.fromLTRB(2, 0, 8, 0),
+                        textStyle: MarketText.label(size: 13),
+                      ),
+                      icon: const Icon(Icons.card_giftcard_rounded, size: 19),
+                      label: const Text('Davet kodun var mı?'),
+                    ),
+                  ),
+                _buildConsent(),
+                if (_error != null) ...[
+                  const SizedBox(height: 14),
+                  AuthErrorNotice(message: _error!),
+                ],
+                const SizedBox(height: 20),
+                Consumer<AuthViewModel>(
+                  builder: (context, auth, _) => AuthPrimaryButton(
+                    label: 'Hesabımı oluştur',
+                    icon: Icons.arrow_forward_rounded,
+                    isLoading: auth.isLoading,
+                    onPressed: _register,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _FormIntro(
-                      title: 'Hesabını oluştur',
-                      subtitle: 'Birkaç bilgiyle hemen başlayabilirsin.',
-                    ),
-                    const SizedBox(height: 24),
-                    AuthTextField(
-                      controller: _nameController,
-                      label: 'Ad soyad',
-                      hint: 'Adınız ve soyadınız',
-                      icon: Icons.person_outline_rounded,
-                      textInputAction: TextInputAction.next,
-                      textCapitalization: TextCapitalization.words,
-                      autofillHints: const [AutofillHints.name],
-                      validator: (value) {
-                        final words = (value ?? '')
-                            .trim()
-                            .split(RegExp(r'\s+'))
-                            .where((word) => word.isNotEmpty)
-                            .toList();
-                        if (words.length < 2 ||
-                            words.any((word) => word.length < 2)) {
-                          return 'Adınızı ve soyadınızı eksiksiz girin';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 17),
-                    AuthTextField(
-                      controller: _emailController,
-                      label: 'E-posta adresi',
-                      hint: 'ornek@email.com',
-                      icon: Icons.alternate_email_rounded,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.email],
-                      validator: (value) {
-                        final email = value?.trim() ?? '';
-                        if (email.isEmpty) return 'E-posta adresini girin';
-                        if (!RegExp(
-                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                        ).hasMatch(email)) {
-                          return 'Geçerli bir e-posta adresi girin';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 17),
-                    AuthTextField(
-                      controller: _phoneController,
-                      label: 'Telefon numarası',
-                      hint: '5XX XXX XX XX',
-                      icon: Icons.phone_outlined,
-                      keyboardType: TextInputType.phone,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.telephoneNumber],
-                      validator: (value) {
-                        final phone = (value ?? '').replaceAll(' ', '');
-                        if (phone.isEmpty) {
-                          return 'Telefon numaranızı girin';
-                        }
-                        if (!RegExp(r'^[0-9]+$').hasMatch(phone)) {
-                          return 'Telefon numarası yalnızca rakam içermeli';
-                        }
-                        if (phone.length < 10 || phone.length > 15) {
-                          return 'Telefon numarası 10-15 haneli olmalı';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 17),
-                    AuthTextField(
-                      controller: _passwordController,
-                      label: 'Şifre',
-                      hint: 'En az 6 karakter',
-                      icon: Icons.lock_outline_rounded,
-                      obscureText: _obscurePassword,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.newPassword],
-                      onToggleVisibility: () => setState(
-                        () => _obscurePassword = !_obscurePassword,
+                    Text('Zaten hesabın var mı?', style: MarketText.caption(size: 13)),
+                    TextButton(
+                      onPressed: _openLogin,
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(MarketSize.tapTarget, MarketSize.tapTarget),
+                        textStyle: MarketText.label(size: 13, weight: FontWeight.w800),
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Şifrenizi belirleyin';
-                        }
-                        if (value.length < 6) {
-                          return 'Şifre en az 6 karakter olmalı';
-                        }
-                        if (value.length > 50) {
-                          return 'Şifre en fazla 50 karakter olabilir';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 17),
-                    AuthTextField(
-                      controller: _confirmPasswordController,
-                      label: 'Şifre tekrarı',
-                      hint: 'Şifrenizi yeniden girin',
-                      icon: Icons.lock_reset_rounded,
-                      obscureText: _obscureConfirmPassword,
-                      textInputAction: TextInputAction.done,
-                      autofillHints: const [AutofillHints.newPassword],
-                      onToggleVisibility: () => setState(
-                        () =>
-                            _obscureConfirmPassword = !_obscureConfirmPassword,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Şifrenizi tekrar girin';
-                        }
-                        if (value != _passwordController.text) {
-                          return 'Şifreler birbiriyle eşleşmiyor';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 22),
-                    _buildReferralField(),
-                    const SizedBox(height: 18),
-                    _buildConsent(),
-                    const SizedBox(height: 20),
-                    Consumer<AuthViewModel>(
-                      builder: (context, auth, _) => AuthPrimaryButton(
-                        label: 'Hesabımı Oluştur',
-                        icon: Icons.arrow_forward_rounded,
-                        isLoading: auth.isLoading,
-                        onPressed: _register,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Zaten hesabın var mı?',
-                          style: MarketText.caption(),
-                        ),
-                        TextButton(
-                          onPressed: _openLogin,
-                          child: Text(
-                            'Giriş yap',
-                            style: MarketText.label(color: MarketPalette.greenDark, size: 12, weight: FontWeight.w800),
-                          ),
-                        ),
-                      ],
+                      child: const Text('Giriş yap'),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -326,39 +381,62 @@ class _RegisterPageState extends State<RegisterPage> {
           if (_acceptedTerms) _showTermsError = false;
         });
 
+    final base = MarketText.body(size: 13, height: 1.45, color: MarketPalette.inkSoft);
+    final link = MarketText.body(
+      size: 13,
+      height: 1.45,
+      color: MarketPalette.greenDark,
+      weight: FontWeight.w700,
+    ).copyWith(decoration: TextDecoration.underline, decorationColor: MarketPalette.greenDark);
+
     return Column(
+      key: _consentKey,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: toggle,
-          borderRadius: BorderRadius.circular(MarketRadius.sm),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 40,
-                height: 40,
-                child: Checkbox(
-                  value: _acceptedTerms,
-                  onChanged: (_) => toggle(),
-                ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Kutunun kendisi 48 × 48 dokunma alanı
+            SizedBox(
+              width: MarketSize.tapTarget,
+              height: MarketSize.tapTarget,
+              child: Checkbox(
+                value: _acceptedTerms,
+                onChanged: (_) => toggle(),
+                semanticLabel: 'Kullanım koşullarını ve KVKK aydınlatma metnini onaylıyorum',
+                isError: _showTermsError && !_acceptedTerms,
               ),
-              const SizedBox(width: 4),
-              Expanded(
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: GestureDetector(
+                // Bağlantı dışındaki metne dokunmak kutuyu işaretler
+                onTap: toggle,
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Text(
-                    "Kullanım Koşulları'nı kabul ediyorum ve KVKK Aydınlatma Metni'ni okudum.",
-                    style: MarketText.body(size: 13, height: 1.4),
+                  padding: const EdgeInsets.only(top: 12, bottom: 4),
+                  child: Text.rich(
+                    TextSpan(
+                      style: base,
+                      children: [
+                        TextSpan(text: 'Kullanım Koşulları', style: link, recognizer: _termsLink),
+                        const TextSpan(text: "'nı kabul ediyorum; "),
+                        TextSpan(text: 'KVKK Aydınlatma Metni', style: link, recognizer: _kvkkLink),
+                        const TextSpan(text: "'ni ve "),
+                        TextSpan(text: 'Gizlilik Politikası', style: link, recognizer: _privacyLink),
+                        const TextSpan(text: "'nı okudum."),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         if (_showTermsError && !_acceptedTerms)
           Padding(
-            padding: const EdgeInsets.only(left: 44, top: 2),
+            padding: const EdgeInsets.only(left: 52, top: 2),
             child: Text(
               'Hesap oluşturmak için onay kutusunu işaretle',
               style: MarketText.caption(
@@ -367,25 +445,6 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.only(left: 32),
-          child: Wrap(
-            children: [
-              TextButton(
-                onPressed: () => LegalLinks.open(context, LegalLinks.terms),
-                child: const Text('Kullanım Koşulları'),
-              ),
-              TextButton(
-                onPressed: () => LegalLinks.open(context, LegalLinks.kvkk),
-                child: const Text('KVKK Aydınlatma Metni'),
-              ),
-              TextButton(
-                onPressed: () => LegalLinks.open(context, LegalLinks.privacy),
-                child: const Text('Gizlilik Politikası'),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -402,10 +461,7 @@ class _RegisterPageState extends State<RegisterPage> {
       children: [
         Row(
           children: [
-            Text(
-              'Davet kodu',
-              style: MarketText.label(size: 12),
-            ),
+            Text('Davet kodu', style: MarketText.label(size: 13)),
             const SizedBox(width: 7),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -427,6 +483,7 @@ class _RegisterPageState extends State<RegisterPage> {
           hint: 'Varsa davet kodunu gir',
           icon: Icons.card_giftcard_rounded,
           showLabel: false,
+          focusNode: _referralFocus,
           textCapitalization: TextCapitalization.characters,
           onChanged: _checkReferralCode,
           suffix: _referralSuffix(validationColor),
@@ -482,50 +539,6 @@ class _RegisterPageState extends State<RegisterPage> {
     return Icon(
       _isReferralCodeValid! ? Icons.check_circle_rounded : Icons.cancel_rounded,
       color: color,
-    );
-  }
-}
-
-class _FormIntro extends StatelessWidget {
-  final String title;
-  final String subtitle;
-
-  const _FormIntro({required this.title, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: MarketPalette.greenSoft,
-            borderRadius: BorderRadius.circular(MarketRadius.sm),
-          ),
-          child: const Icon(
-            Icons.person_add_alt_rounded,
-            color: MarketPalette.greenDark,
-            size: 19,
-          ),
-        ),
-        const SizedBox(width: 11),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: MarketText.heading(size: 18),
-              ),
-              Text(
-                subtitle,
-                style: MarketText.caption(size: 12),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

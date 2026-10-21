@@ -25,11 +25,24 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   Timer? _typingTimer;
   ChatViewModel? _chatViewModel;
   int _lastMessageCount = 0;
+  bool _fieldEmpty = true;
+
+  // Sohbet başında önerilen hazır mesajlar. Metinler aynen gönderilir
+  // (yönetici paneli / asistan bunlara göre yanıt verebilir).
+  static const _quickReplies = [
+    '📦 Siparişim Nerede?',
+    '🛒 Ürün Sor',
+    '🎟 Kampanyalar',
+    '🖨 Fotokopi',
+    '👨‍💼 Canlı Destek',
+  ];
 
   @override
   void initState() {
     super.initState();
     _messageController.addListener(_onMessageChanged);
+    // Hızlı yanıtlar yalnızca alan boş ve klavye kapalıyken görünür
+    _focusNode.addListener(_onFocusChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final viewModel = context.read<ChatViewModel>();
       _chatViewModel = viewModel;
@@ -62,15 +75,28 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   @override
   void dispose() {
     _messageController.removeListener(_onMessageChanged);
+    _focusNode.removeListener(_onFocusChanged);
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     _typingTimer?.cancel();
-    _chatViewModel?.closeActiveChat();
+    // "Yeni görüşme başlat" ile bu sayfanın yerine yeni görüşme açıldıysa
+    // aktif görüşme artık o; kapatılmaz.
+    final viewModel = _chatViewModel;
+    if (viewModel != null &&
+        (viewModel.activeChat == null || viewModel.activeChat!.id == widget.chatId)) {
+      viewModel.closeActiveChat();
+    }
     super.dispose();
   }
 
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _onMessageChanged() {
+    final empty = _messageController.text.isEmpty;
+    if (empty != _fieldEmpty && mounted) setState(() => _fieldEmpty = empty);
     final viewModel = _chatViewModel;
     if (viewModel == null) return;
 
@@ -114,7 +140,14 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   return const _MessagesLoading();
                 }
                 if (viewModel.messages.isEmpty) {
-                  return const _EmptyConversation();
+                  return _EmptyConversation(
+                    quickReplies: viewModel.activeChat?.status == 'closed'
+                        ? const []
+                        : _quickReplies,
+                    onQuickReply: viewModel.isSending
+                        ? null
+                        : (label) => _sendQuickReply(viewModel, label),
+                  );
                 }
 
                 _scheduleScrollToBottom(
@@ -151,7 +184,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           Consumer<ChatViewModel>(
             builder: (context, viewModel, _) {
               if (viewModel.activeChat?.status == 'closed') {
-                return const _ClosedChatBar();
+                return _ClosedChatBar(onNewChat: () => _startNewChat(viewModel));
               }
               return _buildMessageInput(viewModel);
             },
@@ -204,9 +237,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      chat?.type == 'order'
-                          ? 'Sipariş Desteği'
-                          : 'Benim Marketim Asistanı',
+                      chat?.type == 'order' ? 'Sipariş desteği' : 'Genel destek',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: MarketText.heading(color: Colors.white, size: 16),
@@ -229,7 +260,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                         const SizedBox(width: 6),
                         Text(
                           viewModel.isTyping
-                              ? 'Yanıt yazılıyor...'
+                              ? 'Yanıt yazılıyor…'
                               : isClosed
                                   ? 'Görüşme kapatıldı'
                                   : 'Destek görüşmesi açık',
@@ -269,43 +300,27 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: 37,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                '📦 Siparişim Nerede?',
-                '🛒 Ürün Sor',
-                '🎟 Kampanyalar',
-                '🖨 Fotokopi',
-                '👨‍💼 Canlı Destek',
-              ]
-                  .map((label) => Padding(
-                        padding: const EdgeInsets.only(right: 7),
-                        child: ActionChip(
-                          label: Text(
-                            label,
-                            style: MarketText.label(
-                              color: MarketPalette.greenDark,
-                              size: 12,
-                            ),
-                          ),
-                          onPressed: viewModel.isSending
-                              ? null
-                              : () async {
-                                  _messageController.clear();
-                                  await viewModel.sendMessage(label);
-                                },
-                          backgroundColor: MarketPalette.greenSoft,
-                          side: BorderSide.none,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(MarketRadius.lg)),
-                        ),
-                      ))
-                  .toList(),
+          if (_fieldEmpty && !_focusNode.hasFocus && viewModel.messages.isNotEmpty) ...[
+            SizedBox(
+              height: MarketSize.tapTarget,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final label in _quickReplies)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: MarketChip(
+                        label: label,
+                        onTap: viewModel.isSending
+                            ? null
+                            : () => _sendQuickReply(viewModel, label),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 9),
+            const SizedBox(height: 6),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -326,8 +341,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
                     textInputAction: TextInputAction.newline,
                     style: MarketText.body(),
                     decoration: InputDecoration(
-                      hintText: 'Mesajını yaz...',
-                      hintStyle: MarketText.body(color: MarketPalette.subtle),
+                      hintText: 'Mesajını yaz…',
+                      hintStyle: MarketText.body(color: MarketPalette.muted),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -341,6 +356,7 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
               Semantics(
                 button: true,
                 label: 'Mesajı gönder',
+                excludeSemantics: true,
                 child: Material(
                 color: viewModel.isSending
                     ? MarketPalette.subtle
@@ -387,6 +403,13 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     final success = await viewModel.sendMessage(content);
     if (!mounted || success) return;
 
+    // Gönderilemeyen mesaj kaybolmasın: alan boşsa metin geri yazılır
+    if (_messageController.text.isEmpty) {
+      _messageController.value = TextEditingValue(
+        text: content,
+        selection: TextSelection.collapsed(offset: content.length),
+      );
+    }
     showMarketSnack(
       context,
       'Mesaj gönderilemedi. Tekrar deneyebilirsin.',
@@ -394,10 +417,39 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
     );
   }
 
+  Future<void> _sendQuickReply(ChatViewModel viewModel, String label) async {
+    _messageController.clear();
+    final success = await viewModel.sendMessage(label);
+    if (!mounted || success) return;
+    showMarketSnack(context, 'Mesaj gönderilemedi. Tekrar deneyebilirsin.', error: true);
+  }
+
+  /// Kapanmış görüşmeden yeni bir destek görüşmesi açar; bu sayfanın yerine geçer.
+  Future<void> _startNewChat(ChatViewModel viewModel) async {
+    try {
+      final chat = await runWithMarketProgress(
+        context,
+        message: 'Destek ekibine bağlanılıyor…',
+        task: viewModel.startChat,
+      );
+      if (!mounted) return;
+      if (chat != null) {
+        context.pushReplacement('/chat/${chat.id}');
+      } else {
+        showMarketSnack(context, 'Görüşme başlatılamadı. Tekrar dene.', error: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        showMarketSnack(context, 'Görüşme başlatılamadı. Tekrar dene.', error: true);
+      }
+    }
+  }
+
+  // Gün ayrımı Türkiye saatine göre yapılır (sunucu saatleri UTC gelir)
   bool _isSameDay(DateTime first, DateTime second) {
-    return first.year == second.year &&
-        first.month == second.month &&
-        first.day == second.day;
+    final a = turkeyTime(first);
+    final b = turkeyTime(second);
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 }
 
@@ -483,7 +535,7 @@ class _MessageBubble extends StatelessWidget {
                   ],
                   Text(
                     message.content,
-                    style: MarketText.body(color: isUser ? Colors.white : MarketPalette.ink, size: 13, height: 1.42),
+                    style: MarketText.body(color: isUser ? Colors.white : MarketPalette.ink, size: 15, height: 1.4),
                   ),
                   if (!isUser && message.cartProposal != null)
                     CartProposalCard(
@@ -506,7 +558,7 @@ class _MessageBubble extends StatelessWidget {
                               : Icons.done_rounded,
                           size: 13,
                           color: message.isRead
-                              ? const Color(0xFF9DDCFF)
+                              ? MarketPalette.lime
                               : Colors.white.withValues(alpha: .62),
                         ),
                       ],
@@ -521,9 +573,11 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
+  // Saat Türkiye saatiyle gösterilir (sunucu saatleri UTC gelir)
   String _formatTime(DateTime date) {
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
+    final local = turkeyTime(date);
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
 }
@@ -535,13 +589,8 @@ class _DateDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final yesterday = now.subtract(const Duration(days: 1));
-    final text = _sameDay(date, now)
-        ? 'Bugün'
-        : _sameDay(date, yesterday)
-            ? 'Dün'
-            : '${date.day}.${date.month}.${date.year}';
+    // "Bugün", "Dün", "18 Eki" (Türkiye saatiyle)
+    final text = formatTrDateTime(date, withTime: false);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -554,17 +603,11 @@ class _DateDivider extends StatelessWidget {
           ),
           child: Text(
             text,
-            style: MarketText.label(color: MarketPalette.muted, size: 11),
+            style: MarketText.label(color: MarketPalette.muted, size: 12),
           ),
         ),
       ),
     );
-  }
-
-  bool _sameDay(DateTime first, DateTime second) {
-    return first.year == second.year &&
-        first.month == second.month &&
-        first.day == second.day;
   }
 }
 
@@ -673,15 +716,18 @@ class _TypingDotState extends State<_TypingDot>
 }
 
 class _EmptyConversation extends StatelessWidget {
-  const _EmptyConversation();
+  final List<String> quickReplies;
+  final ValueChanged<String>? onQuickReply;
+
+  const _EmptyConversation({required this.quickReplies, required this.onQuickReply});
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(34),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(28, 28, 28, 20),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 94,
@@ -697,16 +743,36 @@ class _EmptyConversation extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            Text(
-              'Sohbeti başlat',
-              style: MarketText.title(size: 22),
+            Semantics(
+              header: true,
+              child: Text(
+                'Sohbeti başlat',
+                textAlign: TextAlign.center,
+                style: MarketText.title(size: 22),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Sorunu veya merak ettiğin konuyu aşağıya yaz. Destek ekibimiz buradan yanıtlasın.',
+              'Sorunu ya da merak ettiğin konuyu aşağıya yaz. Destek ekibimiz buradan yanıtlasın.',
               textAlign: TextAlign.center,
-              style: MarketText.body(color: MarketPalette.muted, size: 12, weight: FontWeight.w400, height: 1.5),
+              style: MarketText.body(color: MarketPalette.muted, size: 14, height: 1.5),
             ),
+            if (quickReplies.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text('Hızlıca sor', style: MarketText.label(color: MarketPalette.muted, size: 12)),
+              const SizedBox(height: 6),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                children: [
+                  for (final label in quickReplies)
+                    MarketChip(
+                      label: label,
+                      onTap: onQuickReply == null ? null : () => onQuickReply!(label),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -747,34 +813,41 @@ class _MessagesLoading extends StatelessWidget {
 }
 
 class _ClosedChatBar extends StatelessWidget {
-  const _ClosedChatBar();
+  final VoidCallback onNewChat;
+
+  const _ClosedChatBar({required this.onNewChat});
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(17),
-        decoration: const BoxDecoration(
-          color: MarketPalette.fill,
-          border: Border(top: BorderSide(color: MarketPalette.line)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.lock_outline_rounded,
-              color: MarketPalette.muted,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Bu destek görüşmesi kapatılmış',
-              style: MarketText.label(color: MarketPalette.muted, size: 11),
-            ),
-          ],
-        ),
+    // Zemin ana ekran çubuğunun altına kadar uzanır; içerik güvenli alanda
+    return MarketBottomBar(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock_outline_rounded, color: MarketPalette.muted, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Bu görüşme kapatıldı.',
+                  textAlign: TextAlign.center,
+                  style: MarketText.label(color: MarketPalette.muted, size: 13, weight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: onNewChat,
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(MarketSize.tapTarget)),
+            icon: const Icon(Icons.add_comment_rounded, size: 19),
+            label: const Text('Yeni görüşme başlat'),
+          ),
+        ],
       ),
     );
   }

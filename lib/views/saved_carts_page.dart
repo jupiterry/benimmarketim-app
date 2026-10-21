@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/cart_fill.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/cart_viewmodel.dart';
+import 'widgets/custom_dialog.dart';
 import 'widgets/market_ui.dart';
 import 'widgets/save_cart_dialog.dart';
 
@@ -24,6 +25,9 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
   bool _loading = true;
   String? _error;
   String? _busyId;
+
+  /// Bu oturumda sepete eklenen listeler: düğme "Sepete git"e döner.
+  final Set<String> _addedIds = {};
 
   @override
   void initState() {
@@ -108,45 +112,30 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
           error: true);
       return;
     }
+    setState(() => _addedIds.add(id));
+    // Kartın düğmesi "Sepete git"e döner; bildirim yalnızca sonucu söyler.
     showMarketSnack(context, cartFillMessage(result),
         icon: Icons.shopping_bag_rounded);
   }
+
+  void _openCart() =>
+      context.go('/home', extra: <String, dynamic>{'initialTabIndex': 1});
 
   Future<void> _delete(Map<String, dynamic> cart) async {
     final id = (cart['id'] ?? '').toString();
     final name = (cart['name'] ?? '').toString();
     if (id.isEmpty || _busyId != null) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const MarketIconTile(
-          icon: Icons.delete_outline_rounded,
-          size: 52,
-          background: MarketPalette.redSoft,
-          foreground: MarketPalette.red,
-        ),
-        title: const Text('Favori sepet silinsin mi?',
-            textAlign: TextAlign.center),
-        content: Text(
+    final confirmed = await showMarketConfirm(
+      context,
+      icon: Icons.delete_outline_rounded,
+      title: 'Favori sepet silinsin mi?',
+      message:
           '“$name” kayıtlı listelerinden kaldırılacak. Sepetindeki ürünler etkilenmez.',
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: MarketPalette.red),
-            child: const Text('Sil'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Sil',
+      tone: MarketTone.danger,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _busyId = id);
     final result = await _api.deleteSavedCart(id);
@@ -189,6 +178,8 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
     final loggedIn = context.watch<AuthViewModel>().isLoggedIn;
     final cartHasItems =
         context.select<CartViewModel, bool>((cart) => !cart.isEmpty);
+    final gutter = MarketSpace.gutterOf(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
@@ -231,15 +222,10 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
             else if (_error != null)
               SliverFillRemaining(
                 hasScrollBody: false,
-                child: MarketEmptyState(
-                  icon: Icons.cloud_off_rounded,
+                child: MarketEmptyState.error(
                   title: 'Favori sepetler yüklenemedi',
                   message: _error!,
-                  actionLabel: 'Tekrar dene',
-                  actionIcon: Icons.refresh_rounded,
-                  onAction: _load,
-                  tint: MarketPalette.red,
-                  tintSoft: MarketPalette.redSoft,
+                  onRetry: _load,
                 ),
               )
             else if (_carts.isEmpty)
@@ -250,7 +236,7 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
                   title: 'Henüz favori sepetin yok',
                   message: cartHasItems
                       ? 'Şu an sepetinde olan ürünleri bir adla kaydedebilir, sonra tek dokunuşla yeniden ekleyebilirsin.'
-                      : 'Sepetini doldur, Sepetim ekranının üstündeki kaydet düğmesine dokun. Listen burada görünür.',
+                      : 'Sepetini doldur, ürünlerin altındaki “Sepeti kaydet”e dokun. Listen burada görünür.',
                   actionLabel:
                       cartHasItems ? 'Sepetimi kaydet' : 'Ürünleri keşfet',
                   actionIcon: cartHasItems
@@ -263,14 +249,18 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                padding:
+                    EdgeInsets.fromLTRB(gutter, 18, gutter, 32 + bottomInset),
                 sliver: SliverList.separated(
                   itemCount: _carts.length + (cartHasItems ? 1 : 0),
                   separatorBuilder: (_, __) => const SizedBox(height: 14),
                   itemBuilder: (_, index) {
                     if (index == _carts.length) {
-                      return OutlinedButton.icon(
+                      return TextButton.icon(
                         onPressed: _busyId != null ? null : _saveCurrentCart,
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size.fromHeight(MarketSize.control),
+                        ),
                         icon: const Icon(Icons.bookmark_add_outlined, size: 18),
                         label: const Text('Şu anki sepetimi de kaydet'),
                       );
@@ -315,11 +305,8 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
                       style: MarketText.heading(),
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      '${items.length} çeşit ürün'
-                      '${total is num && available.isNotEmpty ? ' · bugünkü tutar ${formatTl(total)}' : ''}',
-                      style: MarketText.caption(),
-                    ),
+                    Text('${items.length} çeşit ürün',
+                        style: MarketText.caption()),
                   ],
                 ),
               ),
@@ -338,14 +325,21 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${_quantityOf(item)}×',
-                    style: MarketText.label(color: MarketPalette.inkSoft),
+                  // Sabit genişlikli adet sütunu: ürün adları aynı hizada başlar.
+                  SizedBox(
+                    width: 30,
+                    child: Text(
+                      '${_quantityOf(item)}×',
+                      textAlign: TextAlign.right,
+                      style: MarketText.label(color: MarketPalette.inkSoft)
+                          .copyWith(
+                              fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      (item['name'] ?? '').toString(),
+                      productDisplayName((item['name'] ?? '').toString()),
                       style: MarketText.body(
                         size: 13,
                         color: item['available'] == true
@@ -371,7 +365,7 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
             ),
           if (items.length > previewCount)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 4, left: 38),
               child: Text(
                 've ${items.length - previewCount} ürün daha',
                 style: MarketText.caption(size: 12),
@@ -388,20 +382,35 @@ class _SavedCartsPageState extends State<SavedCartsPage> {
               ),
             ),
           const SizedBox(height: MarketSpace.md),
-          FilledButton.icon(
-            onPressed: _busyId != null || available.isEmpty
-                ? null
-                : () => _addToCart(cart),
-            icon: busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.add_shopping_cart_rounded, size: 18),
-            label: Text(busy ? 'Ekleniyor…' : 'Sepete ekle'),
-          ),
+          if (_addedIds.contains(id))
+            OutlinedButton.icon(
+              onPressed: _openCart,
+              icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+              label: const Text('Sepete eklendi · Sepete git'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: _busyId != null || available.isEmpty
+                  ? null
+                  : () => _addToCart(cart),
+              icon: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.add_shopping_cart_rounded, size: 18),
+              label: Text(
+                busy
+                    ? 'Ekleniyor…'
+                    : total is num && available.isNotEmpty
+                        ? 'Sepete ekle · ${formatTl(total)}'
+                        : 'Sepete ekle',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,7 +21,7 @@ const _reasons = [
 ];
 const _interval = Duration(days: 7);
 
-/// Sepetini boşaltan müşteriye tek soru: "Neden vazgeçtin?".
+/// Sepetini boşaltan müşteriye tek soru: "Sepetini neden boşalttın?".
 /// Haftada en fazla bir kez, yalnızca giriş yapmış kullanıcıya sorulur.
 Future<void> maybeAskAbandonReason(BuildContext context) async {
   final auth = context.read<AuthViewModel>();
@@ -33,7 +34,7 @@ Future<void> maybeAskAbandonReason(BuildContext context) async {
   if (now - last < _interval.inMilliseconds) return;
   await prefs.setInt(key, now);
   if (!context.mounted) return;
-  await showFeedbackSheet<void>(context, const _AbandonReasonSheet());
+  await showMarketSheet<void>(context, builder: (_) => const _AbandonReasonSheet());
 }
 
 class _AbandonReasonSheet extends StatefulWidget {
@@ -44,56 +45,145 @@ class _AbandonReasonSheet extends StatefulWidget {
 }
 
 class _AbandonReasonSheetState extends State<_AbandonReasonSheet> {
+  final TextEditingController _note = TextEditingController();
+  String? _picked;
   bool _sent = false;
+  Timer? _timer;
 
-  Future<void> _pick(String reason) async {
-    setState(() => _sent = true);
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _pick(String reason) {
+    if (_sent || _timer != null) return;
+    if (reason == 'diger') {
+      // "Diğer": kısa açıklama yazılabilsin diye hemen gönderilmez
+      setState(() => _picked = _picked == 'diger' ? null : 'diger');
+      return;
+    }
+    // Seçim kısa bir an görünsün, sonra teşekkür
+    setState(() => _picked = reason);
+    _timer = Timer(const Duration(milliseconds: 250), () => _send(reason));
+  }
+
+  void _send(String reason) {
+    if (!mounted || _sent) return;
     // Yanıt beklenmeden teşekkür edilir; gönderim hatası kullanıcıyı ilgilendirmez
-    unawaited(ApiService().submitAbandonReason(reason: reason));
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (mounted) Navigator.of(context).pop();
+    unawaited(ApiService().submitAbandonReason(
+      reason: reason,
+      note: reason == 'diger' ? _note.text : '',
+    ));
+    HapticFeedback.lightImpact();
+    FocusScope.of(context).unfocus();
+    setState(() => _sent = true);
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) Navigator.of(context).pop();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const FeedbackSheetHandle(),
-        if (_sent) ...[
-          const Center(
-            child: MarketIconTile(
-              icon: Icons.favorite_rounded,
-              size: 52,
-              background: MarketPalette.greenSoft,
-              foreground: MarketPalette.green,
+    final Widget content = _sent
+        ? MarketSheetScaffold(
+            key: const ValueKey('sent'),
+            bodyPadding: feedbackThanksPadding,
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Center(
+                  child: MarketIconTile(
+                    icon: Icons.favorite_rounded,
+                    size: 52,
+                    background: MarketPalette.greenSoft,
+                    foreground: MarketPalette.green,
+                  ),
+                ),
+                const SizedBox(height: MarketSpace.lg),
+                Semantics(
+                  header: true,
+                  liveRegion: true,
+                  child: Text('Teşekkürler, not aldık!',
+                      textAlign: TextAlign.center, style: MarketText.title()),
+                ),
+                const SizedBox(height: MarketSpace.sm),
+                Text(
+                  'Yanıtın daha iyi bir market olmamıza yardım ediyor.',
+                  textAlign: TextAlign.center,
+                  style: MarketText.body(color: MarketPalette.muted, size: 14),
+                ),
+                const SizedBox(height: MarketSpace.lg),
+              ],
             ),
-          ),
-          const SizedBox(height: MarketSpace.md),
-          Text('Teşekkürler, not aldık!', textAlign: TextAlign.center, style: MarketText.title(size: 20)),
-          const SizedBox(height: MarketSpace.xl),
-        ] else ...[
-          Text('Neden vazgeçtin?', style: MarketText.title(size: 20)),
-          const SizedBox(height: MarketSpace.sm),
-          Text('Tek dokunuş yeter; daha iyisini yapmamıza yardım eder.',
-              style: MarketText.body(color: MarketPalette.muted)),
-          const SizedBox(height: MarketSpace.lg),
-          Wrap(
-            spacing: MarketSpace.sm,
-            runSpacing: MarketSpace.sm,
+          )
+        : _buildAsk();
+    return FeedbackReveal(
+      child: AnimatedSwitcher(
+        duration: feedbackMotion(context),
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.topCenter,
+          children: [...previous, if (current != null) current],
+        ),
+        child: content,
+      ),
+    );
+  }
+
+  Widget _buildAsk() {
+    final other = _picked == 'diger';
+    return MarketSheetScaffold(
+      key: const ValueKey('ask'),
+      header: const MarketSheetHeader(
+        title: 'Sepetini neden boşalttın?',
+        subtitle: 'Tek dokunuş yeter; daha iyisini yapmamıza yardım eder.',
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FeedbackChipWrap(
             children: [
               for (final reason in _reasons)
-                FeedbackChip(label: reason.label, selected: false, onTap: () => _pick(reason.id)),
+                FeedbackChip(
+                  label: reason.label,
+                  selected: _picked == reason.id,
+                  onTap: () => _pick(reason.id),
+                ),
             ],
           ),
-          const SizedBox(height: MarketSpace.md),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Geç'),
+          FeedbackReveal(
+            child: !other
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(top: MarketSpace.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FeedbackCommentField(
+                          controller: _note,
+                          hint: 'Kısaca yazar mısın? (isteğe bağlı)',
+                          maxLength: 200,
+                          minLines: 1,
+                          maxLines: 3,
+                        ),
+                        const SizedBox(height: MarketSpace.md),
+                        FeedbackSubmitButton(
+                          busy: false,
+                          height: MarketSize.tapTarget,
+                          onPressed: () => _send('diger'),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
+          const SizedBox(height: MarketSpace.sm),
+          Center(child: FeedbackLaterButton(onPressed: () => Navigator.of(context).pop())),
         ],
-      ],
+      ),
     );
   }
 }

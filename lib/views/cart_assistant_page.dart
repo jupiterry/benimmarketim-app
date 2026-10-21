@@ -39,6 +39,11 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
   final TextEditingController _prompt = TextEditingController();
   final TextEditingController _budget = TextEditingController();
   final FocusNode _promptFocus = FocusNode();
+  final ScrollController _scroll = ScrollController();
+
+  /// Sonuç alanı (öneri, hata ya da yükleniyor kartı): hazır olunca
+  /// görünür alana kaydırılır.
+  final GlobalKey _resultKey = GlobalKey();
 
   bool _loading = false;
   String? _message;
@@ -63,6 +68,7 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
     _prompt.dispose();
     _budget.dispose();
     _promptFocus.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -72,33 +78,59 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
     return double.tryParse(text.replaceAll(',', '.'));
   }
 
+  void _revealResult() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _resultKey.currentContext;
+      if (!mounted || target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        alignment: .05,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _showError(String message) {
+    setState(() {
+      _isError = true;
+      _message = message;
+      _proposal = null;
+    });
+    _revealResult();
+  }
+
+  /// Misafir önce giriş yapar; giriş yapınca istek kaldığı yerden gönderilir.
+  Future<void> _loginAndSubmit() async {
+    await context.push<bool>('/login');
+    if (!mounted) return;
+    if (context.read<AuthViewModel>().isLoggedIn) {
+      setState(() {
+        _message = null;
+        _isError = false;
+      });
+      final hasInput = _prompt.text.trim().length >= 3 || _budgetValue != null;
+      if (hasInput) _submit();
+    }
+  }
+
   Future<void> _submit() async {
     if (_loading) return;
     final prompt = _prompt.text.trim();
     final budget = _budgetValue;
 
     if (!context.read<AuthViewModel>().isLoggedIn) {
-      setState(() {
-        _isError = true;
-        _message = 'Sepet hazırlayabilmem için önce giriş yapmalısın.';
-        _proposal = null;
-      });
+      _showError('Sepet hazırlayabilmem için önce giriş yapmalısın.');
       return;
     }
     if (prompt.length < 3 && budget == null) {
-      setState(() {
-        _isError = true;
-        _message = 'Ne lazım olduğunu ya da bütçeni yazar mısın?';
-        _proposal = null;
-      });
+      _showError('Ne lazım olduğunu ya da bütçeni yazar mısın?');
       return;
     }
     if (_budget.text.trim().isNotEmpty && (budget == null || budget < 20)) {
-      setState(() {
-        _isError = true;
-        _message = 'Bütçe en az 20 TL olmalı.';
-        _proposal = null;
-      });
+      _showError('Bütçe en az ₺20 olmalı.');
       return;
     }
 
@@ -109,6 +141,7 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
       _isError = false;
       _proposal = null;
     });
+    _revealResult();
 
     final result = await _apiService.suggestCart(
       // Yalnızca bütçe girildiyse temel ihtiyaç sepeti istenir
@@ -130,20 +163,31 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
             : null;
       }
     });
+    _revealResult();
   }
 
   void _useExample(String example) {
     _prompt.text = example;
     _prompt.selection = TextSelection.collapsed(offset: example.length);
-    _submit();
+    if (context.read<AuthViewModel>().isLoggedIn) {
+      _submit();
+    } else {
+      _loginAndSubmit();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = context.watch<AuthViewModel>().isLoggedIn;
+    final gutter = MarketSpace.gutterOf(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
       body: ListView(
+        controller: _scroll,
         padding: EdgeInsets.zero,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
           const MarketHeader(
             title: 'Benim Asistanım',
@@ -152,19 +196,32 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
             compact: true,
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-                MarketSpace.xl, MarketSpace.xl, MarketSpace.xl, 40),
+            padding: EdgeInsets.fromLTRB(gutter, MarketSpace.xl, gutter, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (!loggedIn) ...[
+                  MarketNotice(
+                    icon: Icons.lock_outline_rounded,
+                    text: 'Sepet hazırlayabilmem için giriş yapmalısın.',
+                    trailing: TextButton(
+                      onPressed: _loginAndSubmit,
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, MarketSize.control),
+                      ),
+                      child: const Text('Giriş yap'),
+                    ),
+                  ),
+                  const SizedBox(height: MarketSpace.lg),
+                ],
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const MarketMascot(size: 86),
+                    const MarketMascot(size: 76),
                     const SizedBox(width: MarketSpace.sm),
                     Expanded(
                       child: Container(
-                        margin: const EdgeInsets.only(bottom: 14),
+                        margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(MarketSpace.md),
                         decoration: const BoxDecoration(
                           color: MarketPalette.surface,
@@ -187,7 +244,10 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
                   ],
                 ),
                 const SizedBox(height: MarketSpace.lg),
-                Text('Ne lazım?', style: MarketText.heading()),
+                Semantics(
+                  header: true,
+                  child: Text('Ne lazım?', style: MarketText.heading()),
+                ),
                 const SizedBox(height: MarketSpace.sm),
                 TextField(
                   controller: _prompt,
@@ -204,26 +264,35 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
                     counterText: '',
                   ),
                 ),
-                const SizedBox(height: MarketSpace.md),
-                Wrap(
-                  spacing: MarketSpace.sm,
-                  runSpacing: MarketSpace.sm,
-                  children: [
-                    for (final example in _examples)
-                      ActionChip(
-                        label: Text(
-                          example,
-                          style: MarketText.label(
-                              color: MarketPalette.greenDark, size: 12),
-                        ),
-                        onPressed: _loading ? null : () => _useExample(example),
-                        backgroundColor: MarketPalette.greenSoft,
-                        side: BorderSide.none,
-                      ),
-                  ],
+              ],
+            ),
+          ),
+          const SizedBox(height: MarketSpace.sm),
+          // Örnek istekler tek satırda kayar: form kısalır.
+          SizedBox(
+            height: 48,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.symmetric(horizontal: gutter),
+              itemCount: _examples.length,
+              separatorBuilder: (_, __) => const SizedBox(width: MarketSpace.sm),
+              itemBuilder: (_, index) => MarketChip(
+                label: _examples[index],
+                icon: Icons.auto_awesome_outlined,
+                onTap: _loading ? null : () => _useExample(_examples[index]),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(gutter, MarketSpace.xl, gutter, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text('Bütçen (isteğe bağlı)',
+                      style: MarketText.heading()),
                 ),
-                const SizedBox(height: MarketSpace.xxl),
-                Text('Bütçen (isteğe bağlı)', style: MarketText.heading()),
                 const SizedBox(height: MarketSpace.sm),
                 TextField(
                   controller: _budget,
@@ -236,78 +305,54 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
                     hintText: 'Örn. 600',
-                    suffixText: 'TL',
+                    prefixIcon: Icon(Icons.currency_lira_rounded),
                   ),
                 ),
-                const SizedBox(height: MarketSpace.md),
+                const SizedBox(height: MarketSpace.xs),
                 Wrap(
                   spacing: MarketSpace.sm,
-                  runSpacing: MarketSpace.sm,
                   children: [
                     for (final amount in _budgets)
-                      ChoiceChip(
-                        label: Text('$amount TL'),
+                      MarketChip(
+                        label: '₺$amount',
                         selected: _budget.text.trim() == '$amount',
-                        onSelected: _loading
+                        onTap: _loading
                             ? null
-                            : (selected) => setState(() {
-                                  _budget.text = selected ? '$amount' : '';
+                            : () => setState(() {
+                                  final selected =
+                                      _budget.text.trim() == '$amount';
+                                  _budget.text = selected ? '' : '$amount';
                                 }),
                       ),
                   ],
                 ),
-                const SizedBox(height: MarketSpace.xxl),
+                const SizedBox(height: MarketSpace.xl),
                 FilledButton.icon(
-                  onPressed: _loading ? null : _submit,
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.auto_awesome_rounded, size: 18),
-                  label: Text(_loading ? 'Sepetin hazırlanıyor…' : 'Sepetimi hazırla'),
+                  onPressed: _loading
+                      ? null
+                      : loggedIn
+                          ? _submit
+                          : _loginAndSubmit,
+                  icon: Icon(
+                    loggedIn ? Icons.auto_awesome_rounded : Icons.login_rounded,
+                    size: 18,
+                  ),
+                  label: Text(_loading
+                      ? 'Sepetin hazırlanıyor…'
+                      : loggedIn
+                          ? 'Sepetimi hazırla'
+                          : 'Giriş yap ve başla'),
                   style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(54)),
+                    minimumSize: const Size.fromHeight(MarketSize.button),
+                    disabledBackgroundColor:
+                        _loading ? MarketPalette.green : null,
+                    disabledForegroundColor: _loading ? Colors.white : null,
+                  ),
                 ),
-                if (_message != null) ...[
-                  const SizedBox(height: MarketSpace.xl),
-                  Container(
-                    padding: const EdgeInsets.all(MarketSpace.lg),
-                    decoration: BoxDecoration(
-                      color: _isError
-                          ? MarketPalette.redSoft
-                          : MarketPalette.surface,
-                      border: Border.all(
-                        color: _isError
-                            ? MarketPalette.redLine
-                            : MarketPalette.line,
-                      ),
-                      borderRadius: BorderRadius.circular(MarketRadius.md),
-                    ),
-                    child: Text(
-                      _message!,
-                      style: MarketText.body(
-                        color: _isError ? MarketPalette.red : MarketPalette.inkSoft,
-                      ),
-                    ),
-                  ),
-                ],
-                if (_message != null &&
-                    _isError &&
-                    !context.watch<AuthViewModel>().isLoggedIn) ...[
-                  const SizedBox(height: MarketSpace.md),
-                  OutlinedButton(
-                    onPressed: () => context.push('/login'),
-                    child: const Text('Giriş yap'),
-                  ),
-                ],
-                if (_proposal != null)
-                  CartProposalCard(
-                    key: ValueKey('assistant-$_resultVersion'),
-                    proposal: _proposal!,
-                  ),
+                KeyedSubtree(
+                  key: _resultKey,
+                  child: _buildResult(),
+                ),
                 const SizedBox(height: MarketSpace.xl),
                 Text(
                   'Ürünler ve fiyatlar marketin güncel kataloğundan gelir. '
@@ -315,11 +360,73 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
                   textAlign: TextAlign.center,
                   style: MarketText.caption(size: 12),
                 ),
+                SizedBox(height: 40 + bottomInset),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Sonuç alanı: hazırlanırken iskelet kart, sonra mesaj ve öneri.
+  Widget _buildResult() {
+    if (_loading) {
+      return Padding(
+        padding: const EdgeInsets.only(top: MarketSpace.xl),
+        child: MarketSkeletonPulse(
+          semanticLabel: 'Sepetin hazırlanıyor',
+          child: Container(
+            padding: const EdgeInsets.all(MarketSpace.md),
+            decoration: BoxDecoration(
+              color: MarketPalette.greenSoft,
+              border: Border.all(color: MarketPalette.greenLine),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                MarketSkeleton(width: 160, height: 14),
+                SizedBox(height: 12),
+                MarketSkeleton(height: 14),
+                SizedBox(height: 10),
+                MarketSkeleton(height: 14),
+                SizedBox(height: 10),
+                MarketSkeleton(width: 220, height: 14),
+                SizedBox(height: 16),
+                MarketSkeleton(height: 44, radius: MarketRadius.md),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final message = _message;
+    final proposal = _proposal;
+    if (message == null && proposal == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (message != null) ...[
+          const SizedBox(height: MarketSpace.xl),
+          _isError
+              ? MarketNotice(
+                  icon: Icons.error_outline_rounded,
+                  text: message,
+                  background: MarketPalette.redSoft,
+                  foreground: MarketPalette.red,
+                )
+              : MarketNotice.success(
+                  icon: Icons.auto_awesome_rounded,
+                  text: message,
+                ),
+        ],
+        if (proposal != null)
+          CartProposalCard(
+            key: ValueKey('assistant-$_resultVersion'),
+            proposal: proposal,
+          ),
+      ],
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
 import 'feedback_parts.dart';
@@ -14,9 +15,9 @@ Future<bool> showOrderFeedbackSheet(
   FeedbackOrder? order,
 }) async {
   var submitted = false;
-  final result = await showFeedbackSheet<bool>(
+  final result = await showMarketSheet<bool>(
     context,
-    _OrderFeedbackSheet(
+    builder: (_) => _OrderFeedbackSheet(
       milestone: milestone,
       orderId: orderId ?? order?.orderId,
       order: order,
@@ -26,7 +27,6 @@ Future<bool> showOrderFeedbackSheet(
   return result ?? submitted;
 }
 
-const _ratingLabels = ['', 'Çok kötü', 'Kötü', 'İdare eder', 'İyi', 'Harika'];
 const _lowRating = 3;
 const _minComment = 5;
 
@@ -50,17 +50,28 @@ class _OrderFeedbackSheet extends StatefulWidget {
 class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
   final ApiService _apiService = ApiService();
   final TextEditingController _comment = TextEditingController();
+  final FocusNode _commentFocus = FocusNode();
   final Set<String> _selectedTags = {};
+  final GlobalKey _ratingKey = GlobalKey();
+  final GlobalKey _deliveryKey = GlobalKey();
+  final GlobalKey _commentKey = GlobalKey();
   Map<String, String> _problems = {};
   int _rating = 0;
   int _deliveryRating = 0;
   bool _sending = false;
   bool _done = false;
+  bool _dirty = false;
   String? _supportChatId;
-  String? _error;
+  String? _error; // sunucu hatası
+  // Alan hataları ("Gönder"e basılınca işaretlenir)
+  bool _ratingMissing = false;
+  bool _deliveryMissing = false;
+  bool _commentMissing = false;
 
   bool get _isLow => _rating > 0 && (_rating <= _lowRating || (_deliveryRating > 0 && _deliveryRating <= 2));
+  bool get _showDetails => _rating > 0 && _deliveryRating > 0;
   bool get _showProducts =>
+      _showDetails &&
       (widget.order?.products.isNotEmpty ?? false) &&
       _selectedTags.any(feedbackProductTags.contains);
 
@@ -78,7 +89,7 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
   String get _subtitle {
     switch (widget.milestone) {
       case 1:
-        return 'İlk deneyimin bizim için çok değerli. 20 saniyeni ayırır mısın?';
+        return 'Yarım dakikanı ayırır mısın? İlk deneyimin bizim için çok değerli.';
       case 3:
         return 'Bizi düzenli kullanmaya başladın; neyi daha iyi yapabiliriz?';
       default:
@@ -87,19 +98,33 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _comment.addListener(_onCommentChanged);
+  }
+
+  @override
   void dispose() {
     _comment.dispose();
+    _commentFocus.dispose();
     super.dispose();
+  }
+
+  void _onCommentChanged() {
+    final dirty = _comment.text.trim().length >= _minComment;
+    if (dirty == _dirty && !(dirty && _commentMissing)) return;
+    setState(() {
+      _dirty = dirty;
+      if (dirty) _commentMissing = false;
+    });
   }
 
   void _setRating(int value) {
     setState(() {
       final wasLow = _isLow;
       _rating = value;
-      if (wasLow != _isLow) {
-        _selectedTags.clear();
-        _problems = {};
-      }
+      _ratingMissing = false;
+      _resetTagsIfFlipped(wasLow);
       _error = null;
     });
   }
@@ -108,29 +133,54 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
     setState(() {
       final wasLow = _isLow;
       _deliveryRating = value;
-      if (wasLow != _isLow) {
-        _selectedTags.clear();
-        _problems = {};
-      }
+      _deliveryMissing = false;
+      _resetTagsIfFlipped(wasLow);
       _error = null;
     });
+  }
+
+  // Olumlu/olumsuz seçenek seti değişince eski seçimler anlamını yitirir
+  void _resetTagsIfFlipped(bool wasLow) {
+    if (wasLow != _isLow) {
+      _selectedTags.clear();
+      _problems = {};
+    }
+  }
+
+  void _scrollTo(GlobalKey key) {
+    final target = key.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: feedbackMotion(context, const Duration(milliseconds: 300)),
+      curve: Curves.easeOutCubic,
+      alignment: .2,
+    );
   }
 
   Future<void> _submit() async {
     if (_sending) return;
     final comment = _comment.text.trim();
-    if (_rating == 0) {
-      setState(() => _error = 'Lütfen ürünlere bir puan ver.');
-      return;
-    }
-    if (_deliveryRating == 0) {
-      setState(() => _error = 'Lütfen teslimata da bir puan ver.');
-      return;
-    }
-    if (comment.length < _minComment) {
-      setState(() => _error = _isLow
-          ? 'Neyi daha iyi yapabileceğimizi kısaca yazar mısın?'
-          : 'Deneyimini birkaç kelimeyle yazar mısın?');
+    final ratingMissing = _rating == 0;
+    final deliveryMissing = _deliveryRating == 0;
+    final commentMissing = !ratingMissing && !deliveryMissing && comment.length < _minComment;
+    if (ratingMissing || deliveryMissing || commentMissing) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _ratingMissing = ratingMissing;
+        _deliveryMissing = deliveryMissing;
+        _commentMissing = commentMissing;
+      });
+      final first = ratingMissing
+          ? _ratingKey
+          : deliveryMissing
+              ? _deliveryKey
+              : _commentKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scrollTo(first);
+        if (commentMissing && !ratingMissing && !deliveryMissing) _commentFocus.requestFocus();
+      });
       return;
     }
     setState(() {
@@ -160,140 +210,233 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const FeedbackSheetHandle(),
-        if (_done)
-          FeedbackThanks(
-            happy: !_isLow && _problems.isEmpty,
-            supportChatId: _supportChatId,
+    final Widget content = _done
+        ? MarketSheetScaffold(
+            key: const ValueKey('done'),
+            bodyPadding: feedbackThanksPadding,
+            body: FeedbackThanks(
+              happy: !_isLow && _problems.isEmpty,
+              supportChatId: _supportChatId,
+            ),
           )
-        else
-          _buildForm(context),
-      ],
+        : _buildForm(context);
+    return FeedbackPopGuard(
+      busy: _sending,
+      dirty: !_done && _dirty,
+      child: FeedbackReveal(
+        child: AnimatedSwitcher(
+          duration: feedbackMotion(context),
+          layoutBuilder: (current, previous) => Stack(
+            alignment: Alignment.topCenter,
+            children: [...previous, if (current != null) current],
+          ),
+          child: content,
+        ),
+      ),
     );
   }
 
-  Widget _section(String title, Widget child, {String? hint}) => Column(
+  Widget _buildForm(BuildContext context) {
+    final order = widget.order;
+    final tags = _isLow ? feedbackNegativeTags : feedbackPositiveTags;
+    return MarketSheetScaffold(
+      key: const ValueKey('form'),
+      busy: _sending,
+      header: MarketSheetHeader(
+        title: _title,
+        subtitle: feedbackShortScreen(context) ? null : _subtitle,
+        meta: order == null ? null : FeedbackOrderPill(order: order),
+        onClose: _sending ? () {} : () => closeFeedbackSheet(context, dirty: _dirty),
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(title, style: MarketText.heading(size: 15)),
-          if (hint != null) ...[
-            const SizedBox(height: 2),
-            Text(hint, style: MarketText.caption()),
-          ],
-          const SizedBox(height: MarketSpace.sm),
-          child,
+          _RatingGroup(
+            key: _ratingKey,
+            title: 'Ürünler',
+            hint: 'Tazelik, doğru ürün, fiyat',
+            value: _rating,
+            missing: _ratingMissing,
+            onChanged: _sending ? null : _setRating,
+          ),
+          const SizedBox(height: 10),
+          _RatingGroup(
+            key: _deliveryKey,
+            title: 'Teslimat ve kurye',
+            hint: 'Hız ve kuryenin tavrı',
+            value: _deliveryRating,
+            missing: _deliveryMissing,
+            onChanged: _sending ? null : _setDeliveryRating,
+          ),
+          FeedbackReveal(
+            child: !_showDetails
+                ? const SizedBox(width: double.infinity)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: MarketSpace.xl),
+                      Semantics(
+                        header: true,
+                        child: Text(_isLow ? 'Ne ters gitti?' : 'En çok neyi beğendin?',
+                            style: MarketText.heading()),
+                      ),
+                      const SizedBox(height: 2),
+                      Text('Birden fazla seçebilirsin', style: MarketText.caption()),
+                      const SizedBox(height: MarketSpace.sm),
+                      FeedbackChipWrap(
+                        children: [
+                          for (final tag in tags)
+                            FeedbackChip(
+                              label: tag.label,
+                              negative: _isLow,
+                              selected: _selectedTags.contains(tag.id),
+                              onTap: _sending
+                                  ? null
+                                  : () => setState(() {
+                                        if (!_selectedTags.remove(tag.id)) {
+                                          _selectedTags.add(tag.id);
+                                        }
+                                      }),
+                            ),
+                        ],
+                      ),
+                      FeedbackReveal(
+                        child: _showProducts
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: MarketSpace.xl),
+                                child: ProblemItemsPicker(
+                                  products: widget.order!.products,
+                                  selected: _problems,
+                                  enabled: !_sending,
+                                  defaultIssue: feedbackDefaultIssue(_selectedTags),
+                                  onChanged: (next) => setState(() => _problems = next),
+                                ),
+                              )
+                            : const SizedBox(width: double.infinity),
+                      ),
+                      const SizedBox(height: MarketSpace.xl),
+                      FeedbackCommentField(
+                        key: _commentKey,
+                        controller: _comment,
+                        focusNode: _commentFocus,
+                        enabled: !_sending,
+                        label: 'Birkaç kelimeyle anlat',
+                        minChars: _minComment,
+                        hint: _isLow
+                            ? 'Ne olduğunu kısaca yaz…'
+                            : 'Örn. "Ekmek sıcacık geldi, kurye çok nazikti"',
+                        errorText: _commentMissing
+                            ? (_isLow
+                                ? 'Neyi daha iyi yapabileceğimizi kısaca yazar mısın?'
+                                : 'Deneyimini birkaç kelimeyle yazar mısın?')
+                            : null,
+                        minLines: 3,
+                        maxLines: 5,
+                      ),
+                    ],
+                  ),
+          ),
         ],
-      );
+      ),
+      footer: FeedbackSheetFooter(
+        busy: _sending,
+        serverError: _error,
+        onSubmit: _submit,
+        onLater: () => Navigator.of(context).pop(false),
+      ),
+    );
+  }
+}
 
-  Widget _buildForm(BuildContext context) {
-    final tags = _isLow ? feedbackNegativeTags : feedbackPositiveTags;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(_title, style: MarketText.title()),
-        const SizedBox(height: MarketSpace.sm),
-        Text(_subtitle, style: MarketText.body(color: MarketPalette.muted)),
-        const SizedBox(height: MarketSpace.xl),
-        _section(
-          'Ürünler',
-          Column(
-            children: [
-              FeedbackStars(value: _rating, onChanged: _sending ? null : _setRating),
-              SizedBox(
-                height: 20,
-                child: Text(_ratingLabels[_rating],
-                    style: MarketText.label(color: MarketPalette.inkSoft)),
-              ),
-            ],
-          ),
-          hint: 'Tazelik, doğru ürün, fiyat',
+/// Bir puan grubu: başlık + ipucu, sağda canlı etiket, altında sola hizalı yıldızlar.
+class _RatingGroup extends StatelessWidget {
+  final String title;
+  final String hint;
+  final int value;
+  final bool missing;
+  final ValueChanged<int>? onChanged;
+
+  const _RatingGroup({
+    super.key,
+    required this.title,
+    required this.hint,
+    required this.value,
+    required this.missing,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: feedbackMotion(context, const Duration(milliseconds: 160)),
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 6),
+      decoration: BoxDecoration(
+        color: MarketPalette.canvas,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        border: Border.all(
+          color: missing ? MarketPalette.red : MarketPalette.line,
+          width: missing ? 1.5 : 1,
         ),
-        const SizedBox(height: MarketSpace.md),
-        _section(
-          'Teslimat ve kurye',
-          Column(
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              FeedbackStars(
-                value: _deliveryRating,
-                size: 34,
-                onChanged: _sending ? null : _setDeliveryRating,
-              ),
-              SizedBox(
-                height: 20,
-                child: Text(_ratingLabels[_deliveryRating],
-                    style: MarketText.label(color: MarketPalette.inkSoft)),
-              ),
-            ],
-          ),
-          hint: 'Hız ve kuryenin tavrı',
-        ),
-        if (_rating > 0) ...[
-          const SizedBox(height: MarketSpace.lg),
-          Text(_isLow ? 'Ne ters gitti?' : 'En çok neyi beğendin?',
-              style: MarketText.heading(size: 15)),
-          const SizedBox(height: MarketSpace.md),
-          Wrap(
-            spacing: MarketSpace.sm,
-            runSpacing: MarketSpace.sm,
-            children: [
-              for (final tag in tags)
-                FeedbackChip(
-                  label: tag.label,
-                  negative: _isLow,
-                  selected: _selectedTags.contains(tag.id),
-                  onTap: _sending
-                      ? null
-                      : () => setState(() {
-                            if (!_selectedTags.remove(tag.id)) _selectedTags.add(tag.id);
-                          }),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Semantics(
+                      header: true,
+                      child: Text(title, style: MarketText.heading()),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(hint, style: MarketText.caption()),
+                  ],
                 ),
+              ),
+              const SizedBox(width: MarketSpace.sm),
+              Semantics(
+                liveRegion: true,
+                child: AnimatedSwitcher(
+                  duration: feedbackMotion(context, const Duration(milliseconds: 150)),
+                  child: value <= 0
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          key: ValueKey(value),
+                          padding: const EdgeInsets.only(right: 6),
+                          child: MarketPill(
+                            label: feedbackRatingLabels[value],
+                            background: MarketPalette.orangeSoft,
+                            foreground: MarketPalette.orangeInk,
+                          ),
+                        ),
+                ),
+              ),
             ],
           ),
-          if (_showProducts) ...[
-            const SizedBox(height: MarketSpace.lg),
-            ProblemItemsPicker(
-              products: widget.order!.products,
-              selected: _problems,
-              enabled: !_sending,
-              onChanged: (next) => setState(() => _problems = next),
-            ),
-          ],
-          const SizedBox(height: MarketSpace.lg),
-          TextField(
-            controller: _comment,
-            enabled: !_sending,
-            maxLines: 3,
-            maxLength: 1000,
-            textInputAction: TextInputAction.newline,
-            decoration: InputDecoration(
-              hintText: _isLow
-                  ? 'Ne olduğunu kısaca yazar mısın? (zorunlu)'
-                  : 'Birkaç kelimeyle deneyimin (zorunlu)',
-              counterText: '',
+          const SizedBox(height: 4),
+          Transform.translate(
+            // İlk yıldızın görseli başlıkla aynı hizada dursun (48 pt hücrenin iç boşluğu)
+            offset: const Offset(-6, 0),
+            child: FeedbackStars(
+              value: value,
+              onChanged: onChanged,
+              size: 36,
+              showLabel: false,
+              alignment: MainAxisAlignment.start,
             ),
           ),
+          if (missing)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: FeedbackFieldError('Bir puan seç'),
+            ),
         ],
-        if (_error != null) ...[
-          const SizedBox(height: MarketSpace.md),
-          Text(_error!, style: MarketText.label(color: MarketPalette.red)),
-        ],
-        const SizedBox(height: MarketSpace.xl),
-        FilledButton(
-          onPressed: _sending ? null : _submit,
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-          child: Text(_sending ? 'Gönderiliyor…' : 'Gönder'),
-        ),
-        const SizedBox(height: MarketSpace.sm),
-        TextButton(
-          onPressed: _sending ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Sonra'),
-        ),
-      ],
+      ),
     );
   }
 }

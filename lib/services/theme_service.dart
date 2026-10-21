@@ -119,8 +119,8 @@ class AppThemes {
         style: ElevatedButton.styleFrom(
           backgroundColor: MarketPalette.green,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFFDCE4DE),
-          disabledForegroundColor: MarketPalette.subtle,
+          disabledBackgroundColor: MarketPalette.disabled,
+          disabledForegroundColor: MarketPalette.muted,
           elevation: 0,
           shadowColor: Colors.transparent,
           minimumSize: const Size(64, 50),
@@ -133,8 +133,8 @@ class AppThemes {
         style: FilledButton.styleFrom(
           backgroundColor: MarketPalette.green,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFFDCE4DE),
-          disabledForegroundColor: MarketPalette.subtle,
+          disabledBackgroundColor: MarketPalette.disabled,
+          disabledForegroundColor: MarketPalette.muted,
           minimumSize: const Size(64, 50),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: buttonShape,
@@ -173,7 +173,7 @@ class AppThemes {
         isDense: false,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         hintStyle: GoogleFonts.inter(
-          color: MarketPalette.subtle,
+          color: MarketPalette.muted,
           fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
@@ -206,11 +206,14 @@ class AppThemes {
         actionTextColor: MarketPalette.lime,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MarketRadius.md)),
         elevation: 0,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MarketRadius.xl)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MarketRadius.lg)),
+        barrierColor: MarketPalette.scrim,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         titleTextStyle: GoogleFonts.manrope(
           color: MarketPalette.ink,
           fontSize: 22,
@@ -223,10 +226,17 @@ class AppThemes {
           height: 1.45,
         ),
       ),
+      // Tüm alt sayfalar beyaz zeminli; arkadaki karartma diyaloglarla aynı.
       bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: MarketPalette.canvas,
+        backgroundColor: MarketPalette.surface,
+        modalBackgroundColor: MarketPalette.surface,
+        modalBarrierColor: MarketPalette.scrim,
         surfaceTintColor: Colors.transparent,
         showDragHandle: false,
+        dragHandleColor: MarketPalette.lineStrong,
+        dragHandleSize: Size(44, 5),
+        clipBehavior: Clip.antiAlias,
+        constraints: BoxConstraints(maxWidth: 640),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(MarketRadius.xl)),
         ),
@@ -240,7 +250,7 @@ class AppThemes {
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(MarketRadius.sm)),
+        shape: const StadiumBorder(),
         checkmarkColor: MarketPalette.greenDark,
       ),
       dividerTheme: const DividerThemeData(
@@ -297,11 +307,16 @@ class AppThemes {
         linearTrackColor: MarketPalette.greenSoft,
         circularTrackColor: Colors.transparent,
       ),
-      sliderTheme: const SliderThemeData(
+      sliderTheme: SliderThemeData(
         activeTrackColor: MarketPalette.green,
         inactiveTrackColor: MarketPalette.greenSoft,
         thumbColor: MarketPalette.green,
-        overlayColor: Color(0x22168A52),
+        overlayColor: MarketPalette.green.withValues(alpha: .13),
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: MarketPalette.green,
+        selectionColor: MarketPalette.green.withValues(alpha: .24),
+        selectionHandleColor: MarketPalette.green,
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(

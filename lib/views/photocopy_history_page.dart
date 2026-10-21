@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/photocopy.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
 import '../services/photocopy_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
+import 'widgets/custom_dialog.dart';
 import 'widgets/market_ui.dart';
 
 class PhotocopyHistoryPage extends StatefulWidget {
@@ -55,27 +57,21 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
   }
 
   Future<void> _cancelPhotocopy(Photocopy photocopy) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('İstek iptal edilsin mi?'),
-        content: Text('"${photocopy.originalName}" için fotokopi isteği iptal edilecek.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: MarketPalette.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('İptal et'),
-          ),
-        ],
-      ),
+    final confirmed = await showMarketConfirm(
+      context,
+      icon: Icons.close_rounded,
+      title: 'İstek iptal edilsin mi?',
+      message: '"${photocopy.originalName}" için fotokopi isteği iptal edilecek.',
+      confirmLabel: 'İsteği iptal et',
+      tone: MarketTone.danger,
     );
-    if (confirmed != true) return;
+    if (!confirmed || !mounted) return;
     try {
-      await PhotocopyService.cancelPhotocopy(photocopy.id);
+      await runWithMarketProgress<void>(
+        context,
+        message: 'İstek iptal ediliyor…',
+        task: () => PhotocopyService.cancelPhotocopy(photocopy.id),
+      );
       if (!mounted) return;
       showMarketSnack(context, 'Fotokopi isteği iptal edildi');
       _refreshHistory();
@@ -92,9 +88,21 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
 
   Future<void> _downloadPhotocopy(Photocopy photocopy) async {
     try {
-      final filePath = await PhotocopyService.downloadPhotocopy(photocopy);
+      final filePath = await runWithMarketProgress(
+        context,
+        message: 'Dosya indiriliyor…',
+        task: () => PhotocopyService.downloadPhotocopy(photocopy),
+      );
       if (!mounted) return;
-      showMarketSnack(context, 'Dosya indirildi: $filePath');
+      // Dosya uygulamanın kendi klasörüne kaydedilir; kullanıcı onu
+      // paylaşarak (Dosyalar'a kaydet, WhatsApp…) dışarı alır.
+      showMarketSnack(
+        context,
+        'Dosya indirildi',
+        icon: Icons.download_done_rounded,
+        actionLabel: 'Paylaş',
+        onAction: () => Share.shareXFiles([XFile(filePath)]),
+      );
     } catch (e) {
       AppLogger.debug('Fotokopi indirme hatası: $e');
       if (!mounted) return;
@@ -165,15 +173,9 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
     }
 
     if (_failed) {
-      return MarketEmptyState(
-        icon: Icons.cloud_off_rounded,
+      return MarketEmptyState.error(
         title: 'Geçmiş yüklenemedi',
-        message: 'Bağlantını kontrol edip tekrar dene.',
-        actionLabel: 'Tekrar dene',
-        actionIcon: Icons.refresh_rounded,
-        onAction: _refreshHistory,
-        tint: MarketPalette.red,
-        tintSoft: MarketPalette.redSoft,
+        onRetry: _refreshHistory,
       );
     }
 
@@ -195,7 +197,13 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
     return RefreshIndicator(
       onRefresh: _refreshHistory,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+        // Alttaki "Yeni istek" butonu son kartı örtmesin
+        padding: EdgeInsets.fromLTRB(
+          MarketSpace.gutterOf(context),
+          20,
+          MarketSpace.gutterOf(context),
+          110,
+        ),
         itemCount: _photocopies.length,
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) => _buildPhotocopyCard(_photocopies[index]),
@@ -204,9 +212,7 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
   }
 
   Widget _buildPhotocopyCard(Photocopy photocopy) {
-    final date = photocopy.createdAt;
-    final dateText =
-        '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+    final dateText = formatTrDateTime(photocopy.createdAt, withTime: false);
 
     return MarketCard(
       child: Column(
@@ -233,7 +239,9 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${photocopy.fileSizeText} • $dateText',
+                      '${photocopy.fileSizeText.replaceAll('.', ',')} • $dateText',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: MarketText.caption(),
                     ),
                   ],
@@ -256,7 +264,8 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
               ),
               MarketPill(
                 icon: Icons.palette_outlined,
-                label: photocopy.colorText,
+                // Cümle düzeninde etiket (modeldeki metin değişmez)
+                label: photocopy.color == 'color' ? 'Renkli' : 'Siyah-beyaz',
                 background: MarketPalette.surfaceMuted,
                 foreground: MarketPalette.inkSoft,
               ),
@@ -277,9 +286,11 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
           ),
           if (photocopy.notes.isNotEmpty) ...[
             const SizedBox(height: 12),
-            MarketNotice.warning(
+            MarketNotice(
               icon: Icons.sticky_note_2_outlined,
-              text: photocopy.notes,
+              text: 'Notun: ${photocopy.notes}',
+              background: MarketPalette.surfaceMuted,
+              foreground: MarketPalette.inkSoft,
             ),
           ],
           if (photocopy.adminNotes.isNotEmpty) ...[
@@ -318,7 +329,7 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
           style: OutlinedButton.styleFrom(
             foregroundColor: MarketPalette.red,
             side: const BorderSide(color: MarketPalette.redLine),
-            minimumSize: const Size.fromHeight(46),
+            minimumSize: const Size.fromHeight(MarketSize.tapTarget),
           ),
         ),
       );
@@ -331,7 +342,7 @@ class _PhotocopyHistoryPageState extends State<PhotocopyHistoryPage> {
           onPressed: () => _downloadPhotocopy(photocopy),
           icon: const Icon(Icons.download_rounded, size: 19),
           label: const Text('Dosyayı indir'),
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(MarketSize.tapTarget)),
         ),
       );
     }

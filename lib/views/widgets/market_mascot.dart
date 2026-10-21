@@ -74,3 +74,56 @@ class MarketWordmark extends StatelessWidget {
     );
   }
 }
+
+/// Marka imzası: maskot + "benim marketim" logosu ve isteğe bağlı kısa bir
+/// alt satır (ör. "Devrek • Yurda teslimat"). Giriş, kayıt ve tanıtım
+/// ekranlarında ana sayfadaki markayla aynı görünüm için kullanılır.
+class MarketBrandMark extends StatelessWidget {
+  /// Açık zemin için yeşil logo ve gri alt satır.
+  final bool onLight;
+  final double mascotSize;
+  final double wordmarkHeight;
+  final String? tagline;
+
+  const MarketBrandMark({
+    super.key,
+    this.onLight = false,
+    this.mascotSize = 44,
+    this.wordmarkHeight = 30,
+    this.tagline,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        MarketMascot(size: mascotSize),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MarketWordmark(height: wordmarkHeight, onLight: onLight),
+              if (tagline != null && tagline!.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  tagline!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.caption(
+                    color: onLight
+                        ? MarketPalette.muted
+                        : Colors.white.withValues(alpha: .74),
+                    size: 13,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}

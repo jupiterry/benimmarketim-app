@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
+import 'home_quick_carts.dart';
 import 'market_ui.dart';
 
 /// Ana sayfada süren sipariş görevlerini ve müşterinin ilerlemesini gösterir.
@@ -20,6 +21,19 @@ class _MissionSectionState extends State<MissionSection> {
   String? _loadedForUser;
 
   @override
+  void initState() {
+    super.initState();
+    // Aşağı çekip yenileyince ilerleme de güncellenir
+    homeRefreshSignal.addListener(_reload);
+  }
+
+  @override
+  void dispose() {
+    homeRefreshSignal.removeListener(_reload);
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Giriş durumu değişince (ör. açılışta profil yüklenince) yeniden yüklenir
@@ -32,30 +46,45 @@ class _MissionSectionState extends State<MissionSection> {
     if (userId == null) {
       _missions = const [];
     } else {
-      _load();
+      _load(userId);
     }
   }
 
-  Future<void> _load() async {
+  void _reload() {
+    final userId = _loadedForUser;
+    if (userId != null) _load(userId);
+  }
+
+  Future<void> _load(String userId) async {
     final missions = await ApiService().getActiveMissions();
-    if (!mounted) return;
+    // Yükleme sürerken hesap değiştiyse eski sonucu gösterme
+    if (!mounted || _loadedForUser != userId) return;
     setState(() => _missions = missions);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_missions.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(MarketSpace.xl, MarketSpace.lg, MarketSpace.xl, 0),
-      child: Column(
-        children: [
-          for (final mission in _missions)
-            Padding(
-              padding: const EdgeInsets.only(bottom: MarketSpace.md),
-              child: _MissionCard(mission: mission),
+    final gutter = MarketSpace.gutterOf(context);
+    return AnimatedSize(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: _missions.isEmpty
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: EdgeInsets.fromLTRB(gutter, MarketSpace.xxl, gutter, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < _missions.length; i++) ...[
+                    if (i > 0) const SizedBox(height: MarketSpace.md),
+                    _MissionCard(mission: _missions[i]),
+                  ],
+                ],
+              ),
             ),
-        ],
-      ),
     );
   }
 }
@@ -81,6 +110,7 @@ class _MissionCard extends StatelessWidget {
       color: completed ? MarketPalette.greenSoft : MarketPalette.limeSoft,
       borderColor: completed ? MarketPalette.greenLine : MarketPalette.limeLine,
       shadow: false,
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -105,7 +135,7 @@ class _MissionCard extends StatelessWidget {
               const SizedBox(width: MarketSpace.sm),
               // Ödül her zaman görünür
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: MarketPalette.greenDeep,
                   borderRadius: BorderRadius.circular(MarketRadius.pill),
@@ -117,68 +147,146 @@ class _MissionCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: MarketSpace.sm),
-          // Yöneticinin belirlediği kural: "300 TL ve üzeri 3 sipariş ver, 100 TL kupon kazan"
-          Text(rule, style: MarketText.heading(size: 17)),
-          if (description.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(description, style: MarketText.caption(size: 13)),
+          if (rule.isNotEmpty) ...[
+            const SizedBox(height: MarketSpace.sm),
+            // Yöneticinin belirlediği kural: "300 TL ve üzeri 3 sipariş ver, 100 TL kupon kazan"
+            Text(
+              rule,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: MarketText.heading(size: 15),
+            ),
           ],
-          const SizedBox(height: MarketSpace.md),
-          Row(
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(MarketRadius.pill),
-                  child: LinearProgressIndicator(
-                    value: ratio,
-                    minHeight: 10,
-                    backgroundColor: MarketPalette.surface,
-                    color: MarketPalette.green,
-                  ),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: MarketText.caption(),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Semantics(
+            label: 'İlerleme: $target siparişten $progress',
+            excludeSemantics: true,
+            child: Row(
+              children: [
+                Expanded(
+                  child: target <= 10
+                      ? _SegmentedProgress(total: target, done: progress)
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(MarketRadius.pill),
+                          child: LinearProgressIndicator(
+                            value: ratio,
+                            minHeight: 8,
+                            backgroundColor: MarketPalette.surface,
+                            color: MarketPalette.green,
+                          ),
+                        ),
                 ),
-              ),
-              const SizedBox(width: MarketSpace.md),
-              Text(
-                '$progress/$target',
-                style: MarketText.price(color: MarketPalette.greenDark, size: 16),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Text(
+                  '$progress/$target',
+                  style: MarketText.price(color: MarketPalette.greenDark, size: 14),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: MarketSpace.sm),
           if (completed && couponCode != null)
-            InkWell(
-              onTap: () async {
-                await Clipboard.setData(ClipboardData(text: couponCode));
-                if (context.mounted) {
-                  showMarketSnack(context, 'Kupon kodu kopyalandı',
-                      aboveNavigation: true);
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Tamamlandı! Kuponun: $couponCode',
-                        style: MarketText.label(color: MarketPalette.greenDark),
-                      ),
-                    ),
-                    const Icon(Icons.copy_rounded,
-                        size: 16, color: MarketPalette.greenDark),
-                  ],
-                ),
-              ),
-            )
+            _CouponRow(code: couponCode)
           else
             Text(
               progress == 0
-                  ? 'İlk siparişinle başla. Siparişler teslim edilince sayılır.'
-                  : '$remaining sipariş kaldı. Siparişler teslim edilince sayılır.',
-              style: MarketText.caption(size: 12),
+                  ? 'İlk siparişinle başla · teslim edilince sayılır'
+                  : '$remaining sipariş kaldı · teslim edilince sayılır',
+              style: MarketText.caption(),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Hedef küçükse (en çok 10) her sipariş ayrı bir parça olarak görünür.
+class _SegmentedProgress extends StatelessWidget {
+  final int total;
+  final int done;
+
+  const _SegmentedProgress({required this.total, required this.done});
+
+  @override
+  Widget build(BuildContext context) {
+    final count = total < 1 ? 1 : total;
+    return Row(
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(width: 4),
+          Expanded(
+            child: Container(
+              height: 8,
+              decoration: BoxDecoration(
+                color: i < done ? MarketPalette.green : MarketPalette.surface,
+                borderRadius: BorderRadius.circular(MarketRadius.pill),
+                border: i < done
+                    ? null
+                    : Border.all(color: MarketPalette.limeLine),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CouponRow extends StatelessWidget {
+  final String code;
+
+  const _CouponRow({required this.code});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Kupon kodunu kopyala: $code',
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(MarketRadius.sm),
+        onTap: () async {
+          await Clipboard.setData(ClipboardData(text: code));
+          if (context.mounted) {
+            showMarketSnack(context, 'Kupon kodu kopyalandı');
+          }
+        },
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: MarketSize.control),
+          child: Row(
+            children: [
+              Text(
+                'Kuponun hazır: ',
+                style: MarketText.label(color: MarketPalette.greenDark),
+              ),
+              Flexible(
+                child: Text(
+                  code,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.code(size: 13),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Kopyala',
+                style: MarketText.label(color: MarketPalette.greenDark),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.copy_rounded,
+                  size: 16, color: MarketPalette.greenDark),
+            ],
+          ),
+        ),
       ),
     );
   }

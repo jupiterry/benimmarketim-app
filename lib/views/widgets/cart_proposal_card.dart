@@ -239,7 +239,7 @@ class _CartProposalCardState extends State<CartProposalCard> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 'Beğenmediğin ürünü oklara dokunarak benzeriyle değiştirebilir, çarpıya dokunarak çıkarabilirsin.',
-                style: MarketText.caption(size: 11),
+                style: MarketText.caption(size: 12),
               ),
             ),
           const Divider(height: 16, color: MarketPalette.greenLine),
@@ -291,7 +291,7 @@ class _CartProposalCardState extends State<CartProposalCard> {
                     avatar: const Icon(Icons.add_rounded,
                         size: 16, color: MarketPalette.greenDark),
                     label: Text(
-                      '${extra.name} · ${formatTlShort(extra.price)}',
+                      '${productDisplayName(extra.name)} · ${formatTlShort(extra.price)}',
                       style: MarketText.label(
                           color: MarketPalette.greenDark, size: 12),
                     ),
@@ -328,7 +328,7 @@ class _CartProposalCardState extends State<CartProposalCard> {
           Text(
             'Fiyat ve stok, eklerken yeniden kontrol edilir.',
             textAlign: TextAlign.center,
-            style: MarketText.caption(size: 11),
+            style: MarketText.caption(size: 12),
           ),
         ],
       ),
@@ -341,11 +341,20 @@ class _CartProposalCardState extends State<CartProposalCard> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text('${line.quantity}×',
-              style: MarketText.label(color: MarketPalette.inkSoft)),
-          const SizedBox(width: 6),
+          // Sabit genişlikli adet sütunu: ürün adları aynı hizada başlar.
+          SizedBox(
+            width: 26,
+            child: Text(
+              '${line.quantity}×',
+              textAlign: TextAlign.right,
+              style: MarketText.label(color: MarketPalette.inkSoft).copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()]),
+            ),
+          ),
+          const SizedBox(width: 8),
           Expanded(
-            child: Text(line.name, style: MarketText.body(size: 13)),
+            child: Text(productDisplayName(line.name),
+                style: MarketText.body(size: 13)),
           ),
           const SizedBox(width: 8),
           Text(
@@ -362,7 +371,7 @@ class _CartProposalCardState extends State<CartProposalCard> {
                 onTap: () => _swap(line),
               )
             else
-              const SizedBox(width: 34),
+              const SizedBox(width: MarketSize.control),
             _lineButton(
               icon: Icons.close_rounded,
               tooltip: 'Öneriden çıkar',
@@ -381,18 +390,19 @@ class _CartProposalCardState extends State<CartProposalCard> {
     required Color color,
     required VoidCallback onTap,
   }) {
+    // 44 pt dokunma alanı (sohbette ve asistanda tek elle kullanılıyor)
     return SizedBox(
-      width: 34,
-      height: 34,
+      width: MarketSize.control,
+      height: MarketSize.control,
       child: IconButton(
         onPressed: onTap,
         tooltip: tooltip,
         icon: Icon(icon, size: 19),
         color: color,
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(),
-        style: IconButton.styleFrom(
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        constraints: const BoxConstraints(
+          minWidth: MarketSize.control,
+          minHeight: MarketSize.control,
         ),
       ),
     );

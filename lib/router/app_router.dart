@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import '../views/splash_screen.dart';
 import '../views/login_page.dart';
@@ -25,16 +26,17 @@ import '../models/order.dart' show PaymentMethod;
 import '../views/onboarding_page.dart';
 import '../views/cart_assistant_page.dart';
 import '../views/saved_carts_page.dart';
+import '../views/widgets/market_system_frame.dart';
 
 
 class AppRouter {
-
+  /// Kök Navigator'ın gözlemcileri. Durum çubuğu şeridi alt sayfa ve
+  /// diyaloglarla birlikte kararır (MarketSystemFrame).
+  static final List<NavigatorObserver> observers = [MarketChromeObserver.instance];
 
   static final router = GoRouter(
     initialLocation: '/',
-    observers: [
-
-    ],
+    observers: observers,
     // Hata durumunda fallback route
     errorBuilder: (context, state) => const SplashScreen(),
     // TODO(deep-link): AndroidManifest'te https://devrekbenimmarketim.com
@@ -63,6 +65,7 @@ class AppRouter {
           return HomePage(
             initialTabIndex: initialTabIndex,
             openOrders: openOrders,
+            navigationRequest: extra,
           );
         },
       ),
@@ -116,10 +119,13 @@ class AppRouter {
         path: '/order-confirmation/:orderId',
         builder: (context, state) {
           final orderId = state.pathParameters['orderId'];
+          final query = state.uri.queryParameters;
+          final point = query['point']?.trim();
           return OrderConfirmationPage(
             orderId: orderId,
-            paymentMethod:
-                PaymentMethod.fromKey(state.uri.queryParameters['payment']),
+            paymentMethod: PaymentMethod.fromKey(query['payment']),
+            amount: double.tryParse(query['total'] ?? ''),
+            deliveryPointName: point == null || point.isEmpty ? null : point,
           );
         },
       ),
@@ -139,8 +145,12 @@ class AppRouter {
         builder: (context, state) => const FavoritesPage(),
       ),
       GoRoute(
-          path: '/search',
-          builder: (context, state) => const AdvancedSearchPage()),
+        path: '/search',
+        builder: (context, state) {
+          final extra = state.extra;
+          return AdvancedSearchPage(initialQuery: extra is String ? extra : null);
+        },
+      ),
       GoRoute(
         path: '/feedback',
         builder: (context, state) => const FeedbackPage(),

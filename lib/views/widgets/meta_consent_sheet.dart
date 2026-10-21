@@ -5,6 +5,11 @@ import 'legal_links.dart';
 import 'market_ui.dart';
 
 bool _askedThisSession = false;
+bool _shownThisSession = false;
+
+/// Bu açılışta reklam ölçümü sayfası gerçekten gösterildi mi. Sipariş sonrası
+/// anket aynı açılışta ikinci bir pencere açmamak için buna bakar.
+bool get metaConsentPromptedThisSession => _shownThisSession;
 
 /// Reklam ölçümü (Meta) kararı henüz verilmediyse bir kez sorar. Karar
 /// verilmeden kapatılırsa ölçüm kapalı kalır ve bir sonraki açılışta yeniden
@@ -26,20 +31,20 @@ Future<void> maybeAskMetaConsent(BuildContext context) async {
   if (!context.mounted) return;
 
   final ios = service.isIos;
-  final granted = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
+  _shownThisSession = true;
+  final granted = await showMarketSheet<bool>(
+    context,
     isDismissible: !ios,
     enableDrag: !ios,
-    backgroundColor: MarketPalette.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(MarketRadius.xl)),
-    ),
     builder: (_) => _MetaConsentSheet(ios: ios),
   );
   if (granted == null) return;
   await service.setConsent(granted);
 }
+
+/// Ekran görüntüsü testleri için açıklama sayfası (uygulamada kullanılmaz).
+@visibleForTesting
+Widget debugMetaConsentSheet({required bool ios}) => _MetaConsentSheet(ios: ios);
 
 class _MetaConsentSheet extends StatelessWidget {
   final bool ios;
@@ -48,109 +53,133 @@ class _MetaConsentSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          MarketSpace.xl,
-          MarketSpace.md,
-          MarketSpace.xl,
-          MarketSpace.xl,
+    final Widget actions;
+    if (ios) {
+      actions = FilledButton(
+        onPressed: () => Navigator.of(context).pop(true),
+        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(MarketSize.button)),
+        child: const Text('Devam'),
+      );
+    } else {
+      // KVKK: iki seçenek eşit boyutta ve eşit görünürlükte
+      actions = Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(MarketSize.button)),
+              child: const Text('İzin verme'),
+            ),
+          ),
+          const SizedBox(width: MarketSpace.md),
+          Expanded(
+            child: FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(MarketSize.button)),
+              child: const Text('İzin ver'),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return MarketSheetScaffold(
+      // iOS'ta sayfa kaydırılarak kapatılamaz; tutamak yanıltıcı olur
+      showHandle: !ios,
+      header: Padding(
+        padding: EdgeInsets.only(top: ios ? 20 : 0),
+        child: MarketSheetHeader(
+          title: ios ? 'Reklam ölçümü hakkında' : 'Reklam ölçümüne izin veriyor musun?',
+          meta: const MarketPill(icon: Icons.insights_rounded, label: 'Gizlilik tercihi'),
+          // Kapatmak "karar verilmedi" demektir (kaydırarak kapatmakla aynı)
+          showClose: !ios,
+          onClose: () => Navigator.of(context).pop(),
         ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: MarketSpace.lg),
-                  decoration: BoxDecoration(
-                    color: MarketPalette.lineStrong,
-                    borderRadius: BorderRadius.circular(MarketRadius.pill),
-                  ),
-                ),
-              ),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: MarketIconTile(
-                  icon: Icons.insights_rounded,
-                  size: 48,
-                  background: MarketPalette.greenSoft,
-                  foreground: MarketPalette.greenDark,
-                ),
-              ),
-              const SizedBox(height: MarketSpace.md),
-              Text(
-                ios
-                    ? 'Reklam ölçümü hakkında'
-                    : 'Reklam ölçümüne izin veriyor musun?',
-                style: MarketText.title(),
-              ),
-              const SizedBox(height: MarketSpace.sm),
-              Text(
-                'Reklamlarımızın işe yarayıp yaramadığını görmek için uygulamanın '
-                'açılması, sepete ürün eklenmesi ve verilen siparişler gibi '
-                'kullanım bilgilerini cihazının reklam kimliğiyle birlikte '
-                'Meta (Facebook) ile paylaşmak istiyoruz.',
-                style: MarketText.body(color: MarketPalette.inkSoft),
-              ),
-              const SizedBox(height: MarketSpace.sm),
-              Text(
-                'Adın, telefon numaran ve teslimat bilgilerin paylaşılmaz. '
-                '${ios ? 'Birazdan iPhone sana izin soracak. ' : ''}'
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Reklamlarımızın işe yarayıp yaramadığını görmek için bazı kullanım '
+            'bilgilerini Meta (Facebook) ile paylaşmak istiyoruz.',
+            style: MarketText.body(color: MarketPalette.inkSoft),
+          ),
+          const SizedBox(height: MarketSpace.lg),
+          const _ConsentPoint(
+            icon: Icons.ios_share_rounded,
+            title: 'Paylaşılanlar',
+            text: 'Uygulamanın açılması, sepete ürün eklenmesi ve verilen siparişler '
+                'gibi kullanım bilgileri, cihazının reklam kimliğiyle birlikte.',
+          ),
+          const _ConsentPoint(
+            icon: Icons.lock_outline_rounded,
+            title: 'Paylaşılmayanlar',
+            text: 'Adın, telefon numaran ve teslimat bilgilerin.',
+          ),
+          _ConsentPoint(
+            icon: Icons.tune_rounded,
+            title: 'Karar senin',
+            text: '${ios ? 'Birazdan iPhone sana izin soracak. ' : ''}'
                 'İzin vermesen de uygulamayı aynı şekilde kullanırsın. Kararını '
                 'Ayarlar > Gizlilik bölümünden istediğin zaman değiştirebilirsin.',
-                style: MarketText.body(color: MarketPalette.muted, size: 13),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => LegalLinks.open(context, LegalLinks.privacy),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    foregroundColor: MarketPalette.greenDark,
-                  ),
-                  child: const Text('Gizlilik Politikası'),
-                ),
-              ),
-              const SizedBox(height: MarketSpace.md),
-              if (ios)
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
-                  ),
-                  child: const Text('Devam'),
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(52),
-                        ),
-                        child: const Text('İzin verme'),
-                      ),
-                    ),
-                    const SizedBox(width: MarketSpace.md),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(52),
-                        ),
-                        child: const Text('İzin ver'),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => LegalLinks.open(context, LegalLinks.privacy),
+              style: TextButton.styleFrom(
+                foregroundColor: MarketPalette.greenDark,
+                minimumSize: const Size(0, MarketSize.control),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              icon: const Icon(Icons.open_in_new_rounded, size: 16),
+              label: const Text('Gizlilik Politikası'),
+            ),
+          ),
+        ],
+      ),
+      footer: actions,
+    );
+  }
+}
+
+class _ConsentPoint extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String text;
+
+  const _ConsentPoint({required this.icon, required this.title, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: MarketSpace.md),
+      child: MergeSemantics(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: MarketPalette.greenSoft,
+                borderRadius: BorderRadius.circular(MarketRadius.xs),
+              ),
+              child: Icon(icon, size: 17, color: MarketPalette.greenDark),
+            ),
+            const SizedBox(width: MarketSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: MarketText.label(size: 13)),
+                  const SizedBox(height: 2),
+                  Text(text, style: MarketText.body(color: MarketPalette.muted, size: 13, height: 1.4)),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

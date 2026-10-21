@@ -6,6 +6,11 @@ class TurkishText {
   static String toLower(String input) =>
       input.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
 
+  /// Türkçe kurallarına göre büyük harfe çevirir (i → İ, ı → I). Zaten büyük
+  /// harfli metni değiştirmez: "Bildirimler · Diğer" → "BİLDİRİMLER · DİĞER".
+  static String toUpper(String input) =>
+      input.replaceAll('i', 'İ').replaceAll('ı', 'I').toUpperCase();
+
   /// Arama karşılaştırması için sadeleştirir: küçük harf + aksan katlama.
   /// "İstanbul", "ISTANBUL" ve "istanbul" aynı sonucu verir;
   /// "şeker" ile "seker" eşleşir.

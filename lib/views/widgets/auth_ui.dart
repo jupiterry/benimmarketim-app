@@ -1,112 +1,147 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import 'market_mascot.dart';
 import 'market_ui.dart';
 
+/// Giriş / kayıt sayfası iskeleti. Yeşil başlık kaydırılan içeriğin bir
+/// parçasıdır: klavye açılınca ya da sayfa kaydırılınca beyaz yazı açık
+/// zemine taşmaz. Form kartı başlığın alt kısmına biner.
 class AuthPageShell extends StatelessWidget {
+  /// Yeşil zemindeki marka ve başlık (genellikle [AuthBrandHeader]).
+  final Widget header;
+
+  /// Başlığın altına binen form kartı ve altındaki bağlantılar.
   final Widget child;
   final VoidCallback? onBack;
 
   const AuthPageShell({
     super.key,
+    required this.header,
     required this.child,
     this.onBack,
   });
 
+  /// Kartın yeşil başlığa bindiği yükseklik.
+  static const double _overlap = 72;
+
   @override
   Widget build(BuildContext context) {
+    final padding = MediaQuery.paddingOf(context);
+    final gutter = MarketSpace.gutterOf(context);
+    Widget constrained(Widget child) => Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: child,
+          ),
+        );
+
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
-      body: Stack(
-        children: [
-          const Positioned.fill(child: _AuthBackground()),
-          SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 30),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: Column(
+      body: SingleChildScrollView(
+        // Üst kenarda esneme yok: yeşil zeminin üstünde açık şerit görünmez.
+        physics: const ClampingScrollPhysics(),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DecoratedBox(
+              decoration: const BoxDecoration(gradient: MarketPalette.headerGradient),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(gutter, padding.top + 10, gutter, 26),
+                child: constrained(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        height: 48,
-                        child: Align(
+                      if (onBack != null) ...[
+                        Align(
                           alignment: Alignment.centerLeft,
-                          child: onBack == null
-                              ? const SizedBox.shrink()
-                              : AuthBackButton(onTap: onBack!),
+                          child: AuthBackButton(onTap: onBack!),
                         ),
-                      ),
-                      const SizedBox(height: 14),
-                      child,
+                        const SizedBox(height: 18),
+                      ] else
+                        const SizedBox(height: 8),
+                      header,
                     ],
                   ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class AuthBrandHeader extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const AuthBrandHeader({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: MarketPalette.lime,
-                borderRadius: BorderRadius.circular(MarketRadius.md),
-              ),
-              child: Icon(icon, color: MarketPalette.greenDeep, size: 26),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Stack(
               children: [
-                Text(
-                  'Benim Marketim',
-                  style: MarketText.heading(color: Colors.white, size: 16),
+                // Başlığın devamı: kartın üst kısmının arkasında kalır.
+                const SizedBox(
+                  height: _overlap,
+                  width: double.infinity,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: MarketPalette.greenDark,
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(MarketRadius.xl),
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Devrek • Mahallenin marketi',
-                  style: MarketText.caption(color: Colors.white.withValues(alpha: .74)),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 24 + padding.bottom),
+                  child: constrained(child),
                 ),
               ],
             ),
           ],
         ),
-        const SizedBox(height: 32),
-        Text(
-          title,
-          style: MarketText.display(color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// Yeşil zemindeki marka imzası, büyük başlık ve kısa açıklama.
+class AuthBrandHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+
+  /// Uzun formlar için kısa başlık: boşluk daralır, açıklama gösterilmez.
+  final bool compact;
+
+  const AuthBrandHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = MediaQuery.sizeOf(context).width < 360;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MarketBrandMark(
+          mascotSize: compact ? 38 : 44,
+          wordmarkHeight: compact ? 26 : 30,
+          tagline: 'Devrek • Yurda teslimat',
         ),
-        const SizedBox(height: 9),
-        Text(
-          subtitle,
-          style: MarketText.body(color: Colors.white.withValues(alpha: .72), size: 13),
+        SizedBox(height: compact ? 18 : 28),
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            style: narrow || compact
+                ? MarketText.title(color: Colors.white, size: 26)
+                : MarketText.display(color: Colors.white),
+          ),
         ),
+        if (!compact && subtitle != null && subtitle!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            subtitle!,
+            style: MarketText.body(
+              color: Colors.white.withValues(alpha: .78),
+              size: 14,
+              height: 1.45,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -119,8 +154,9 @@ class AuthFormCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final narrow = MediaQuery.sizeOf(context).width < 360;
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(narrow ? 16 : 20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(MarketRadius.xl),
@@ -154,6 +190,8 @@ class AuthTextField extends StatelessWidget {
   final Iterable<String>? autofillHints;
   final bool showLabel;
   final VoidCallback? onSubmitted;
+  final FocusNode? focusNode;
+  final List<TextInputFormatter>? inputFormatters;
 
   const AuthTextField({
     super.key,
@@ -172,80 +210,65 @@ class AuthTextField extends StatelessWidget {
     this.autofillHints,
     this.onSubmitted,
     this.showLabel = true,
+    this.focusNode,
+    this.inputFormatters,
   });
 
   @override
   Widget build(BuildContext context) {
+    OutlineInputBorder border(Color color, [double width = 1]) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(MarketRadius.md),
+          borderSide: BorderSide(color: color, width: width),
+        );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showLabel) ...[
-          Text(
-            label,
-            style: MarketText.label(size: 12),
-          ),
+          Text(label, style: MarketText.label(size: 13)),
           const SizedBox(height: 8),
         ],
         TextFormField(
           controller: controller,
+          focusNode: focusNode,
           keyboardType: keyboardType,
           textInputAction: textInputAction,
           obscureText: obscureText,
           validator: validator,
           onChanged: onChanged,
+          inputFormatters: inputFormatters,
           textCapitalization: textCapitalization,
           autofillHints: autofillHints,
           onFieldSubmitted: (_) => onSubmitted?.call(),
           style: MarketText.body(weight: FontWeight.w600),
           decoration: InputDecoration(
+            // Etiket görünmüyorsa ekran okuyucu yine de alanın adını duyar.
+            labelText: showLabel ? null : label,
+            floatingLabelBehavior: FloatingLabelBehavior.never,
             hintText: hint,
-            hintStyle: MarketText.body(color: MarketPalette.subtle),
+            hintStyle: MarketText.body(color: MarketPalette.muted),
             prefixIcon: Icon(icon, color: MarketPalette.green, size: 21),
             suffixIcon: suffix ??
                 (onToggleVisibility == null
                     ? null
                     : IconButton(
                         onPressed: onToggleVisibility,
+                        tooltip: obscureText ? 'Şifreyi göster' : 'Şifreyi gizle',
                         icon: Icon(
-                          obscureText
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+                          obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
                           color: MarketPalette.muted,
                           size: 20,
                         ),
                       )),
             filled: true,
             fillColor: MarketPalette.canvas,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 15,
-              vertical: 17,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(MarketRadius.md),
-              borderSide: const BorderSide(color: MarketPalette.line),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(MarketRadius.md),
-              borderSide: const BorderSide(color: MarketPalette.line),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(MarketRadius.md),
-              borderSide: const BorderSide(
-                color: MarketPalette.green,
-                width: 1.5,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(MarketRadius.md),
-              borderSide: const BorderSide(color: MarketPalette.red),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(MarketRadius.md),
-              borderSide: const BorderSide(
-                color: MarketPalette.red,
-                width: 1.5,
-              ),
-            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 16),
+            border: border(MarketPalette.line),
+            enabledBorder: border(MarketPalette.line),
+            focusedBorder: border(MarketPalette.green, 1.5),
+            errorBorder: border(MarketPalette.red),
+            focusedErrorBorder: border(MarketPalette.red, 1.5),
+            errorMaxLines: 2,
             errorStyle: MarketText.caption(color: MarketPalette.red, size: 12, weight: FontWeight.w600),
           ),
         ),
@@ -273,34 +296,61 @@ class AuthPrimaryButton extends StatelessWidget {
     return FilledButton(
       onPressed: isLoading ? null : onPressed,
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(58),
+        minimumSize: const Size.fromHeight(MarketSize.button),
         backgroundColor: MarketPalette.green,
-        disabledBackgroundColor: MarketPalette.green.withValues(alpha: .55),
+        // Yüklenirken buton yeşil kalır; yalnızca dönen gösterge değişir.
+        disabledBackgroundColor: isLoading ? MarketPalette.green : null,
+        disabledForegroundColor: isLoading ? Colors.white : null,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(MarketRadius.md),
         ),
         elevation: 0,
       ),
       child: isLoading
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
-                color: Colors.white,
+          ? Semantics(
+              label: 'Bekleniyor',
+              child: const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
               ),
             )
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  style: MarketText.label(color: Colors.white, size: 14, weight: FontWeight.w800),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.label(color: Colors.white, size: 15, weight: FontWeight.w800),
+                  ),
                 ),
                 const SizedBox(width: 9),
                 Icon(icon, color: Colors.white, size: 19),
               ],
             ),
+    );
+  }
+}
+
+/// Formun içindeki hata kutusu (giriş / kayıt başarısız). Ekran okuyucu
+/// metni hemen duyurur; alanlar görünür kalır.
+class AuthErrorNotice extends StatelessWidget {
+  final String message;
+
+  const AuthErrorNotice({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      child: MarketNotice(
+        icon: Icons.error_outline_rounded,
+        text: message,
+        background: MarketPalette.redSoft,
+        foreground: MarketPalette.red,
+      ),
     );
   }
 }
@@ -320,26 +370,64 @@ class AuthBackButton extends StatelessWidget {
   }
 }
 
-class _AuthBackground extends StatelessWidget {
-  const _AuthBackground();
+// ---------------------------------------------------------------------------
+// Telefon numarası (kayıt formu ve Hesabım'daki düzenleme penceresi)
+// ---------------------------------------------------------------------------
+
+/// Yalnızca rakam kabul eder ve numarayı yazarken "0532 123 45 67" diye
+/// gruplar. "+90 532…" yapıştırılırsa başına 0 koyar. En fazla 11 hane.
+class TrPhoneInputFormatter extends TextInputFormatter {
+  const TrPhoneInputFormatter();
+
+  static String digitsOf(String text) {
+    var digits = text.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('90') && digits.length >= 12) digits = '0${digits.substring(2)}';
+    return digits.length > 11 ? digits.substring(0, 11) : digits;
+  }
+
+  /// "05321234567" → "0532 123 45 67"; "5321234567" → "532 123 45 67".
+  static String group(String digits) {
+    final groups = digits.startsWith('0') ? const [4, 3, 2, 2] : const [3, 3, 2, 2];
+    final buffer = StringBuffer();
+    var index = 0;
+    for (final size in groups) {
+      if (index >= digits.length) break;
+      if (index > 0) buffer.write(' ');
+      final end = (index + size).clamp(0, digits.length);
+      buffer.write(digits.substring(index, end));
+      index = end;
+    }
+    if (index < digits.length) buffer.write(digits.substring(index));
+    return buffer.toString();
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          flex: 5,
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: MarketPalette.headerGradient,
-            ),
-          ),
-        ),
-        const Expanded(
-          flex: 6,
-          child: ColoredBox(color: MarketPalette.canvas),
-        ),
-      ],
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = digitsOf(newValue.text);
+    final text = group(digits);
+    // İmleç, kendinden önceki rakam sayısı korunarak yeni metne taşınır.
+    final cursor = newValue.selection.end.clamp(0, newValue.text.length);
+    final digitsBefore = digitsOf(newValue.text.substring(0, cursor)).length;
+    var offset = 0;
+    var seen = 0;
+    while (offset < text.length && seen < digitsBefore) {
+      if (text[offset] != ' ') seen++;
+      offset++;
+    }
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: offset),
     );
   }
+}
+
+/// Türkiye cep telefonu doğrulaması (05XX XXX XX XX ya da başında 0 olmadan).
+/// Geçerliyse null döner.
+String? validateTrMobile(String? value) {
+  final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
+  if (digits.isEmpty) return 'Telefon numaranı yaz';
+  if (!RegExp(r'^0?5\d{9}$').hasMatch(digits)) {
+    return 'Numaran 05 ile başlamalı ve 11 haneli olmalı';
+  }
+  return null;
 }

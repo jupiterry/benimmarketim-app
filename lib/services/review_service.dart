@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_logger.dart';
@@ -23,6 +24,17 @@ class ReviewService {
   static const int _minOrdersBeforeReview = 2; // En az 2 sipariş tamamlamış olmalı
   static const int _daysBetweenRequests = 30; // İstekler arasında en az 30 gün
   static const int _maxReviewRequests = 3; // Maksimum 3 kere sor
+
+  /// iOS mu? (Testlerde flutter_test varsayılanı Android'dir.)
+  static bool get isIos => defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// Mağaza adıyla buton metni. Türkçe ek (-de/-da) mağaza adına göre değiştiği
+  /// için metinler parça parça birleştirilmez.
+  String get storeCta => isIos ? "App Store'da puan ver" : "Google Play'de puan ver";
+
+  /// Mağaza puanı isteyen soru metni.
+  String get storeAsk =>
+      isIos ? "Bizi App Store'da puanlar mısın?" : "Bizi Google Play'de puanlar mısın?";
 
   /// Değerlendirme isteyip istemeyeceğini kontrol et
   Future<bool> shouldRequestReview() async {
@@ -94,16 +106,16 @@ class ReviewService {
     }
   }
 
-  /// Sipariş tamamlandığında çağır
+  /// Sipariş verildiğinde çağır. Yalnızca sayacı artırır: mağaza puan
+  /// penceresi ödeme sırasında (sipariş daha teslim edilmeden, onay ekranına
+  /// geçilmeden) açılmaz. Pencere, teslimattan sonraki uygulama açılışında
+  /// OrderFeedbackCoordinator → [requestReviewForDeliveredOrders] ile denenir.
   Future<void> onOrderCompleted() async {
     final prefs = await SharedPreferences.getInstance();
     final currentCount = prefs.getInt(_orderCountKey) ?? 0;
     await prefs.setInt(_orderCountKey, currentCount + 1);
-    
-    AppLogger.debug('📝 Review: Sipariş tamamlandı (toplam: ${currentCount + 1})');
 
-    // Değerlendirme istemeyi dene (koşullar sağlanıyorsa)
-    await requestReview();
+    AppLogger.debug('📝 Review: Sipariş tamamlandı (toplam: ${currentCount + 1})');
   }
 
   /// Sunucudan gelen teslim edilmiş sipariş sayısıyla mağaza puan penceresini dener.
@@ -125,15 +137,43 @@ class ReviewService {
     AppLogger.debug('📝 Review: Kullanıcı değerlendirme yaptı olarak işaretlendi');
   }
 
-  /// Mağaza sayfasına yönlendir (fallback için)
-  Future<void> openStoreListing() async {
+  /// Uygulama içinden mağaza puanı önerilebilir mi (teşekkür ekranındaki
+  /// kart): kullanıcı zaten puan verdiyse ya da son 30 günde mağaza açıldıysa /
+  /// puan penceresi istendiyse önerilmez.
+  Future<bool> canSuggestStore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_hasReviewedKey) ?? false) return false;
+      final lastRequest = prefs.getInt(_lastReviewRequestKey);
+      if (lastRequest == null) return true;
+      final days = DateTime.now()
+          .difference(DateTime.fromMillisecondsSinceEpoch(lastRequest))
+          .inDays;
+      return days >= _daysBetweenRequests;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Mağaza sayfasına yönlendir (fallback için). Sayfa açıldıysa true,
+  /// açılamadıysa false döner. Açıldıysa puan penceresi 30 gün beklenir
+  /// (kullanıcı az önce mağazaya gittiyse hemen ardından tekrar sorulmaz).
+  Future<bool> openStoreListing() async {
     try {
       await _inAppReview.openStoreListing(
         appStoreId: '6755792336', // App Store Connect Apple ID (codemagic.yaml ile aynı)
         // Google Play için package name otomatik kullanılır
       );
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_lastReviewRequestKey, DateTime.now().millisecondsSinceEpoch);
+      } catch (_) {
+        // Bekleme süresi kaydedilemese de mağaza açıldı
+      }
+      return true;
     } catch (e) {
       AppLogger.debug('📝 Review: Store listing açılamadı: $e');
+      return false;
     }
   }
 

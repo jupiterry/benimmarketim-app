@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../services/app_logger.dart';
 import 'market_ui.dart';
 
 class FilePickerWidget extends StatefulWidget {
@@ -27,9 +27,15 @@ class FilePickerWidget extends StatefulWidget {
   State<FilePickerWidget> createState() => _FilePickerWidgetState();
 }
 
+enum _PickSource { document, camera, gallery }
+
 class _FilePickerWidgetState extends State<FilePickerWidget> {
   File? _selectedFile;
   String? _selectedFileName;
+
+  // Kamera/galeriden gelen dosyanın adı anlamsızdır ("image_picker_3F2A…");
+  // kullanıcıya "Fotoğraf" olarak gösterilir.
+  bool _isPhoto = false;
 
   @override
   void initState() {
@@ -40,140 +46,82 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
   Future<void> _pickFile() async {
     if (!widget.isEnabled) return;
 
-    try {
-      // Dosya seçimi için dialog göster
-      final result = await showModalBottomSheet<File?>(
-        context: context,
-        builder: (context) => _buildFileSelectionSheet(),
-      );
-
-      if (result != null) {
-        setState(() {
-          _selectedFile = result;
-          _selectedFileName = result.path.split('/').last;
-        });
-        widget.onFileSelected(result);
-      }
-    } catch (e) {
-      _showErrorSnackBar('Dosya seçilirken hata oluştu: $e');
-    }
-  }
-
-  Widget _buildFileSelectionSheet() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Önce kaynak seçilir; seçici, alt sayfa kapandıktan sonra açılır (hata
+    // olursa bildirim sayfanın üstünde görünür).
+    final source = await showMarketSheet<_PickSource>(
+      context,
+      builder: (sheetContext) => MarketSheetScaffold(
+        header: const MarketSheetHeader(title: 'Belgeni nereden ekleyelim?'),
+        body: MarketMenuGroup(
           children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 5,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: MarketPalette.lineStrong,
-                  borderRadius: BorderRadius.circular(MarketRadius.sm),
-                ),
-              ),
+            MarketMenuTile(
+              icon: Icons.folder_open_rounded,
+              title: 'Dosyalardan seç',
+              subtitle: 'PDF, DOC, DOCX, JPG, PNG',
+              iconColor: MarketPalette.blue,
+              iconBackground: MarketPalette.blueSoft,
+              onTap: () => Navigator.pop(sheetContext, _PickSource.document),
             ),
-            Text('Belgeni nereden ekleyelim?', style: MarketText.title(size: 22)),
-            const SizedBox(height: 16),
-            MarketMenuGroup(
-              children: [
-                MarketMenuTile(
-                  icon: Icons.folder_open_rounded,
-                  title: 'Dosyalardan seç',
-                  subtitle: 'PDF, DOC, DOCX, JPG, PNG',
-                  iconColor: MarketPalette.blue,
-                  iconBackground: MarketPalette.blueSoft,
-                  onTap: _pickDocument,
-                ),
-                MarketMenuTile(
-                  icon: Icons.photo_camera_outlined,
-                  title: 'Fotoğrafını çek',
-                  subtitle: 'Kamerayla belgeni tara',
-                  onTap: _pickImageFromCamera,
-                ),
-                MarketMenuTile(
-                  icon: Icons.photo_library_outlined,
-                  title: 'Galeriden seç',
-                  iconColor: MarketPalette.pink,
-                  iconBackground: MarketPalette.pinkSoft,
-                  onTap: _pickImageFromGallery,
-                ),
-              ],
+            MarketMenuTile(
+              icon: Icons.photo_camera_outlined,
+              title: 'Fotoğrafını çek',
+              subtitle: 'Kamerayla belgeni tara',
+              onTap: () => Navigator.pop(sheetContext, _PickSource.camera),
+            ),
+            MarketMenuTile(
+              icon: Icons.photo_library_outlined,
+              title: 'Galeriden seç',
+              iconColor: MarketPalette.pink,
+              iconBackground: MarketPalette.pinkSoft,
+              onTap: () => Navigator.pop(sheetContext, _PickSource.gallery),
             ),
           ],
         ),
       ),
     );
+    if (source == null || !mounted) return;
+
+    final file = switch (source) {
+      _PickSource.document => await _pickDocument(),
+      _PickSource.camera => await _pickImage(ImageSource.camera),
+      _PickSource.gallery => await _pickImage(ImageSource.gallery),
+    };
+    if (file == null || !mounted) return;
+    setState(() {
+      _selectedFile = file;
+      _selectedFileName = file.path.split('/').last;
+      _isPhoto = source != _PickSource.document;
+    });
+    widget.onFileSelected(file);
   }
 
-  Future<void> _pickDocument() async {
+  Future<File?> _pickDocument() async {
     try {
       // Dosya seçici kullan
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
         allowMultiple: false,
       );
-
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
-        if (mounted) {
-          context.pop(file);
-        }
-      }
+      final path = result?.files.single.path;
+      return path == null ? null : File(path);
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('Dosya seçilirken hata oluştu: $e');
-      }
+      AppLogger.debug('Dosya seçilemedi: $e');
+      _showErrorSnackBar('Dosya seçilemedi. Dosyalara erişim iznini kontrol et.');
+      return null;
     }
   }
 
-  Future<void> _pickImageFromCamera() async {
+  Future<File?> _pickImage(ImageSource source) async {
     try {
-      // Kameradan fotoğraf çek
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85,
-      );
-
-      if (image != null) {
-        final file = File(image.path);
-        if (mounted) {
-          context.pop(file);
-        }
-      }
+      final image = await ImagePicker().pickImage(source: source, imageQuality: 85);
+      return image == null ? null : File(image.path);
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('Kamera kullanılırken hata oluştu: $e');
-      }
-    }
-  }
-
-  Future<void> _pickImageFromGallery() async {
-    try {
-      // Galeriden fotoğraf seç
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-      );
-
-      if (image != null) {
-        final file = File(image.path);
-        if (mounted) {
-          context.pop(file);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('Galeri kullanılırken hata oluştu: $e');
-      }
+      AppLogger.debug('Fotoğraf alınamadı: $e');
+      _showErrorSnackBar(source == ImageSource.camera
+          ? 'Kamera açılamadı. Kamera iznini kontrol et.'
+          : 'Galeri açılamadı. Fotoğraf iznini kontrol et.');
+      return null;
     }
   }
 
@@ -181,12 +129,13 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
     setState(() {
       _selectedFile = null;
       _selectedFileName = null;
+      _isPhoto = false;
     });
     widget.onFileRemoved?.call();
   }
 
   void _showErrorSnackBar(String message) {
-    showMarketSnack(context, message, error: true);
+    if (mounted) showMarketSnack(context, message, error: true);
   }
 
   @override
@@ -207,7 +156,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       child: Row(
         children: [
           MarketIconTile(
-            icon: _getFileIcon(_selectedFileName ?? ''),
+            icon: _isPhoto ? Icons.image_rounded : _getFileIcon(_selectedFileName ?? ''),
             size: 44,
             background: Colors.white,
           ),
@@ -217,7 +166,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _selectedFileName ?? 'Dosya seçildi',
+                  _isPhoto ? 'Fotoğraf' : (_selectedFileName ?? 'Dosya seçildi'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: MarketText.label(size: 14),
@@ -231,7 +180,7 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
             ),
           ),
           IconButton(
-            onPressed: _removeFile,
+            onPressed: widget.isEnabled ? _removeFile : null,
             icon: const Icon(Icons.close_rounded, color: MarketPalette.red),
             tooltip: 'Dosyayı kaldır',
           ),
@@ -299,9 +248,9 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       if (bytes < 1024) {
         return '$bytes B';
       } else if (bytes < 1024 * 1024) {
-        return '${(bytes / 1024).toStringAsFixed(1)} KB';
+        return '${(bytes / 1024).toStringAsFixed(1).replaceAll('.', ',')} KB';
       } else {
-        return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+        return '${(bytes / (1024 * 1024)).toStringAsFixed(1).replaceAll('.', ',')} MB';
       }
     } catch (e) {
       return 'Boyut bilinmiyor';

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../services/theme_service.dart';
 import 'custom_dialog.dart';
+import 'market_ui.dart';
 import '../../services/app_logger.dart';
 
 class UpdateDialog extends StatelessWidget {
@@ -22,12 +21,12 @@ class UpdateDialog extends StatelessWidget {
     return PopScope(
       canPop: !isMandatory, // Zorunluysa geri tuşu çalışmaz
       child: CustomDialog(
-        title: 'Güncelleme Mevcut',
+        title: 'Yeni sürüm hazır',
         message: isMandatory
-            ? 'Uygulamayı kullanmaya devam etmek için kritik bir güncelleme (v$latestVersion) yapmanız gerekmektedir.'
-            : 'Uygulamanın yeni bir sürümü (v$latestVersion) mevcut. Daha iyi bir deneyim için güncellemenizi öneririz.',
-        confirmButtonText: 'Şimdi Güncelle',
-        cancelButtonText: 'Daha Sonra',
+            ? 'Uygulamayı kullanmaya devam etmek için yeni sürümü (v$latestVersion) yüklemen gerekiyor.'
+            : 'Yeni sürüm (v$latestVersion) yayında. Daha hızlı ve sorunsuz bir deneyim için güncellemeni öneririz.',
+        confirmButtonText: 'Şimdi güncelle',
+        cancelButtonText: 'Daha sonra',
         showCancelButton: !isMandatory, // Zorunluysa iptal butonu gizli
         icon: Icons.system_update_rounded,
         onConfirm: () => _launchStore(context),
@@ -37,33 +36,33 @@ class UpdateDialog extends StatelessWidget {
 
   Future<void> _launchStore(BuildContext context) async {
     if (storeUrl.isEmpty) return;
+    // İsteğe bağlı güncellemede pencere kapanır; kullanıcı mağazadan
+    // döndüğünde karşısına yeniden çıkmaz. Zorunluysa açık kalır.
+    final messengerContext = Navigator.of(context, rootNavigator: true).context;
+    if (!isMandatory) Navigator.of(context).pop();
 
     try {
       final Uri uri = Uri.parse(storeUrl);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        if (context.mounted) {
-          _showError(context);
+        if (messengerContext.mounted) {
+          _showError(messengerContext);
         }
       }
     } catch (e) {
       AppLogger.debug('Error launching store: $e');
-      if (context.mounted) {
-        _showError(context);
+      if (messengerContext.mounted) {
+        _showError(messengerContext);
       }
     }
   }
 
   void _showError(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Mağaza açılamadı. Lütfen manuel olarak güncelleyin.',
-          style: GoogleFonts.inter(),
-        ),
-        backgroundColor: AppColors.errorRed,
-      ),
+    showMarketSnack(
+      context,
+      'Mağaza açılamadı. Uygulamayı mağazadan elle güncelleyebilirsin.',
+      error: true,
     );
   }
 }
@@ -74,8 +73,8 @@ void showUpdateDialog(
   required String storeUrl,
   required String latestVersion,
 }) {
-  showDialog(
-    context: context,
+  showMarketDialog<void>(
+    context,
     barrierDismissible: !isMandatory, // Zorunluysa dışarı tıklayarak kapanmaz
     builder: (context) => UpdateDialog(
       isMandatory: isMandatory,

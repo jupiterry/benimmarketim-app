@@ -1,3 +1,8 @@
+import 'dart:ui' show Color;
+
+import '../../services/turkish_text.dart';
+import 'market_palette.dart';
+
 String categoryDisplayName(String rawName) {
   const names = <String, String>{
     'atistirma': 'Atıştırma',
@@ -27,6 +32,11 @@ String categoryDisplayName(String rawName) {
     'evcil': 'Evcil Hayvan',
     'meyvesebze': 'Meyve & Sebze',
     'firin': 'Fırın & Ekmek',
+    'kirtasiye': 'Kırtasiye',
+    'kozmetik': 'Kozmetik',
+    'bakliyat': 'Bakliyat',
+    'kuruyemis': 'Kuruyemiş',
+    'konserve': 'Konserve',
   };
 
   final key = normalizedCategoryKey(rawName);
@@ -57,7 +67,43 @@ String categoryEmoji(String rawName) {
   if (key.contains('bebek')) return '👶';
   if (key.contains('evcil') || key.contains('pet')) return '🐾';
   if (key.contains('ekmek') || key.contains('firin')) return '🥖';
+  // Öğrenci marketine uygun, eşlemesi olmayan reyonlar
+  if (key.contains('kirtasiye')) return '✏️';
+  if (key.contains('kozmetik') || key.contains('makyaj')) return '💄';
+  if (key.contains('kagit') || key.contains('hijyen') || key.contains('mendil')) {
+    return '🧻';
+  }
+  if (key.contains('konserve')) return '🥫';
+  // Yeni emojiler (🫘, 🫙) eski Android'de kutu olarak görünür
+  if (key.contains('bakliyat')) return '🌾';
+  if (key == 'sos' || key == 'soslar') return '🍅';
+  if (key.contains('cerez') || key.contains('kuruyemis')) return '🥜';
   return '🛍️';
+}
+
+/// Kategori kutusunun pastel zemini. Renk sıradan değil adından gelir;
+/// kategorilerin sırası değişse de her kategori hep aynı tonda görünür.
+Color categoryTint(String rawName) {
+  const known = <String, int>{
+    'meyvesebze': 0,
+    'sut': 1,
+    'atistirma': 2,
+    'icecekler': 3,
+    'temizlik': 4,
+    'firin': 5,
+    'kahvalti': 6,
+    'et': 7,
+  };
+  const tints = MarketPalette.categoryTints;
+  final key = normalizedCategoryKey(rawName);
+  final index = known[key];
+  if (index != null) return tints[index];
+  // Bilinmeyen kategoriler için kararlı (her açılışta aynı) bir özet değeri
+  var hash = 0;
+  for (final unit in key.codeUnits) {
+    hash = (hash * 31 + unit) & 0x7fffffff;
+  }
+  return tints[hash % tints.length];
 }
 
 String normalizedCategoryKey(String value) {
@@ -78,7 +124,9 @@ String _turkishTitleCase(String value) {
       value.trim().split(RegExp(r'\s+')).where((word) => word.isNotEmpty);
 
   return words.map((word) {
-    final lower = word.toLowerCase();
+    // Türkçe kurallarıyla küçült ("İ" → "i", "I" → "ı"); toLowerCase "İ"yi
+    // noktalı i + birleşik nokta yapıyordu
+    final lower = TurkishText.toLower(word);
     final first = switch (lower[0]) {
       'i' => 'İ',
       'ı' => 'I',

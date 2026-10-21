@@ -44,15 +44,9 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
     super.dispose();
   }
 
-  double _calculatePrice() {
-    final unitPrice =
-        _selectedColor == 'color' ? _colorUnitPrice : _blackWhiteUnitPrice;
-    return _copies * unitPrice;
-  }
-
   Future<void> _uploadFile() async {
     if (_selectedFile == null) {
-      showMarketSnack(context, 'Lütfen bir dosya seç', error: true);
+      showMarketSnack(context, 'Önce yazdırılacak belgeyi ekle', error: true);
       return;
     }
 
@@ -68,7 +62,10 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
       );
 
       if (mounted) {
-        showMarketSnack(context, 'Fotokopi isteğin alındı!');
+        showMarketSnack(
+          context,
+          'İsteğin alındı. Bir sonraki siparişinle birlikte getireceğiz.',
+        );
         context.pop(photocopy);
       }
     } catch (e) {
@@ -90,6 +87,8 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
   @override
   Widget build(BuildContext context) {
     final loggedIn = context.select<AuthViewModel, bool>((a) => a.isLoggedIn);
+    final gutter = MarketSpace.gutterOf(context);
+    final unitPrice = _selectedColor == 'color' ? _colorUnitPrice : _blackWhiteUnitPrice;
 
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
@@ -100,11 +99,19 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
               padding: EdgeInsets.zero,
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               children: [
-                const MarketHeader(
+                MarketHeader(
                   title: 'Fotokopi hizmeti',
                   subtitle: 'Belgeni yükle, siparişinle birlikte hazırlayıp getirelim',
                   icon: Icons.print_rounded,
                   compact: true,
+                  actions: [
+                    if (loggedIn)
+                      MarketHeaderButton(
+                        icon: Icons.history_rounded,
+                        tooltip: 'Fotokopi geçmişi',
+                        onTap: () => context.push('/photocopy-history'),
+                      ),
+                  ],
                 ),
                 if (!loggedIn)
                   Padding(
@@ -120,7 +127,7 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
                   )
                 else
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                    padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -131,6 +138,7 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
                             onFileSelected: (file) => setState(() => _selectedFile = file),
                             onFileRemoved: () => setState(() => _selectedFile = null),
                             selectedFileName: _selectedFile?.path.split('/').last,
+                            isEnabled: !_isUploading,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -148,6 +156,9 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
                                   ),
                                   MarketStepper(
                                     quantity: _copies,
+                                    semanticLabel: 'Kopya sayısı',
+                                    canDecrement: _copies > 1,
+                                    canIncrement: _copies < 100,
                                     onMinus: () {
                                       if (_copies > 1) setState(() => _copies--);
                                     },
@@ -193,11 +204,10 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
                                 spacing: 8,
                                 children: [
                                   for (final size in _paperSizeOptions)
-                                    ChoiceChip(
-                                      label: Text(size),
+                                    MarketChip(
+                                      label: size,
                                       selected: _selectedPaperSize == size,
-                                      showCheckmark: false,
-                                      onSelected: (_) =>
+                                      onTap: () =>
                                           setState(() => _selectedPaperSize = size),
                                     ),
                                 ],
@@ -222,9 +232,11 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        const MarketNotice(
+                        MarketNotice(
                           icon: Icons.info_outline_rounded,
-                          text: 'Siyah-beyaz ₺0,50 / kopya • Renkli ₺1,00 / kopya. Kesin tutar hazırlandığında netleşir.',
+                          text: 'Sayfa başı: siyah-beyaz ${formatTl(_blackWhiteUnitPrice)} • '
+                              'renkli ${formatTl(_colorUnitPrice)}. Kesin tutar sayfa sayısına '
+                              'göre, belgen hazırlanınca netleşir.',
                         ),
                       ],
                     ),
@@ -233,41 +245,83 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
             ),
           ),
           if (loggedIn)
-            SafeArea(
-              top: false,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: MarketPalette.line)),
-                ),
-                child: Row(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            MarketBottomBar(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final estimate = Text(
+                    '${formatTl(unitPrice)} × $_copies kopya',
+                    maxLines: 1,
+                    style: MarketText.price(size: 18),
+                  );
+                  final send = FilledButton.icon(
+                    onPressed: _isUploading ? null : _uploadFile,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(MarketSize.button),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      // Yüklenirken buton yeşil kalır, yalnızca gösterge döner
+                      disabledBackgroundColor: _isUploading ? MarketPalette.green : null,
+                      disabledForegroundColor: _isUploading ? Colors.white : null,
+                    ),
+                    icon: _isUploading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                          )
+                        : const Icon(Icons.cloud_upload_rounded),
+                    label: Text(
+                      _isUploading ? 'Yükleniyor…' : 'İsteği gönder',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                  // Dar ekranda / büyük yazıda tutar üstte, buton tam genişlikte
+                  final stacked = constraints.maxWidth < 300 ||
+                      MediaQuery.textScalerOf(context).scale(10) > 11.5;
+                  if (stacked) {
+                    return Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('Tahmini tutar', style: MarketText.caption()),
-                        Text(formatTl(_calculatePrice()), style: MarketText.price(size: 22)),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text('Sayfa başı tahmini', style: MarketText.caption()),
+                            ),
+                            const SizedBox(width: 8),
+                            estimate,
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        send,
                       ],
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _isUploading ? null : _uploadFile,
-                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-                        icon: _isUploading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
-                              )
-                            : const Icon(Icons.cloud_upload_rounded),
-                        label: Text(_isUploading ? 'Yükleniyor…' : 'İsteği gönder'),
+                    );
+                  }
+                  return Row(
+                    children: [
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: constraints.maxWidth * .45),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Sayfa başı tahmini',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: MarketText.caption()),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: estimate,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 16),
+                      Expanded(child: send),
+                    ],
+                  );
+                },
               ),
             ),
         ],
@@ -297,7 +351,12 @@ class _PhotocopyUploadPageState extends State<PhotocopyUploadPage> {
                 child: Text(step, style: MarketText.label(color: Colors.white, size: 12)),
               ),
               const SizedBox(width: 10),
-              Text(title, style: MarketText.heading(size: 16)),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(title, style: MarketText.heading(size: 16)),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),

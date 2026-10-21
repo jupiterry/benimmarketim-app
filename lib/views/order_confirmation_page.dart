@@ -1,17 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/order.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/bank_transfer_card.dart';
+import 'widgets/first_order_rating.dart';
 import 'widgets/market_ui.dart';
 
 class OrderConfirmationPage extends StatefulWidget {
   final String? orderId;
   final PaymentMethod? paymentMethod;
 
-  const OrderConfirmationPage({super.key, this.orderId, this.paymentMethod});
+  /// Ödenecek / havale edilecek tutar (`?total=` sorgu parametresi).
+  final double? amount;
+
+  /// Teslimat noktasının adı (`?point=` sorgu parametresi).
+  final String? deliveryPointName;
+
+  const OrderConfirmationPage({
+    super.key,
+    this.orderId,
+    this.paymentMethod,
+    this.amount,
+    this.deliveryPointName,
+  });
 
   @override
   State<OrderConfirmationPage> createState() => _OrderConfirmationPageState();
@@ -47,242 +61,319 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
 
   String get _shortOrderId {
     final id = widget.orderId ?? '';
-    if (id.isEmpty) return '—';
+    if (id.isEmpty) return '';
     return id.substring(0, id.length > 8 ? 8 : id.length).toUpperCase();
+  }
+
+  void _goHome() => context.go('/home');
+
+  void _trackOrder() => context.go(
+        '/home',
+        extra: {'initialTabIndex': 2, 'openOrders': true},
+      );
+
+  void _copyOrderNumber() {
+    Clipboard.setData(ClipboardData(text: _shortOrderId));
+    HapticFeedback.lightImpact();
+    showMarketSnack(context, 'Sipariş numarası kopyalandı',
+        icon: Icons.copy_rounded);
   }
 
   @override
   Widget build(BuildContext context) {
+    final bankTransfer = widget.paymentMethod == PaymentMethod.bankTransfer;
+    // Sipariş verildikten sonra boşalan ödeme ekranına geri dönülmez; geri
+    // tuşu / hareketi "Alışverişe devam et" gibi ana sayfaya götürür.
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goHome();
+      },
       child: Scaffold(
         backgroundColor: MarketPalette.canvas,
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-            child: FadeTransition(
-              opacity: _controller,
-              child: Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => context.go('/home'),
-                      child: Text(
-                        'Ana sayfa',
-                        style: MarketText.label(color: MarketPalette.greenDark),
-                      ),
-                    ),
+        body: SingleChildScrollView(
+          physics: const MarketScrollPhysics(),
+          child: FadeTransition(
+            opacity: _controller,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHero(),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    MarketSpace.gutterOf(context),
+                    16,
+                    MarketSpace.gutterOf(context),
+                    24,
                   ),
-                  const SizedBox(height: 12),
-                  ScaleTransition(
-                    scale: _arrival,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          width: 176,
-                          height: 176,
-                          decoration: BoxDecoration(
-                            color: MarketPalette.greenSoft,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: MarketPalette.green.withValues(alpha: .12),
-                              width: 12,
-                            ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Havale/EFT'de sıradaki iş ödeme olduğu için hesap
+                      // bilgileri (IBAN, tutar, açıklama) en üstte durur.
+                      if (bankTransfer) ...[
+                        Consumer<SettingsViewModel>(
+                          builder: (context, settings, _) => BankTransferCard(
+                            settings: settings,
+                            orderNumber:
+                                _shortOrderId.isEmpty ? null : _shortOrderId,
+                            amount: widget.amount,
                           ),
                         ),
-                        Container(
-                          width: 112,
-                          height: 112,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                MarketPalette.green,
-                                MarketPalette.greenDark
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color:
-                                    MarketPalette.green.withValues(alpha: .28),
-                                blurRadius: 30,
-                                offset: const Offset(0, 14),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 58),
-                        ),
-                        const Positioned(
-                          right: 7,
-                          top: 19,
-                          child: _SuccessDot(
-                            color: MarketPalette.orange,
-                            icon: Icons.auto_awesome_rounded,
-                          ),
-                        ),
-                        const Positioned(
-                          left: 3,
-                          bottom: 23,
-                          child: _SuccessDot(
-                            color: MarketPalette.lime,
-                            icon: Icons.favorite_rounded,
-                          ),
-                        ),
+                        const SizedBox(height: 14),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    'Siparişin bizde!',
-                    textAlign: TextAlign.center,
-                    style: MarketText.display(),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Siparişin başarıyla alındı. Hazırlık başladığında durumunu Siparişlerim sayfasından takip edebilirsin.',
-                    textAlign: TextAlign.center,
-                    style: MarketText.body(color: MarketPalette.muted, weight: FontWeight.w400, height: 1.55),
-                  ),
-                  const SizedBox(height: 26),
-                  _buildOrderCard(),
-                  if (widget.paymentMethod == PaymentMethod.bankTransfer) ...[
-                    const SizedBox(height: 16),
-                    Consumer<SettingsViewModel>(
-                      builder: (context, settings, _) => BankTransferCard(
-                        settings: settings,
-                        orderNumber:
-                            _shortOrderId == '—' ? null : '#$_shortOrderId',
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: MarketPalette.greenSoft,
-                      borderRadius: BorderRadius.circular(MarketRadius.md),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.notifications_active_outlined,
-                            color: MarketPalette.greenDark),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Text(
+                      _buildOrderCard(showAmount: !bankTransfer),
+                      const SizedBox(height: 14),
+                      const MarketNotice(
+                        icon: Icons.notifications_active_outlined,
+                        text:
                             'Sipariş durumundaki değişiklikleri sana bildireceğiz.',
-                            style: MarketText.body(color: MarketPalette.greenDark, size: 12, weight: FontWeight.w600, height: 1.4),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: FilledButton.icon(
-                      onPressed: () => context.go(
-                        '/home',
-                        extra: {'initialTabIndex': 2, 'openOrders': true},
                       ),
-                      icon: const Icon(Icons.local_shipping_outlined),
-                      label: const Text('Siparişimi takip et'),
-                    ),
+                      // İlk siparişten sonra (daha önce puan verilmediyse)
+                      // tek seferlik puan kartı; aksi halde boş kalır.
+                      const SizedBox(height: 14),
+                      const FirstOrderRatingCard(),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: TextButton(
-                      onPressed: () => context.go('/home'),
-                      child: const Text('Alışverişe devam et'),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
+        ),
+        bottomNavigationBar: MarketBottomBar(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilledButton.icon(
+                onPressed: _trackOrder,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(MarketSize.button),
+                ),
+                icon: const Icon(Icons.local_shipping_outlined),
+                label: const Text('Siparişimi takip et'),
+              ),
+              TextButton(
+                onPressed: _goHome,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size.fromHeight(MarketSize.control),
+                ),
+                child: const Text('Alışverişe devam et'),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildOrderCard() {
+  /// Durum çubuğunun yeşilini sürdüren başlık: onay rozeti ve kısa mesaj.
+  Widget _buildHero() {
+    final topInset = MediaQuery.paddingOf(context).top;
+    // Kısa ekranda rozet küçülür; ödeme bilgileri daha yukarıda kalır.
+    final short = MediaQuery.sizeOf(context).height < 700;
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(MarketRadius.lg),
-        border: Border.all(color: MarketPalette.line),
-        boxShadow: [
-          BoxShadow(
-            color: MarketPalette.greenDeep.withValues(alpha: .05),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+      decoration: const BoxDecoration(
+        gradient: MarketPalette.headerGradient,
+        borderRadius:
+            BorderRadius.vertical(bottom: Radius.circular(MarketRadius.xl)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, topInset + 4, 12, 24),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: ScaleTransition(
+                    scale: _arrival,
+                    child: _SuccessBadge(size: short ? 64 : 88),
+                  ),
+                ),
+                SizedBox(height: short ? 10 : 14),
+                Semantics(
+                  header: true,
+                  child: Text(
+                    'Siparişin bizde!',
+                    textAlign: TextAlign.center,
+                    style: MarketText.display(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Siparişin alındı. Durumunu Siparişlerim\'den takip edebilirsin.',
+                  textAlign: TextAlign.center,
+                  style: MarketText.body(
+                    color: Colors.white.withValues(alpha: .74),
+                    size: 14,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IconButton(
+              onPressed: _goHome,
+              tooltip: 'Ana sayfaya dön',
+              iconSize: 24,
+              style: IconButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.white.withValues(alpha: .12),
+                minimumSize:
+                    const Size(MarketSize.tapTarget, MarketSize.tapTarget),
+              ),
+              icon: const Icon(Icons.close_rounded),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  String get _amountLabel {
+    switch (widget.paymentMethod) {
+      case PaymentMethod.cash:
+      case PaymentMethod.card:
+        return 'Kapıda ödeyeceğin tutar';
+      case PaymentMethod.bankTransfer:
+        return 'Havale edilecek tutar';
+      case null:
+        return 'Tutar';
+    }
+  }
+
+  /// [showAmount] false ise tutar satırı gösterilmez (havale kartında var).
+  Widget _buildOrderCard({bool showAmount = true}) {
+    final amount = showAmount ? widget.amount : null;
+    final point = widget.deliveryPointName;
+    final payment = widget.paymentMethod;
+    final details = <Widget>[
+      if (point != null && point.isNotEmpty)
+        _DetailRow(
+          icon: Icons.apartment_rounded,
+          label: 'Teslimat noktası',
+          value: point,
+        ),
+      if (payment != null)
+        _DetailRow(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'Ödeme',
+          value: payment.label,
+        ),
+      if (amount != null && amount > 0)
+        _DetailRow(
+          icon: Icons.payments_outlined,
+          label: _amountLabel,
+          value: formatTl(amount),
+          emphasized: true,
+        ),
+    ];
+
+    return MarketCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 10, 16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: MarketPalette.greenSoft,
-                  borderRadius: BorderRadius.circular(MarketRadius.md),
-                ),
-                child: const Icon(Icons.receipt_long_rounded,
-                    color: MarketPalette.green),
-              ),
+              const MarketIconTile(icon: Icons.receipt_long_rounded, size: 44),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Sipariş numarası',
-                        style: MarketText.caption(size: 11, weight: FontWeight.w400)),
-                    const SizedBox(height: 3),
-                    Text('#$_shortOrderId',
-                        style: MarketText.heading()),
+                        style: MarketText.caption(size: 12)),
+                    const SizedBox(height: 2),
+                    Text(
+                      _shortOrderId.isEmpty ? '—' : '#$_shortOrderId',
+                      style: MarketText.heading(size: 18),
+                    ),
                   ],
                 ),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                decoration: BoxDecoration(
-                  color: MarketPalette.orangeSoft,
-                  borderRadius: BorderRadius.circular(MarketRadius.pill),
+              if (_shortOrderId.isNotEmpty)
+                IconButton(
+                  onPressed: _copyOrderNumber,
+                  tooltip: 'Sipariş numarasını kopyala',
+                  color: MarketPalette.greenDark,
+                  iconSize: 20,
+                  icon: const Icon(Icons.copy_rounded),
                 ),
-                child: Text('Alındı',
-                    style: MarketText.label(color: MarketPalette.orangeInk, size: 11, weight: FontWeight.w800)),
-              ),
             ],
           ),
-          if (widget.paymentMethod != null) ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                const Icon(Icons.account_balance_wallet_outlined,
-                    size: 18, color: MarketPalette.muted),
-                const SizedBox(width: 8),
-                Text('Ödeme', style: MarketText.caption()),
-                const Spacer(),
-                Text(widget.paymentMethod!.label,
-                    style: MarketText.label(size: 13)),
-              ],
-            ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, endIndent: 6),
+            const SizedBox(height: 4),
+            ...details,
           ],
-          const SizedBox(height: 22),
-          const _OrderProgress(),
+          const SizedBox(height: 16),
+          const Padding(
+            padding: EdgeInsets.only(right: 6),
+            child: _OrderProgress(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lime onay rozeti ve iki küçük süs noktası.
+class _SuccessBadge extends StatelessWidget {
+  final double size;
+
+  const _SuccessBadge({this.size = 88});
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = size >= 80 ? 30.0 : 24.0;
+    return SizedBox(
+      width: size + 36,
+      height: size + 12,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: MarketPalette.lime,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: .16),
+                width: 6,
+                strokeAlign: BorderSide.strokeAlignOutside,
+              ),
+            ),
+            child: Icon(Icons.check_rounded,
+                color: MarketPalette.greenDeep, size: size / 2),
+          ),
+          Positioned(
+            right: 6,
+            top: 2,
+            child: _SuccessDot(
+              size: dot,
+              color: MarketPalette.orange,
+              icon: Icons.auto_awesome_rounded,
+            ),
+          ),
+          Positioned(
+            left: 8,
+            bottom: 4,
+            child: _SuccessDot(
+              size: dot,
+              color: Colors.white,
+              icon: Icons.favorite_rounded,
+            ),
+          ),
         ],
       ),
     );
@@ -290,18 +381,75 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
 }
 
 class _SuccessDot extends StatelessWidget {
+  final double size;
   final Color color;
   final IconData icon;
 
-  const _SuccessDot({required this.color, required this.icon});
+  const _SuccessDot({
+    required this.size,
+    required this.color,
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Icon(icon, size: 19, color: MarketPalette.greenDeep),
+    return ExcludeSemantics(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, size: size / 2, color: MarketPalette.greenDeep),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool emphasized;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 8, 6, 0),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              Icon(icon, size: 18, color: MarketPalette.muted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(label,
+                    style:
+                        MarketText.body(color: MarketPalette.muted, size: 13)),
+              ),
+              const SizedBox(width: 12),
+              // Değer sağa yaslanır; çok uzunsa satırın %60'ında kırılır.
+              ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxWidth: constraints.maxWidth * .6),
+                child: Text(
+                  value,
+                  textAlign: TextAlign.right,
+                  style: emphasized
+                      ? MarketText.price(
+                          color: MarketPalette.greenDark, size: 18)
+                      : MarketText.label(size: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -312,35 +460,51 @@ class _OrderProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const labels = ['Alındı', 'Hazırlanıyor', 'Yolda'];
-    return Row(
-      children: List.generate(labels.length * 2 - 1, (index) {
-        if (index.isOdd) {
-          return const Expanded(
-              child: Divider(color: MarketPalette.line, thickness: 2));
-        }
-        final step = index ~/ 2;
-        final active = step == 0;
-        return Column(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: active ? MarketPalette.green : MarketPalette.canvas,
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: active ? MarketPalette.green : MarketPalette.line),
-              ),
-              child: Icon(active ? Icons.check_rounded : Icons.circle,
-                  color: active ? Colors.white : MarketPalette.line,
-                  size: active ? 17 : 8),
-            ),
-            const SizedBox(height: 7),
-            Text(labels[step],
-                style: MarketText.label(color: active ? MarketPalette.greenDark : MarketPalette.muted, size: 11)),
-          ],
-        );
-      }),
+    return Semantics(
+      label: 'Sipariş durumu: Alındı. Sıradaki adımlar: Hazırlanıyor, Yolda.',
+      child: ExcludeSemantics(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(labels.length * 2 - 1, (index) {
+            if (index.isOdd) {
+              return const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 13),
+                  child: Divider(
+                      height: 2, color: MarketPalette.line, thickness: 2),
+                ),
+              );
+            }
+            final step = index ~/ 2;
+            final active = step == 0;
+            return Column(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: active ? MarketPalette.green : MarketPalette.canvas,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color:
+                            active ? MarketPalette.green : MarketPalette.line),
+                  ),
+                  child: Icon(active ? Icons.check_rounded : Icons.circle,
+                      color: active ? Colors.white : MarketPalette.lineStrong,
+                      size: active ? 16 : 8),
+                ),
+                const SizedBox(height: 6),
+                Text(labels[step],
+                    style: MarketText.label(
+                        color: active
+                            ? MarketPalette.greenDark
+                            : MarketPalette.muted,
+                        size: 12)),
+              ],
+            );
+          }),
+        ),
+      ),
     );
   }
 }

@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -13,146 +16,212 @@ import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/abandon_reason_sheet.dart';
 import 'widgets/community_campaign.dart';
+import 'widgets/custom_dialog.dart';
 import 'widgets/market_product_card.dart';
 import 'widgets/market_mascot.dart';
 import 'widgets/market_ui.dart';
 import 'widgets/save_cart_dialog.dart';
 import '../services/image_url.dart';
 
-class CartPage extends StatelessWidget {
+/// Sepet sekmesinde bildirim çubuğu, sayfanın altındaki ödeme çubuğunun
+/// üstünde görünsün diye bırakılan boşluk (çubuğun yaklaşık yüksekliği;
+/// büyük yazıda çubuk da uzar).
+double _checkoutBarGap(BuildContext context) =>
+    28 + math.max(54.0, MediaQuery.textScalerOf(context).scale(59));
+
+/// Sepette ürün varken (ödeme çubuğu görünürken) bildirimin kaldırılacağı pay.
+double _snackGap(BuildContext context) =>
+    context.read<CartViewModel>().items.isEmpty ? 0 : _checkoutBarGap(context);
+
+class CartPage extends StatefulWidget {
   final VoidCallback? onExplore;
 
   const CartPage({super.key, this.onExplore});
+
+  @override
+  State<CartPage> createState() => _CartPageState();
+}
+
+class _CartPageState extends State<CartPage> {
+  /// "Bunu da ekle" rafı: en az tutarın altındayken alttaki düğme buraya kaydırır.
+  final _suggestionsKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartViewModel>();
     final items = cart.items;
     final unitCount = cart.totalItems;
+    final gutter = MarketSpace.gutterOf(context);
+    // Sekmede geri düğmesi yok; ayrı sayfa olarak açıldıysa (/cart) var.
+    final canPop = ModalRoute.of(context)?.canPop ?? false;
+    // Sepet boşken içerik alttaki menünün arkasına kadar uzanır.
+    final bottomInset =
+        items.isEmpty ? MediaQuery.paddingOf(context).bottom : 0.0;
 
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
       body: Column(
         children: [
-          MarketHeader(
-            title: 'Sepetim',
-            subtitle: items.isEmpty
-                ? 'Alışverişe başlamaya hazır mısın?'
-                : '$unitCount ürün • ${items.length} çeşit',
-            icon: Icons.shopping_bag_rounded,
-            showBack: false,
-            compact: true,
-            actions: [
-              if (items.isNotEmpty)
-                MarketHeaderButton(
-                  icon: Icons.bookmark_add_outlined,
-                  tooltip: 'Favori sepet olarak kaydet',
-                  onTap: () => showSaveCartDialog(
-                    context,
-                    aboveNavigation: true,
-                    items: [
-                      for (final item in items)
-                        {
-                          'productId': item.product.id,
-                          'quantity': item.quantity > 20 ? 20 : item.quantity,
-                        },
-                    ],
+          Expanded(
+            child: CustomScrollView(
+              physics: const MarketScrollPhysics(),
+              slivers: [
+                // Başlık içerikle birlikte kayar: küçük ekranda ürünlere yer açılır.
+                SliverToBoxAdapter(
+                  child: MarketHeader(
+                    title: 'Sepetim',
+                    subtitle: items.isEmpty
+                        ? 'Alışverişe başlamaya hazır mısın?'
+                        : '$unitCount ürün • ${items.length} çeşit',
+                    icon: Icons.shopping_bag_rounded,
+                    showBack: canPop,
+                    compact: true,
                   ),
                 ),
-              if (items.isNotEmpty)
-                MarketHeaderButton(
-                  icon: Icons.delete_sweep_outlined,
-                  tooltip: 'Sepeti boşalt',
-                  onTap: () => _confirmClear(context, cart),
-                ),
-            ],
-          ),
-          Expanded(
-            child: items.isEmpty
-                ? _EmptyCart(onExplore: onExplore)
-                : const _CartContent(),
+                if (items.isEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.only(bottom: bottomInset + 24),
+                    sliver: SliverToBoxAdapter(
+                      child: _EmptyCart(onExplore: widget.onExplore),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 24),
+                    sliver: SliverList.list(
+                      children: [
+                        const _StoreClosedNotice(),
+                        const _MinimumOrderProgress(),
+                        // Sepetteki ürünler tek kartta, ilk bakışta görünür.
+                        MarketCard(
+                          padding: EdgeInsets.zero,
+                          child: Column(
+                            children: [
+                              for (var i = 0; i < items.length; i++) ...[
+                                if (i > 0)
+                                  const Divider(
+                                      height: 1, indent: 16, endIndent: 16),
+                                _CartItemCard(item: items[i], cart: cart),
+                              ],
+                            ],
+                          ),
+                        ),
+                        _CartActions(cart: cart),
+                        _MinimumOrderSuggestions(anchorKey: _suggestionsKey),
+                        const SizedBox(height: MarketSpace.md),
+                        const _CouponSection(),
+                        const SizedBox(height: MarketSpace.lg),
+                        _PriceSummary(cart: cart),
+                        // İkincil tanıtım: fiyat özetinin altında durur.
+                        const _CouponRequestCampaignCard(),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
           if (items.isNotEmpty)
-            SafeArea(top: false, child: _CheckoutBar(cart: cart)),
+            _CheckoutBar(
+              cart: cart,
+              onAddMore: _showSuggestions,
+            ),
         ],
       ),
     );
   }
 
-  Future<void> _confirmClear(BuildContext context, CartViewModel cart) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const MarketIconTile(
-          icon: Icons.delete_sweep_outlined,
-          size: 52,
-          background: MarketPalette.redSoft,
-          foreground: MarketPalette.red,
-        ),
-        title: const Text('Sepet boşaltılsın mı?', textAlign: TextAlign.center),
-        content: const Text(
-          'Sepetindeki tüm ürünler kaldırılacak.',
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: MarketPalette.red),
-            child: const Text('Boşalt'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      cart.clearCart();
-      if (context.mounted) await maybeAskAbandonReason(context);
+  /// En az tutarın altındayken: öneri rafına kaydırır; öneri yoksa
+  /// alışverişe (ana sayfaya) döner.
+  void _showSuggestions() {
+    final target = _suggestionsKey.currentContext;
+    if (target == null) {
+      final explore = widget.onExplore;
+      if (explore != null) {
+        explore();
+      } else {
+        context.go('/home');
+      }
+      return;
     }
+    Scrollable.ensureVisible(
+      target,
+      alignment: .1,
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
   }
 }
 
-// ---------------------------------------------------------------------------
-// İçerik
-// ---------------------------------------------------------------------------
+/// Ürünlerin altındaki iki eylem: kaydetmek (güvenli) ve boşaltmak (kırmızı,
+/// onay ister). Başlıktaki adsız simgelerin yerini alır.
+class _CartActions extends StatelessWidget {
+  final CartViewModel cart;
 
-class _CartContent extends StatelessWidget {
-  const _CartContent();
+  const _CartActions({required this.cart});
 
   @override
   Widget build(BuildContext context) {
-    final cart = context.watch<CartViewModel>();
-    final items = cart.items;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-      children: [
-        const _StoreClosedNotice(),
-        const _MinimumOrderProgress(),
-        // Sepetteki ürünler tek kartta, ilk bakışta görünür.
-        MarketCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: [
-              for (var i = 0; i < items.length; i++) ...[
-                if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
-                _CartItemCard(item: items[i], cart: cart),
-              ],
-            ],
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton.icon(
+            onPressed: () => _save(context),
+            style: TextButton.styleFrom(
+              foregroundColor: MarketPalette.greenDark,
+              minimumSize: const Size(0, MarketSize.control),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            icon: const Icon(Icons.bookmark_add_outlined, size: 20),
+            label: const Text('Sepeti kaydet'),
           ),
-        ),
-        const _MinimumOrderSuggestions(),
-        const SizedBox(height: MarketSpace.xl),
-        _AvailableCouponBanner(cart: cart),
-        const _CouponSection(),
-        const _CouponRequestCampaignCard(),
-        const SizedBox(height: MarketSpace.lg),
-        _PriceSummary(cart: cart),
+          TextButton.icon(
+            onPressed: () => _confirmClear(context),
+            style: TextButton.styleFrom(
+              foregroundColor: MarketPalette.red,
+              minimumSize: const Size(0, MarketSize.control),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+            label: const Text('Sepeti boşalt'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _save(BuildContext context) {
+    showSaveCartDialog(
+      context,
+      bottomGap: _checkoutBarGap(context),
+      items: [
+        for (final item in cart.items)
+          {
+            'productId': item.product.id,
+            'quantity': item.quantity > 20 ? 20 : item.quantity,
+          },
       ],
     );
+  }
+
+  Future<void> _confirmClear(BuildContext context) async {
+    final confirmed = await showMarketConfirm(
+      context,
+      icon: Icons.delete_sweep_outlined,
+      title: 'Sepet boşaltılsın mı?',
+      message:
+          'Sepetindeki ${cart.totalItems} ürün çıkarılacak. Bu işlem geri alınamaz.',
+      confirmLabel: 'Sepeti boşalt',
+      tone: MarketTone.danger,
+    );
+    if (confirmed) {
+      cart.clearCart();
+      if (context.mounted) await maybeAskAbandonReason(context);
+    }
   }
 }
 
@@ -248,7 +317,10 @@ class _MinimumOrderProgress extends StatelessWidget {
 /// Minimum tutara ulaşılmadıysa eksiği kapatabilecek ürünleri önerir.
 /// Önce tek başına eksiği kapatan en ucuz ürünler, sonra en çok yaklaştıranlar.
 class _MinimumOrderSuggestions extends StatelessWidget {
-  const _MinimumOrderSuggestions();
+  /// Raf gösterildiğinde ona bağlanan anahtar (alttaki düğme buraya kaydırır).
+  final GlobalKey anchorKey;
+
+  const _MinimumOrderSuggestions({required this.anchorKey});
 
   @override
   Widget build(BuildContext context) {
@@ -275,16 +347,26 @@ class _MinimumOrderSuggestions extends StatelessWidget {
       ..sort((a, b) => b.actualPrice.compareTo(a.actualPrice));
     final picks = [...closers.take(5), ...others].take(8).toList();
     if (picks.isEmpty) return const SizedBox.shrink();
+    final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.3);
 
     return Padding(
-      padding: const EdgeInsets.only(top: MarketSpace.xl),
+      key: anchorKey,
+      padding: const EdgeInsets.only(top: MarketSpace.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Bunu da ekle', style: MarketText.heading()),
+          Semantics(
+            header: true,
+            child: Text('Bunu da ekle', style: MarketText.heading()),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${formatTl(gap)} daha ekleyince sipariş verebilirsin',
+            style: MarketText.caption(size: 12),
+          ),
           const SizedBox(height: MarketSpace.md),
           SizedBox(
-            height: 160,
+            height: 160 + (textScale - 1) * 120,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -308,13 +390,25 @@ class _SuggestionTile extends StatelessWidget {
 
   const _SuggestionTile({required this.product, required this.closesGap});
 
+  void _add(BuildContext context) {
+    HapticFeedback.lightImpact();
+    context.read<CartViewModel>().addToCart(product);
+    // Kart listeden hemen kalkar; ekleme bir bildirimle doğrulanır.
+    showMarketSnack(
+      context,
+      '${productDisplayName(product.name)} sepete eklendi',
+      icon: Icons.add_shopping_cart_rounded,
+      bottomGap: _checkoutBarGap(context),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 124,
+      width: 128,
       child: MarketCard(
         shadow: false,
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.fromLTRB(10, 10, 6, 6),
         borderColor: closesGap ? MarketPalette.greenLine : MarketPalette.line,
         onTap: () => context.push('/product', extra: product),
         child: Column(
@@ -340,13 +434,15 @@ class _SuggestionTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              product.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: MarketText.label(size: 12, weight: FontWeight.w600),
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text(
+                productDisplayName(product.name),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: MarketText.label(size: 12, weight: FontWeight.w600),
+              ),
             ),
-            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
@@ -360,20 +456,33 @@ class _SuggestionTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                Tooltip(
-                  message: 'Sepete ekle',
-                  child: Material(
-                    color: MarketPalette.green,
-                    borderRadius: BorderRadius.circular(MarketRadius.sm),
-                    child: InkWell(
-                      onTap: () =>
-                          context.read<CartViewModel>().addToCart(product),
-                      borderRadius: BorderRadius.circular(MarketRadius.sm),
-                      child: const SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: Icon(Icons.add_rounded,
-                            color: Colors.white, size: 22),
+                // 40'lık görünür düğme, 44'lük dokunma alanı
+                Semantics(
+                  button: true,
+                  label: '${productDisplayName(product.name)} sepete ekle',
+                  excludeSemantics: true,
+                  onTap: () => _add(context),
+                  child: Tooltip(
+                    message: 'Sepete ekle',
+                    child: InkResponse(
+                      onTap: () => _add(context),
+                      radius: 24,
+                      child: SizedBox(
+                        width: MarketSize.control,
+                        height: MarketSize.control,
+                        child: Center(
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: MarketPalette.green,
+                              borderRadius:
+                                  BorderRadius.circular(MarketRadius.sm),
+                            ),
+                            child: const Icon(Icons.add_rounded,
+                                color: Colors.white, size: 22),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -397,6 +506,7 @@ class _CartItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final product = item.product;
     final discounted = product.actualPrice < product.price;
+    final name = productDisplayName(product.name);
 
     return Dismissible(
       key: ValueKey('cart-${product.id}'),
@@ -418,93 +528,108 @@ class _CartItemCard extends StatelessWidget {
       child: Material(
         color: MarketPalette.surface,
         child: InkWell(
-        onTap: () => context.push('/product', extra: product),
-        child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: MarketPalette.canvas,
-                borderRadius: BorderRadius.circular(MarketRadius.md),
-              ),
-              child: product.image.isNotEmpty
-                  ? Image.network(
-                      optimizedImageUrl(
-                        product.image,
-                        width: MarketImageSize.thumb,
-                      ),
-                      fit: BoxFit.contain,
-                      cacheWidth: 200,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.inventory_2_outlined,
-                        color: MarketPalette.subtle,
-                      ),
-                    )
-                  : const Icon(Icons.inventory_2_outlined, color: MarketPalette.subtle),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: MarketText.label(size: 14, weight: FontWeight.w600)
-                        .copyWith(height: 1.3),
+          onTap: () => context.push('/product', extra: product),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  padding: const EdgeInsets.all(6),
+                  // Ürün kartlarındaki gibi beyaz "stüdyo" kutusu: beyaz zeminli
+                  // katalog fotoğrafları gri kutuda dikdörtgen gibi görünmesin.
+                  decoration: BoxDecoration(
+                    color: MarketPalette.surface,
+                    borderRadius: BorderRadius.circular(MarketRadius.md),
+                    border: Border.all(color: MarketPalette.line),
                   ),
-                  const SizedBox(height: 4),
-                  Text.rich(
-                    TextSpan(children: [
-                      if (discounted) ...[
-                        TextSpan(
-                          text: formatTl(product.price),
-                          style: const TextStyle(decoration: TextDecoration.lineThrough),
-                        ),
-                        const TextSpan(text: '   '),
-                      ],
-                      TextSpan(text: '${formatTl(product.actualPrice)} / adet'),
-                    ]),
-                    style: MarketText.caption(),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
+                  child: product.image.isNotEmpty
+                      ? Image.network(
+                          optimizedImageUrl(
+                            product.image,
+                            width: MarketImageSize.thumb,
+                          ),
+                          fit: BoxFit.contain,
+                          cacheWidth: 200,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.inventory_2_outlined,
+                            color: MarketPalette.subtle,
+                          ),
+                        )
+                      : const Icon(Icons.inventory_2_outlined,
+                          color: MarketPalette.subtle),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            formatTl(item.totalPrice),
-                            style: MarketText.price(
-                              color: discounted ? MarketPalette.red : MarketPalette.ink,
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: MarketText.label(size: 14, weight: FontWeight.w600)
+                            .copyWith(height: 1.3),
+                      ),
+                      const SizedBox(height: 4),
+                      // Birim fiyat (kg ürünlerde de doğru okunsun diye
+                      // "adet" yazılmaz); 1'den fazlaysa "2 × ₺36,90".
+                      Text.rich(
+                        TextSpan(children: [
+                          if (item.quantity > 1)
+                            TextSpan(text: '${item.quantity} × '),
+                          if (discounted) ...[
+                            TextSpan(
+                              text: formatTl(product.price),
+                              style: MarketText.oldPrice(),
+                            ),
+                            const TextSpan(text: '  '),
+                          ],
+                          TextSpan(text: formatTl(product.actualPrice)),
+                        ]),
+                        style: MarketText.caption(),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                formatTl(item.totalPrice),
+                                style: MarketText.price(
+                                  color: discounted
+                                      ? MarketPalette.red
+                                      : MarketPalette.ink,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      MarketStepper(
-                        quantity: item.quantity,
-                        compact: true,
-                        minusIcon: item.quantity == 1
-                            ? Icons.delete_outline_rounded
-                            : null,
-                        onMinus: () => cart.removeFromCart(product),
-                        onPlus: () => cart.addToCart(product),
+                          MarketStepper(
+                            quantity: item.quantity,
+                            compact: true,
+                            semanticLabel: '$name adedi',
+                            minusIcon: item.quantity == 1
+                                ? Icons.delete_outline_rounded
+                                : null,
+                            // 1 adetteyken çöp kutusu: kaydırarak silmeyle
+                            // aynı "Geri al" bildirimi çıkar.
+                            onMinus: item.quantity == 1
+                                ? () => _remove(context)
+                                : () => cart.removeFromCart(product),
+                            onPlus: () => cart.addToCart(product),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-        ),
+          ),
         ),
       ),
     );
@@ -513,23 +638,17 @@ class _CartItemCard extends StatelessWidget {
   void _remove(BuildContext context) {
     final product = item.product;
     final quantity = item.quantity;
+    HapticFeedback.lightImpact();
     cart.updateQuantity(product, 0);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${product.name} sepetten çıkarıldı'),
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 104),
-          action: SnackBarAction(
-            label: 'Geri al',
-            onPressed: () {
-              for (var i = 0; i < quantity; i++) {
-                cart.addToCart(product);
-              }
-            },
-          ),
-        ),
-      );
+    showMarketSnack(
+      context,
+      '${productDisplayName(product.name)} sepetten çıkarıldı',
+      icon: Icons.remove_shopping_cart_outlined,
+      actionLabel: 'Geri al',
+      // Tek yazmayla eski adede döner.
+      onAction: () => cart.addQuantity(product, quantity),
+      bottomGap: cart.items.isEmpty ? 0 : _checkoutBarGap(context),
+    );
   }
 }
 
@@ -620,7 +739,10 @@ class _SummaryRow extends StatelessWidget {
 class _CheckoutBar extends StatelessWidget {
   final CartViewModel cart;
 
-  const _CheckoutBar({required this.cart});
+  /// En az tutarın altındayken düğmeye basılınca (öneri rafına kaydırır).
+  final VoidCallback onAddMore;
+
+  const _CheckoutBar({required this.cart, required this.onAddMore});
 
   @override
   Widget build(BuildContext context) {
@@ -628,60 +750,27 @@ class _CheckoutBar extends StatelessWidget {
     final allowed = cart.totalPrice >= minimum;
     final savings = _productSavings(cart) + cart.discountAmount;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: const Border(top: BorderSide(color: MarketPalette.line)),
-        boxShadow: [
-          BoxShadow(
-            color: MarketPalette.greenDeep.withValues(alpha: .06),
-            blurRadius: 18,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Toplam', style: MarketText.caption()),
-              Text(formatTl(cart.finalPrice), style: MarketText.price(size: 22)),
-              if (savings > 0)
-                Text(
-                  '${formatTl(savings)} kazanç',
-                  style: MarketText.caption(color: MarketPalette.green, weight: FontWeight.w700),
-                ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: FilledButton(
-              onPressed: allowed ? () => _checkout(context) : null,
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      allowed
-                          ? 'Siparişi tamamla'
-                          : '${formatTl(minimum - cart.totalPrice)} daha ekle',
-                    ),
-                    if (allowed) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.arrow_forward_rounded, size: 20),
-                    ],
-                  ],
-                ),
-              ),
+    // Kısa ekranda (ör. 320x568) çubuk alttaki menüyle birlikte daha az yer
+    // kaplasın diye iç boşluk azalır.
+    final short = MediaQuery.sizeOf(context).height < 640;
+    return MarketBottomBar(
+      padding: short
+          ? const EdgeInsets.fromLTRB(16, 8, 16, 8)
+          : const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      child: allowed
+          ? MarketTotalAction(
+              label: 'Toplam',
+              amount: cart.finalPrice,
+              savings: savings,
+              actionLabel: 'Siparişi tamamla',
+              onPressed: () => _checkout(context),
+            )
+          : _BelowMinimumAction(
+              amount: cart.finalPrice,
+              savings: savings,
+              gap: minimum - cart.totalPrice,
+              onPressed: onAddMore,
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -692,6 +781,85 @@ class _CheckoutBar extends StatelessWidget {
       if (result != true && !auth.isLoggedIn) return;
     }
     if (context.mounted) context.push('/create-order');
+  }
+}
+
+/// En az sipariş tutarının altındayken: pasif gri buton yerine eksik tutarı
+/// söyleyen ve önerilere götüren turuncu buton. Ödeme adımına yine geçilmez.
+class _BelowMinimumAction extends StatelessWidget {
+  final double amount;
+  final double savings;
+  final double gap;
+  final VoidCallback onPressed;
+
+  const _BelowMinimumAction({
+    required this.amount,
+    required this.savings,
+    required this.gap,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth * .42),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Toplam',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.caption()),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(formatTl(amount), style: MarketText.price(size: 22)),
+                ),
+                if (savings > 0)
+                  Text(
+                    '${formatTl(savings)} kazanç',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.caption(
+                        color: MarketPalette.greenDark, weight: FontWeight.w700),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: FilledButton(
+              onPressed: onPressed,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(MarketSize.button),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                backgroundColor: MarketPalette.orangeSoft,
+                foregroundColor: MarketPalette.orangeInk,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.add_shopping_cart_rounded, size: 20),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      '${formatTl(gap)} daha ekle',
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -706,34 +874,38 @@ class _EmptyCart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 28, 0, 24),
-      children: [
-        MarketEmptyState(
-          icon: Icons.shopping_basket_outlined,
-          illustration: const MarketMascot(size: 132),
-          title: 'Sepetin boş',
-          message:
-              'Henüz ürün eklemedin. Atıştırmalıktan temizliğe ihtiyacın olan her şey birkaç dokunuş uzağında.',
-          actionLabel: 'Ürünleri keşfet',
-          actionIcon: Icons.explore_rounded,
-          onAction: onExplore ?? () => context.go('/home'),
-        ),
-        if (context.watch<AuthViewModel>().isLoggedIn)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: OutlinedButton.icon(
-              onPressed: () => context.push('/saved-carts'),
-              icon: const Icon(Icons.bookmarks_outlined, size: 18),
-              label: const Text('Favori sepetlerimden doldur'),
-            ),
+    final gutter = MarketSpace.gutterOf(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MarketEmptyState(
+            icon: Icons.shopping_basket_outlined,
+            illustration: const MarketMascot(size: 132),
+            title: 'Sepetin boş',
+            message:
+                'Henüz ürün eklemedin. Atıştırmalıktan temizliğe ihtiyacın olan her şey birkaç dokunuş uzağında.',
+            actionLabel: 'Ürünleri keşfet',
+            actionIcon: Icons.explore_rounded,
+            onAction: onExplore ?? () => context.go('/home'),
           ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20),
-          child: _CouponRequestCampaignCard(),
-        ),
-        const _EmptyCartSuggestions(),
-      ],
+          if (context.watch<AuthViewModel>().isLoggedIn)
+            Padding(
+              padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 20),
+              child: OutlinedButton.icon(
+                onPressed: () => context.push('/saved-carts'),
+                icon: const Icon(Icons.bookmarks_outlined, size: 18),
+                label: const Text('Favori sepetlerimden doldur'),
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: gutter),
+            child: const _CouponRequestCampaignCard(),
+          ),
+          const _EmptyCartSuggestions(),
+        ],
+      ),
     );
   }
 }
@@ -748,24 +920,25 @@ class _EmptyCartSuggestions extends StatelessWidget {
     final source = home.featuredProducts.isNotEmpty ? home.featuredProducts : home.products;
     final products = source.where((p) => !p.isHidden && !p.isOutOfStock).take(8).toList();
     if (products.isEmpty) return const SizedBox.shrink();
+    final gutter = MarketSpace.gutterOf(context);
 
     return Padding(
-      padding: const EdgeInsets.only(top: 28, bottom: 100),
+      padding: const EdgeInsets.only(top: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
-            child: MarketSectionTitle(
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: gutter),
+            child: const MarketSectionTitle(
               eyebrow: 'İLHAM AL',
               title: 'Bunlara göz at',
             ),
           ),
           const SizedBox(height: 14),
           SizedBox(
-            height: marketProductCardHeight,
+            height: marketProductCardExtent(context),
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.symmetric(horizontal: gutter),
               scrollDirection: Axis.horizontal,
               itemCount: products.length,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
@@ -782,9 +955,33 @@ class _EmptyCartSuggestions extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Kupon: giriş alanı (kendi controller'ı ile; yazılan kod yeniden çizimde
-// kaybolmaz), uygulanan kupon, kupon cüzdanı
+// Kupon: tek kart. Uygulanan kupon, sepete en uygun kupon (tek "Uygula") ya
+// da kod alanı; kod alanının kendi controller'ı var (yazılan kod yeniden
+// çizimde kaybolmaz). "Kuponlarım" cüzdanı açar.
 // ---------------------------------------------------------------------------
+
+/// Sepete önerilen kupon: sunucunun sepete özel önerisi ya da cüzdandaki,
+/// en az sepet tutarı tutan ilk geçerli kupon.
+({String code, String detail, bool best})? _cartCouponSuggestion(
+    CartViewModel cart, ReferralViewModel referral) {
+  if (cart.appliedCouponCode != null) return null;
+  final recommended = cart.recommendedCoupon;
+  final recommendedCode = recommended?['code']?.toString();
+  if (recommendedCode != null && recommendedCode.isNotEmpty) {
+    final discount = (recommended?['calculatedDiscount'] as num?)?.toDouble() ?? 0;
+    return (
+      code: recommendedCode,
+      detail: discount > 0 ? '${formatTl(discount)} kazanç' : 'Sepetine uygun kupon',
+      best: true,
+    );
+  }
+  for (final coupon in referral.validCoupons) {
+    if (coupon.minimumOrderAmount <= cart.totalPrice) {
+      return (code: coupon.code, detail: coupon.discountText, best: false);
+    }
+  }
+  return null;
+}
 
 class _CouponSection extends StatefulWidget {
   const _CouponSection();
@@ -796,10 +993,30 @@ class _CouponSection extends StatefulWidget {
 class _CouponSectionState extends State<_CouponSection> {
   final _controller = TextEditingController();
 
+  /// Önerilen kupon varken elle kod alanı açıldı mı.
+  bool _manualOpen = false;
+
+  /// Doğrulanan kod: hangi "Uygula" düğmesinin döneceğini belirler.
+  String? _pendingCode;
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _applyCode(CartViewModel cart, String code) async {
+    FocusScope.of(context).unfocus();
+    setState(() => _pendingCode = code);
+    final success = await cart.applyCoupon(code);
+    if (!mounted) return;
+    setState(() {
+      _pendingCode = null;
+      if (success) {
+        _controller.clear();
+        _manualOpen = false;
+      }
+    });
   }
 
   @override
@@ -814,96 +1031,101 @@ class _CouponSectionState extends State<_CouponSection> {
 
     final applied = cart.appliedCouponCode;
     final walletCount = referral.validCoupons.length;
+    final suggestion = _cartCouponSuggestion(cart, referral);
+    final validating = cart.isValidatingCoupon;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    final manualField = Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            textCapitalization: TextCapitalization.characters,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _applyCode(cart, _controller.text),
+            style: MarketText.label(size: 14, weight: FontWeight.w600),
+            decoration: const InputDecoration(
+              hintText: 'Kupon kodu',
+              prefixIcon: Icon(Icons.discount_outlined),
+              fillColor: MarketPalette.canvas,
+              contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          height: 52,
+          child: _CouponApplyButton(
+            loading: validating && _pendingCode == _controller.text,
+            // Önerilen kuponun "Uygula"sı ana eylem kalır; bu ikincil görünür.
+            secondary: suggestion != null,
+            onPressed: validating ? null : () => _applyCode(cart, _controller.text),
+          ),
+        ),
+      ],
+    );
+
     return MarketCard(
       shadow: false,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               const MarketIconTile(icon: Icons.confirmation_number_outlined, size: 38),
               const SizedBox(width: 12),
-              Expanded(child: Text('Kupon', style: MarketText.heading(size: 16))),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text('Kupon', style: MarketText.heading(size: 16)),
+                ),
+              ),
               TextButton(
-                onPressed: () => _showCouponWallet(context, referral, cart),
+                onPressed: () => _showCouponWallet(context),
+                style: TextButton.styleFrom(minimumSize: const Size(0, MarketSize.control)),
                 child: Text(walletCount > 0 ? 'Kuponlarım ($walletCount)' : 'Kuponlarım'),
               ),
             ],
           ),
           const SizedBox(height: 12),
           if (applied != null)
-            Container(
-              padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-              decoration: BoxDecoration(
-                color: MarketPalette.greenSoft,
-                borderRadius: BorderRadius.circular(MarketRadius.md),
-                border: Border.all(color: MarketPalette.greenLine),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: MarketPalette.green, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(applied, style: MarketText.code(size: 14)),
-                        Text(
-                          cart.appliedCoupon?['requiresDeliveryPoint'] == true
-                              ? 'Teslimat noktasında doğrulanacak'
-                              : '${formatTl(cart.discountAmount)} indirim uygulandı',
-                          style: MarketText.caption(color: MarketPalette.greenDark),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: cart.removeCoupon,
-                    style: TextButton.styleFrom(foregroundColor: MarketPalette.red),
-                    child: const Text('Kaldır'),
-                  ),
-                ],
-              ),
-            )
+            _AppliedCouponRow(cart: cart, code: applied)
           else ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    textCapitalization: TextCapitalization.characters,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _apply(cart),
-                    style: MarketText.label(size: 14, weight: FontWeight.w600),
-                    decoration: const InputDecoration(
-                      hintText: 'Kupon kodu',
-                      prefixIcon: Icon(Icons.discount_outlined),
-                      fillColor: MarketPalette.canvas,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: cart.isValidatingCoupon ? null : () => _apply(cart),
-                    child: cart.isValidatingCoupon
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Uygula'),
-                  ),
-                ),
-              ],
-            ),
-            if (cart.couponError != null) ...[
+            if (suggestion != null) ...[
+              _SuggestedCouponRow(
+                title: suggestion.best ? 'Sepetin için en iyi kupon' : 'Kullanılabilir kuponun var',
+                code: suggestion.code,
+                detail: suggestion.detail,
+                loading: validating && _pendingCode == suggestion.code,
+                onApply: validating ? null : () => _applyCode(cart, suggestion.code),
+              ),
+              AnimatedSize(
+                duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _manualOpen
+                    ? Padding(padding: const EdgeInsets.only(top: 12), child: manualField)
+                    : Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setState(() => _manualOpen = true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: MarketPalette.inkSoft,
+                            minimumSize: const Size(0, MarketSize.control),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                          ),
+                          icon: const Icon(Icons.keyboard_rounded, size: 18),
+                          label: const Text('Başka bir kod gir'),
+                        ),
+                      ),
+              ),
+            ] else
+              manualField,
+            if (cart.couponError != null && !validating) ...[
               const SizedBox(height: 8),
               Text(
                 cart.couponError!,
-                style: MarketText.caption(color: MarketPalette.red, weight: FontWeight.w600),
+                style: MarketText.caption(color: MarketPalette.red, weight: FontWeight.w700),
               ),
             ],
           ],
@@ -911,215 +1133,322 @@ class _CouponSectionState extends State<_CouponSection> {
       ),
     );
   }
-
-  Future<void> _apply(CartViewModel cart) async {
-    FocusScope.of(context).unfocus();
-    final success = await cart.applyCoupon(_controller.text);
-    if (success && mounted) _controller.clear();
-  }
 }
 
-/// Sepete özel önerilen kupon veya cüzdandaki ilk geçerli kupon.
-class _AvailableCouponBanner extends StatelessWidget {
+class _AppliedCouponRow extends StatelessWidget {
   final CartViewModel cart;
+  final String code;
 
-  const _AvailableCouponBanner({required this.cart});
+  const _AppliedCouponRow({required this.cart, required this.code});
 
   @override
   Widget build(BuildContext context) {
-    if (cart.appliedCouponCode != null) return const SizedBox.shrink();
-
-    String? code;
-    var detail = '';
-    final recommended = cart.recommendedCoupon;
-    if (recommended != null) {
-      code = recommended['code']?.toString();
-      final discount = (recommended['calculatedDiscount'] as num?)?.toDouble() ?? 0;
-      detail = '${formatTl(discount)} kazanç';
-    } else {
-      final coupons = context.watch<ReferralViewModel>().validCoupons;
-      if (coupons.isNotEmpty) {
-        code = coupons.first.code;
-        detail = coupons.first.discountText;
-      }
-    }
-    if (code == null || code.isEmpty) return const SizedBox.shrink();
-    final couponCode = code;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [MarketPalette.limeSoft, MarketPalette.greenSoft],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: MarketPalette.greenSoft,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        border: Border.all(color: MarketPalette.greenLine),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_rounded, color: MarketPalette.green, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(code, style: MarketText.code(size: 14)),
+                Text(
+                  cart.appliedCoupon?['requiresDeliveryPoint'] == true && cart.discountAmount <= 0
+                      ? 'Teslimat noktasında doğrulanacak'
+                      : '${formatTl(cart.discountAmount)} indirim uygulandı',
+                  style: MarketText.caption(color: MarketPalette.greenDark),
+                ),
+              ],
+            ),
           ),
-          borderRadius: BorderRadius.circular(MarketRadius.lg),
-          border: Border.all(color: MarketPalette.limeLine),
-        ),
-        child: Row(
-          children: [
-            const MarketIconTile(
-              icon: Icons.auto_awesome_rounded,
-              size: 40,
-              background: MarketPalette.lime,
-              foreground: MarketPalette.greenDeep,
+          TextButton(
+            onPressed: cart.isValidatingCoupon ? null : cart.removeCoupon,
+            style: TextButton.styleFrom(
+              foregroundColor: MarketPalette.red,
+              minimumSize: const Size(MarketSize.control, MarketSize.control),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    recommended != null
-                        ? 'Sepetin için en iyi kupon'
-                        : 'Kullanılabilir kuponun var',
-                    style: MarketText.caption(color: MarketPalette.greenDark, weight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    couponCode,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: MarketText.code(color: MarketPalette.greenDeep, size: 13),
-                  ),
-                  Text(
-                    detail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: MarketText.caption(color: MarketPalette.inkSoft),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: () => cart.applyCoupon(couponCode),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                backgroundColor: MarketPalette.greenDeep,
-              ),
-              child: const Text('Uygula'),
-            ),
-          ],
-        ),
+            child: const Text('Kaldır'),
+          ),
+        ],
       ),
     );
   }
 }
 
-Future<void> _showCouponWallet(
-  BuildContext context,
-  ReferralViewModel referral,
-  CartViewModel cart,
-) async {
-  if (!referral.couponsLoaded) await referral.loadCoupons(force: true);
-  if (!context.mounted) return;
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (sheetContext) => DraggableScrollableSheet(
-      initialChildSize: .76,
-      minChildSize: .5,
-      maxChildSize: .92,
-      expand: false,
-      builder: (context, controller) {
-        final coupons = referral.validCoupons;
-        return Container(
-          decoration: const BoxDecoration(
-            color: MarketPalette.canvas,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(MarketRadius.xl)),
-          ),
-          child: Column(
-            children: [
-              Container(
-                width: 44,
-                height: 5,
-                margin: const EdgeInsets.only(top: 10, bottom: 16),
-                decoration: BoxDecoration(
-                  color: MarketPalette.lineStrong,
-                  borderRadius: BorderRadius.circular(MarketRadius.lg),
+class _SuggestedCouponRow extends StatelessWidget {
+  final String title;
+  final String code;
+  final String detail;
+  final bool loading;
+  final VoidCallback? onApply;
+
+  const _SuggestedCouponRow({
+    required this.title,
+    required this.code,
+    required this.detail,
+    required this.loading,
+    required this.onApply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: MarketPalette.limeSoft,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+        border: Border.all(color: MarketPalette.limeLine),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome_rounded, color: MarketPalette.greenDark, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: MarketText.caption(color: MarketPalette.greenDark, weight: FontWeight.w700),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 12, 0),
-                child: Row(
-                  children: [
-                    const MarketIconTile(icon: Icons.local_activity_outlined, size: 46),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Kupon cüzdanım', style: MarketText.title(size: 22)),
-                          Text('${coupons.length} aktif fırsat', style: MarketText.caption(size: 13)),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Kapat',
-                      onPressed: () => Navigator.pop(sheetContext),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
+                const SizedBox(height: 2),
+                Text(
+                  code,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.code(color: MarketPalette.greenDeep, size: 13),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: coupons.isEmpty
-                    ? ListView(
-                        controller: controller,
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-                        children: const [
-                          MarketEmptyState(
-                            icon: Icons.local_activity_outlined,
-                            title: 'Henüz kuponun yok',
-                            message:
-                                'Aktif kampanyaya katılarak kişisel kupon kazanabilirsin.',
-                          ),
-                          _CouponRequestCampaignCard(),
-                        ],
-                      )
-                    : ListView.separated(
-                        controller: controller,
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                        itemCount: coupons.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (_, index) => _CouponCard(
-                          coupon: coupons[index],
-                          cart: cart,
-                          sheetContext: sheetContext,
-                        ),
-                      ),
-              ),
-            ],
+                Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.caption(color: MarketPalette.inkSoft),
+                ),
+              ],
+            ),
           ),
-        );
-      },
+          const SizedBox(width: 8),
+          _CouponApplyButton(loading: loading, onPressed: onApply),
+        ],
+      ),
+    );
+  }
+}
+
+/// Kuponun tek "Uygula" düğmesi: yeşil, en az 44 pt; doğrulanırken dönen
+/// beyaz gösterge (yeşil kalır).
+class _CouponApplyButton extends StatelessWidget {
+  final bool loading;
+  final VoidCallback? onPressed;
+
+  /// Açık yeşil (ikincil) görünüm: ekranda ana "Uygula" başka yerdeyken.
+  final bool secondary;
+
+  const _CouponApplyButton({
+    required this.loading,
+    required this.onPressed,
+    this.secondary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final background = secondary ? MarketPalette.greenSoft : MarketPalette.green;
+    final foreground = secondary ? MarketPalette.greenDark : Colors.white;
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, MarketSize.control),
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        backgroundColor: background,
+        foregroundColor: foreground,
+        disabledBackgroundColor: loading ? background : null,
+        disabledForegroundColor: loading ? foreground : null,
+      ),
+      child: loading
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: foreground),
+            )
+          : const Text('Uygula'),
+    );
+  }
+}
+
+/// Kupon cüzdanı hemen açılır; kuponlar yüklenmediyse sayfanın içinde yüklenir.
+Future<void> _showCouponWallet(BuildContext context) {
+  final referral = context.read<ReferralViewModel>();
+  final cart = context.read<CartViewModel>();
+  return showMarketSheet<void>(
+    context,
+    builder: (sheetContext) => _CouponWalletSheet(
+      referral: referral,
+      cart: cart,
+      hostContext: context,
     ),
   );
+}
+
+class _CouponWalletSheet extends StatefulWidget {
+  final ReferralViewModel referral;
+  final CartViewModel cart;
+
+  /// Sepet sayfasının bağlamı: sayfa kapandıktan sonra bildirim orada çıkar.
+  final BuildContext hostContext;
+
+  const _CouponWalletSheet({
+    required this.referral,
+    required this.cart,
+    required this.hostContext,
+  });
+
+  @override
+  State<_CouponWalletSheet> createState() => _CouponWalletSheetState();
+}
+
+class _CouponWalletSheetState extends State<_CouponWalletSheet> {
+  bool _loading = false;
+  String? _pendingCode;
+  String? _errorCode;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.referral.couponsLoaded) _reload();
+  }
+
+  Future<void> _reload() async {
+    setState(() => _loading = true);
+    await widget.referral.loadCoupons(force: true);
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _apply(Coupon coupon) async {
+    final cart = widget.cart;
+    if (cart.isValidatingCoupon) return;
+    setState(() {
+      _pendingCode = coupon.code;
+      _errorCode = null;
+      _error = null;
+    });
+    final success = await cart.applyCoupon(coupon.code);
+    if (!mounted) return;
+    if (success) {
+      Navigator.of(context).pop();
+      final host = widget.hostContext;
+      if (host.mounted) {
+        showMarketSnack(
+          host,
+          cart.discountAmount > 0
+              ? 'Kupon uygulandı: ${formatTl(cart.discountAmount)} indirim'
+              : 'Kupon uygulandı. İndirim teslimat noktasında hesaplanacak.',
+          icon: Icons.local_activity_rounded,
+          bottomGap: _snackGap(host),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _pendingCode = null;
+      _errorCode = coupon.code;
+      _error = cart.couponError ?? 'Kupon uygulanamadı. Tekrar dener misin?';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([widget.referral, widget.cart]),
+      builder: (context, _) {
+        final referral = widget.referral;
+        final coupons = referral.validCoupons;
+        final loading = _loading && !referral.couponsLoaded;
+        final failed = !_loading && !referral.couponsLoaded;
+
+        final Widget body;
+        if (loading) {
+          body = const MarketListSkeleton(count: 3);
+        } else if (failed) {
+          body = MarketEmptyState.error(onRetry: _reload);
+        } else if (coupons.isEmpty) {
+          body = const Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MarketEmptyState(
+                icon: Icons.local_activity_outlined,
+                title: 'Henüz kuponun yok',
+                message: 'Aktif kampanyaya katılarak kişisel kupon kazanabilirsin.',
+              ),
+              _CouponRequestCampaignCard(),
+            ],
+          );
+        } else {
+          body = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < coupons.length; i++) ...[
+                if (i > 0) const SizedBox(height: 12),
+                _CouponCard(
+                  coupon: coupons[i],
+                  cart: widget.cart,
+                  loading: _pendingCode == coupons[i].code && widget.cart.isValidatingCoupon,
+                  error: _errorCode == coupons[i].code ? _error : null,
+                  onApply: () => _apply(coupons[i]),
+                ),
+              ],
+            ],
+          );
+        }
+
+        return MarketSheetScaffold(
+          header: MarketSheetHeader(
+            title: 'Kupon cüzdanım',
+            subtitle: loading
+                ? 'Kuponların yükleniyor'
+                : coupons.isEmpty
+                    ? null
+                    : '${coupons.length} aktif fırsat',
+          ),
+          body: body,
+          bodyPadding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        );
+      },
+    );
+  }
 }
 
 class _CouponCard extends StatelessWidget {
   final Coupon coupon;
   final CartViewModel cart;
-  final BuildContext sheetContext;
+  final bool loading;
+  final String? error;
+  final VoidCallback onApply;
 
   const _CouponCard({
     required this.coupon,
     required this.cart,
-    required this.sheetContext,
+    required this.loading,
+    required this.error,
+    required this.onApply,
   });
 
   @override
   Widget build(BuildContext context) {
     final expiry =
         '${coupon.expirationDate.day.toString().padLeft(2, '0')}.${coupon.expirationDate.month.toString().padLeft(2, '0')}.${coupon.expirationDate.year}';
+    // Sepet, kuponun en az tutarını tutmuyorsa düğme eksik tutarı söyler.
+    final gap = coupon.minimumOrderAmount - cart.totalPrice;
+    final blocked = gap > 0;
+    final applied = cart.appliedCouponCode?.toUpperCase() == coupon.code.toUpperCase();
     final conditions = <String>[
-      if (coupon.minimumOrderAmount > 0)
-        'En az ${formatTlShort(coupon.minimumOrderAmount)} sepet',
       if (coupon.maximumDiscount > 0)
         'En fazla ${formatTlShort(coupon.maximumDiscount)} indirim',
       if (coupon.deliveryPoints.isNotEmpty) 'Teslimat noktasına özel',
@@ -1130,14 +1459,58 @@ class _CouponCard extends StatelessWidget {
         ? 'Sınırsız kullanım'
         : '${coupon.remainingGlobalUses} kullanım kaldı';
 
-    Widget info(IconData icon, String text) => MarketPill(
+    Widget info(IconData icon, String text, {bool warn = false}) => MarketPill(
           icon: icon,
           label: text,
-          background: MarketPalette.surfaceMuted,
-          foreground: MarketPalette.inkSoft,
+          background: warn ? MarketPalette.orangeSoft : MarketPalette.surfaceMuted,
+          foreground: warn ? MarketPalette.orangeInk : MarketPalette.inkSoft,
         );
 
+    final Widget button;
+    if (applied) {
+      button = FilledButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.check_rounded, size: 18),
+        label: const Text('Sepetinde uygulandı'),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(MarketSize.control),
+          disabledBackgroundColor: MarketPalette.greenSoft,
+          disabledForegroundColor: MarketPalette.greenDark,
+        ),
+      );
+    } else if (blocked) {
+      button = FilledButton.tonal(
+        onPressed: null,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(MarketSize.control),
+          disabledBackgroundColor: MarketPalette.orangeSoft,
+          disabledForegroundColor: MarketPalette.orangeInk,
+        ),
+        child: Text(
+          '${formatTl(gap)} daha ekleyince kullanabilirsin',
+          textAlign: TextAlign.center,
+        ),
+      );
+    } else {
+      button = FilledButton(
+        onPressed: loading || cart.isValidatingCoupon ? null : onApply,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(MarketSize.control),
+          disabledBackgroundColor: loading ? MarketPalette.green : null,
+          disabledForegroundColor: loading ? Colors.white : null,
+        ),
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Text('Kuponu uygula'),
+      );
+    }
+
     return MarketCard(
+      shadow: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1149,6 +1522,7 @@ class _CouponCard extends StatelessWidget {
                   style: MarketText.title(color: MarketPalette.greenDark, size: 22),
                 ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
@@ -1169,6 +1543,10 @@ class _CouponCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
+              if (coupon.minimumOrderAmount > 0)
+                info(Icons.shopping_basket_outlined,
+                    'En az ${formatTlShort(coupon.minimumOrderAmount)} sepet',
+                    warn: blocked),
               info(Icons.event_outlined, 'Son gün $expiry'),
               info(Icons.people_outline, globalUse),
               info(Icons.person_outline, 'Kişisel ${coupon.remainingUses} hak'),
@@ -1176,20 +1554,14 @@ class _CouponCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: cart.isValidatingCoupon
-                  ? null
-                  : () async {
-                      final success = await cart.applyCoupon(coupon.code);
-                      if (success && sheetContext.mounted) {
-                        Navigator.pop(sheetContext);
-                      }
-                    },
-              child: const Text('Kuponu uygula'),
+          SizedBox(width: double.infinity, child: button),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              error!,
+              style: MarketText.caption(color: MarketPalette.red, weight: FontWeight.w700),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1241,7 +1613,7 @@ class _CouponRequestCampaignCardState
       context,
       response['message'] ?? 'İşlem tamamlandı',
       error: response['success'] != true,
-      aboveNavigation: true,
+      bottomGap: _snackGap(context),
     );
     if (response['success'] == true) {
       setState(
@@ -1348,7 +1720,7 @@ class _CouponRequestCampaignCardState
                 backgroundColor: Colors.white,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
@@ -1362,8 +1734,8 @@ class _CouponRequestCampaignCardState
                       InkWell(
                         onTap: () => setState(() => _expanded = !_expanded),
                         borderRadius: BorderRadius.circular(MarketRadius.xs),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: MarketSize.control),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1392,11 +1764,11 @@ class _CouponRequestCampaignCardState
                   onPressed:
                       requested || !eligible || _requesting ? null : _request,
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 42),
+                    minimumSize: const Size(0, MarketSize.control),
                     backgroundColor: MarketPalette.greenDeep,
                   ),
                   child: Text(_requesting
-                      ? 'Gönderiliyor...'
+                      ? 'Gönderiliyor…'
                       : requested
                           ? 'İsteğin alındı'
                           : eligible

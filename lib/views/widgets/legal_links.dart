@@ -14,15 +14,22 @@ abstract final class LegalLinks {
   static const distanceSales = '$_base/distance-sales';
   static const returnPolicy = '$_base/return-policy';
 
+  /// Metni uygulamanın içinde (Custom Tabs / Safari görünümü) açar; kayıt
+  /// formu gibi yarım kalan işler kaybolmaz. Olmazsa tarayıcıya geçer.
   static Future<void> open(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
     var opened = false;
     try {
-      opened = await launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
-      );
+      opened = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
     } catch (_) {
       opened = false;
+    }
+    if (!opened) {
+      try {
+        opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
     }
     if (!opened && context.mounted) {
       showMarketSnack(

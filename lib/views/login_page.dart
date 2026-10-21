@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/auth_ui.dart';
-import 'widgets/custom_dialog.dart';
 import 'widgets/market_ui.dart';
 
 class LoginPage extends StatefulWidget {
@@ -19,6 +18,10 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _submitted = false;
+
+  // Giriş başarısızsa formun içinde gösterilen hata (alanlar görünür kalır)
+  String? _error;
 
   @override
   void dispose() {
@@ -27,8 +30,16 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  void _clearError(String _) {
+    if (_error != null) setState(() => _error = null);
+  }
+
   Future<void> _login() async {
     FocusScope.of(context).unfocus();
+    setState(() {
+      _submitted = true;
+      _error = null;
+    });
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final auth = context.read<AuthViewModel>();
@@ -47,73 +58,32 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    CustomDialog.show(
-      context: context,
-      title: 'Giriş yapılamadı',
-      message: auth.error ?? 'Bilgilerini kontrol edip tekrar deneyebilirsin.',
-      confirmButtonText: 'Tekrar dene',
-      showCancelButton: false,
-      isDestructive: true,
-      icon: Icons.error_outline_rounded,
-      onConfirm: () => context.pop(),
-    );
+    final message = auth.error?.trim();
+    setState(() => _error = message == null || message.isEmpty
+        ? 'E-posta ya da şifre hatalı. Kontrol edip tekrar dene.'
+        : message);
   }
 
   @override
   Widget build(BuildContext context) {
     return AuthPageShell(
       onBack: context.canPop() ? () => context.pop() : null,
-      child: Form(
-        key: _formKey,
-        child: AutofillGroup(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const AuthBrandHeader(
-                icon: Icons.storefront_rounded,
-                title: 'Tekrar hoş geldin',
-                subtitle:
-                    'Siparişlerine, favorilerine ve sana özel deneyimine kaldığın yerden devam et.',
-              ),
-              const SizedBox(height: 30),
-              AuthFormCard(
+      header: const AuthBrandHeader(
+        title: 'Tekrar hoş geldin',
+        subtitle: 'Siparişlerine, favorilerine ve sana özel fırsatlara kaldığın yerden devam et.',
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AuthFormCard(
+            child: Form(
+              key: _formKey,
+              autovalidateMode:
+                  _submitted ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
+              child: AutofillGroup(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: MarketPalette.greenSoft,
-                            borderRadius: BorderRadius.circular(MarketRadius.sm),
-                          ),
-                          child: const Icon(
-                            Icons.lock_open_rounded,
-                            color: MarketPalette.greenDark,
-                            size: 19,
-                          ),
-                        ),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Hesabına giriş yap',
-                                style: MarketText.heading(size: 18),
-                              ),
-                              Text(
-                                'Bilgilerin güvenli şekilde korunur.',
-                                style: MarketText.caption(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
                     AuthTextField(
                       controller: _emailController,
                       label: 'E-posta adresi',
@@ -122,13 +92,12 @@ class _LoginPageState extends State<LoginPage> {
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       autofillHints: const [AutofillHints.email],
+                      onChanged: _clearError,
                       validator: (value) {
                         final email = value?.trim() ?? '';
-                        if (email.isEmpty) return 'E-posta adresini girin';
-                        if (!RegExp(
-                          r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                        ).hasMatch(email)) {
-                          return 'Geçerli bir e-posta adresi girin';
+                        if (email.isEmpty) return 'E-posta adresini yaz';
+                        if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+                          return 'Geçerli bir e-posta adresi yaz (ör. ad@mail.com)';
                         }
                         return null;
                       },
@@ -145,18 +114,19 @@ class _LoginPageState extends State<LoginPage> {
                       onToggleVisibility: () => setState(
                         () => _obscurePassword = !_obscurePassword,
                       ),
+                      onChanged: _clearError,
                       onSubmitted: _login,
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Şifrenizi girin';
-                        }
-                        if (value.length < 6) {
-                          return 'Şifre en az 6 karakter olmalı';
-                        }
+                        if (value == null || value.isEmpty) return 'Şifreni yaz';
+                        if (value.length < 6) return 'Şifre en az 6 karakter olmalı';
                         return null;
                       },
                     ),
-                    const SizedBox(height: 24),
+                    if (_error != null) ...[
+                      const SizedBox(height: 16),
+                      AuthErrorNotice(message: _error!),
+                    ],
+                    const SizedBox(height: 22),
                     Consumer<AuthViewModel>(
                       builder: (context, auth, _) => AuthPrimaryButton(
                         label: 'Giriş yap',
@@ -165,16 +135,18 @@ class _LoginPageState extends State<LoginPage> {
                         onPressed: _login,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    const SizedBox(height: 10),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Text(
-                          'Henüz hesabın yok mu?',
-                          style: MarketText.caption(size: 13),
-                        ),
+                        Text('Henüz hesabın yok mu?', style: MarketText.caption(size: 13)),
                         TextButton(
                           onPressed: () => context.push('/register'),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(MarketSize.tapTarget, MarketSize.tapTarget),
+                            textStyle: MarketText.label(size: 13, weight: FontWeight.w800),
+                          ),
                           child: const Text('Kayıt ol'),
                         ),
                       ],
@@ -182,19 +154,19 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
-              TextButton.icon(
-                onPressed: () => context.go('/home'),
-                style: TextButton.styleFrom(
-                  foregroundColor: MarketPalette.greenDeep,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                icon: const Icon(Icons.explore_outlined, size: 19),
-                label: const Text('Giriş yapmadan ürünleri keşfet'),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: () => context.go('/home'),
+            style: TextButton.styleFrom(
+              foregroundColor: MarketPalette.greenDark,
+              minimumSize: const Size.fromHeight(MarketSize.tapTarget),
+            ),
+            icon: const Icon(Icons.explore_outlined, size: 19),
+            label: const Text('Giriş yapmadan ürünleri keşfet'),
+          ),
+        ],
       ),
     );
   }

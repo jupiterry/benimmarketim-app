@@ -7,23 +7,35 @@ import 'market_ui.dart';
 /// Havale / EFT hesap bilgileri. Bilgiler yönetim panelinde
 /// Ayarlar → Ödeme bölümünden girilir; IBAN girilmemişse müşteriye
 /// hesap bilgisinin ayrıca iletileceği söylenir.
+///
+/// Her satırın kendi "Kopyala" düğmesi vardır (satırın kendisine dokunmak da
+/// kopyalar); bankacılık uygulamasına tek tek yapıştırılabilir.
 class BankTransferCard extends StatelessWidget {
   const BankTransferCard({
     super.key,
     required this.settings,
     this.orderNumber,
+    this.amount,
   });
 
   final SettingsViewModel settings;
 
   /// Sipariş verildiyse açıklamaya yazılacak kısa sipariş numarası
+  /// ("#" ile ya da onsuz; kopyalanırken "#" atılır, bazı bankalar kabul etmez)
   final String? orderNumber;
+
+  /// Gönderilecek tutar (verilirse "Tutar" satırı çıkar)
+  final double? amount;
 
   void _copy(BuildContext context, String value, String message) {
     Clipboard.setData(ClipboardData(text: value));
     HapticFeedback.lightImpact();
     showMarketSnack(context, message, icon: Icons.copy_rounded);
   }
+
+  /// Bankacılık uygulamalarının tutar alanına yapıştırılabilir biçim: "338,60"
+  static String _plainAmount(double value) =>
+      value.toStringAsFixed(2).replaceAll('.', ',');
 
   @override
   Widget build(BuildContext context) {
@@ -35,128 +47,215 @@ class BankTransferCard extends StatelessWidget {
       );
     }
 
-    final reference = (orderNumber ?? '').trim();
+    final reference = (orderNumber ?? '').trim().replaceAll('#', '');
+    final total = amount;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
       decoration: BoxDecoration(
         color: MarketPalette.surface,
         borderRadius: BorderRadius.circular(MarketRadius.md),
         border: Border.all(color: MarketPalette.greenLine),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.account_balance_rounded,
-                  size: 18, color: MarketPalette.greenDark),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text('Havale / EFT bilgileri',
-                    style: MarketText.label(size: 13)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Dar kartta düğmeler yalnızca simge olarak kalır (değere yer açılır).
+          final iconOnly = constraints.maxWidth < 300;
+          final rows = <Widget>[
+            if (settings.bankAccountName.isNotEmpty)
+              _CopyRow(
+                label: 'Alıcı',
+                value: settings.bankAccountName,
+                iconOnly: iconOnly,
+                semanticsLabel: 'Alıcı adını kopyala',
+                onCopy: () => _copy(
+                    context, settings.bankAccountName, 'Alıcı adı kopyalandı'),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (settings.bankAccountName.isNotEmpty)
-            _InfoRow(label: 'Alıcı', value: settings.bankAccountName),
-          if (settings.bankName.isNotEmpty)
-            _InfoRow(label: 'Banka', value: settings.bankName),
-          const SizedBox(height: 4),
-          Material(
-            color: MarketPalette.greenSoft,
-            borderRadius: BorderRadius.circular(MarketRadius.sm),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(MarketRadius.sm),
-              onTap: () => _copy(context, settings.bankIban, 'IBAN kopyalandı'),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            if (settings.bankName.isNotEmpty)
+              _CopyRow(label: 'Banka', value: settings.bankName),
+            _CopyRow(
+              label: 'IBAN',
+              value: settings.bankIbanFormatted,
+              emphasized: true,
+              iconOnly: iconOnly,
+              semanticsLabel: "IBAN'ı kopyala",
+              onCopy: () =>
+                  _copy(context, settings.bankIban, 'IBAN kopyalandı'),
+            ),
+            if (total != null && total > 0)
+              _CopyRow(
+                label: 'Tutar',
+                value: formatTl(total),
+                emphasized: true,
+                iconOnly: iconOnly,
+                semanticsLabel: 'Tutarı kopyala',
+                onCopy: () =>
+                    _copy(context, _plainAmount(total), 'Tutar kopyalandı'),
+              ),
+            if (reference.isNotEmpty)
+              _CopyRow(
+                label: 'Açıklama',
+                value: reference,
+                emphasized: true,
+                iconOnly: iconOnly,
+                semanticsLabel: 'Sipariş numarasını kopyala',
+                onCopy: () =>
+                    _copy(context, reference, 'Sipariş numarası kopyalandı'),
+              ),
+          ];
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
                 child: Row(
                   children: [
+                    const Icon(Icons.account_balance_rounded,
+                        size: 18, color: MarketPalette.greenDark),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('IBAN', style: MarketText.caption()),
-                          const SizedBox(height: 2),
-                          SelectableText(
-                            settings.bankIbanFormatted,
-                            style: MarketText.label(
-                              size: 14,
-                              color: MarketPalette.greenDeep,
-                            ).copyWith(letterSpacing: .3),
-                          ),
-                        ],
+                      child: Semantics(
+                        header: true,
+                        child: Text('Havale / EFT bilgileri',
+                            style: MarketText.label(size: 14)),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.copy_rounded,
-                        size: 18, color: MarketPalette.greenDark),
                   ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (reference.isNotEmpty)
-            InkWell(
-              borderRadius: BorderRadius.circular(MarketRadius.xs),
-              onTap: () =>
-                  _copy(context, reference, 'Sipariş numarası kopyalandı'),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text.rich(
-                  TextSpan(
-                    style: MarketText.caption(color: MarketPalette.orangeInk),
-                    children: [
-                      const TextSpan(text: 'Açıklamaya sipariş numaranı yaz: '),
-                      TextSpan(
-                        text: reference,
-                        style: MarketText.caption(
-                          color: MarketPalette.orangeInk,
-                          weight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: 4),
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0)
+                  const Divider(
+                      height: 1, endIndent: 4, color: MarketPalette.line),
+                rows[i],
+              ],
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: MarketNotice.warning(
+                  icon: Icons.info_outline_rounded,
+                  text: reference.isNotEmpty
+                      ? 'Havale açıklamasına sipariş numaranı yazmayı unutma.'
+                      : 'Ödemeyi sipariş sonrasında yap; açıklamaya sipariş numaranı yaz.',
                 ),
               ),
-            )
-          else
-            Text(
-              'Ödemeyi sipariş sonrasında yap; açıklamaya sipariş numaranı yaz.',
-              style: MarketText.caption(color: MarketPalette.orangeInk),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
+/// Etiket + değer satırı; [onCopy] verilirse sağda "Kopyala" düğmesi çıkar ve
+/// satırın kendisine dokunmak da kopyalar.
+class _CopyRow extends StatelessWidget {
+  const _CopyRow({
+    required this.label,
+    required this.value,
+    this.onCopy,
+    this.semanticsLabel,
+    this.emphasized = false,
+    this.iconOnly = false,
+  });
 
   final String label;
   final String value;
+  final VoidCallback? onCopy;
+  final String? semanticsLabel;
+  final bool emphasized;
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 56,
-            child: Text(label, style: MarketText.caption()),
-          ),
           Expanded(
-            child: Text(value,
-                style: MarketText.label(size: 13, weight: FontWeight.w600)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: MarketText.caption(size: 12)),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: MarketText.label(
+                    size: 14,
+                    color: emphasized
+                        ? MarketPalette.greenDeep
+                        : MarketPalette.ink,
+                    weight: emphasized ? FontWeight.w800 : FontWeight.w600,
+                  ).copyWith(letterSpacing: emphasized ? .3 : null),
+                ),
+              ],
+            ),
           ),
+          if (onCopy != null) ...[
+            const SizedBox(width: 8),
+            _CopyButton(
+              onTap: onCopy!,
+              iconOnly: iconOnly,
+              semanticsLabel: semanticsLabel ?? '$label kopyala',
+            ),
+          ] else
+            // Düğmesiz satırların metni de aynı hizada biter.
+            const SizedBox(width: 4),
         ],
+      ),
+    );
+    if (onCopy == null) return content;
+    return InkWell(
+      onTap: onCopy,
+      excludeFromSemantics: true,
+      borderRadius: BorderRadius.circular(MarketRadius.sm),
+      child: content,
+    );
+  }
+}
+
+class _CopyButton extends StatelessWidget {
+  const _CopyButton({
+    required this.onTap,
+    required this.iconOnly,
+    required this.semanticsLabel,
+  });
+
+  final VoidCallback onTap;
+  final bool iconOnly;
+  final String semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextButton.styleFrom(
+      backgroundColor: MarketPalette.greenSoft,
+      foregroundColor: MarketPalette.greenDark,
+      minimumSize: const Size(MarketSize.control, 36),
+      padding: EdgeInsets.symmetric(horizontal: iconOnly ? 0 : 12),
+      shape: const StadiumBorder(),
+      textStyle: MarketText.label(size: 13),
+    );
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Tooltip(
+        message: semanticsLabel,
+        child: iconOnly
+            ? TextButton(
+                onPressed: onTap,
+                style: style,
+                child: const Icon(Icons.copy_rounded, size: 18),
+              )
+            : TextButton.icon(
+                onPressed: onTap,
+                style: style,
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                label: const Text('Kopyala'),
+              ),
       ),
     );
   }

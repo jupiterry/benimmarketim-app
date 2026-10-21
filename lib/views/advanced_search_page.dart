@@ -1,102 +1,209 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/category.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
 import '../services/turkish_text.dart';
+import 'widgets/browse_cart_bar.dart';
+import 'widgets/browse_controls.dart';
 import 'widgets/category_presentation.dart';
 import 'widgets/market_product_card.dart';
 import 'widgets/market_ui.dart';
 
+/// Tüm markette ürün arama.
+///
+/// Arama kutusu üstte sabit durur; en az 2 harf yazınca sonuçlar gelir.
+/// Boşken son aramalar ve reyonlar gösterilir. Altta sepet doluyken
+/// "Sepete git" çubuğu durur.
 class AdvancedSearchPage extends StatefulWidget {
-  const AdvancedSearchPage({super.key});
+  /// Başka bir ekrandan aranacak metinle açılırsa (ör. reyondaki "Tüm markette
+  /// ara") arama kutusuna yazılacak sorgu. `/search` rotasının `extra`'sı.
+  final String? initialQuery;
+
+  const AdvancedSearchPage({super.key, this.initialQuery});
 
   @override
   State<AdvancedSearchPage> createState() => _AdvancedSearchPageState();
 }
 
+/// Sunucuya giden sıralama değerleri. 'createdAt' gönderilmez (sunucunun
+/// varsayılan sıralaması), bu yüzden kullanıcıya "Önerilen" olarak görünür.
+const _defaultSort = 'createdAt';
+
 const _sortLabels = <String, String>{
-  'createdAt': 'En yeni',
-  'price_low': 'Fiyat: düşükten yükseğe',
-  'price_high': 'Fiyat: yüksekten düşüğe',
+  _defaultSort: 'Önerilen',
+  'price_low': 'En düşük fiyat',
+  'price_high': 'En yüksek fiyat',
   'name_asc': 'İsim (A-Z)',
   'name_desc': 'İsim (Z-A)',
 };
 
+const _recentSearchesKey = 'recent_product_searches';
+const _maxRecentSearches = 6;
+const _maxPrice = 1000.0;
+
+/// Sonuçların gelmesi için gereken en az harf sayısı.
+const _minQueryLength = 2;
+
 class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   final ApiService _apiService = ApiService();
 
   List<Product> _searchResults = [];
-  List<String> _suggestions = [];
+  List<Category> _categories = [];
   bool _isLoading = false;
   bool _hasSearched = false;
+  String? _error;
+
+  /// Ekrandaki sonuçların ait olduğu sorgu.
+  String _shownQuery = '';
+
+  /// En az bir ürün döndüren son sorgu; sayfadan çıkarken son aramalara
+  /// kaydedilir.
+  String? _lastSuccessfulQuery;
+
   String _selectedCategory = '';
   double _minPrice = 0;
-  double _maxPrice = 1000;
-  String _sortBy = 'createdAt';
+  double _maxPriceFilter = _maxPrice;
+  String _sortBy = _defaultSort;
   Timer? _debounce;
   int _searchRequestId = 0;
   List<String> _recentSearches = [];
+  bool _recentsLoaded = false;
 
-  bool get _priceFiltered => _minPrice > 0 || _maxPrice < 1000;
-  bool get _hasFilters =>
-      _selectedCategory.isNotEmpty || _priceFiltered || _sortBy != 'createdAt';
+  String get _query => _searchController.text.trim();
+
+  /// Sonuç alanı gösterilsin mi: en az 2 harf ya da klavyeden bilerek
+  /// aranmış tek harf.
+  bool get _hasQuery =>
+      _query.length >= _minQueryLength ||
+      (_query.isNotEmpty && (_isLoading || _shownQuery == _query));
+  bool get _priceFiltered => _minPrice > 0 || _maxPriceFilter < _maxPrice;
+  int get _activeFilterCount =>
+      (_selectedCategory.isNotEmpty ? 1 : 0) + (_priceFiltered ? 1 : 0);
+  bool get _hasFilters => _activeFilterCount > 0 || _sortBy != _defaultSort;
 
   @override
   void initState() {
     super.initState();
     _loadSuggestions();
     _loadRecentSearches();
+    final initial = widget.initialQuery?.trim() ?? '';
+    if (initial.isNotEmpty) _searchController.text = initial;
+    if (initial.length >= _minQueryLength) {
+      _isLoading = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _performSearch(initial, remember: true);
+      });
+    }
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    // Sonuç veren son arama, sayfadan çıkarken son aramalara eklenir (yarım
+    // yazılmış ya da sonuçsuz sorgular kaydedilmez).
+    final last = _lastSuccessfulQuery;
+    if (last != null && _recentsLoaded) {
+      unawaited(_writeRecentSearches(_withRecent(_recentSearches, last)));
+    }
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
+  // --- Son aramalar ----------------------------------------------------------
+
   Future<void> _loadRecentSearches() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() => _recentSearches =
-          prefs.getStringList('recent_product_searches') ?? []);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList(_recentSearchesKey) ?? [];
+      if (!mounted) return;
+      setState(() {
+        _recentSearches = saved;
+        _recentsLoaded = true;
+      });
+    } catch (e) {
+      AppLogger.debug('Son aramalar okunamadı: $e');
     }
   }
 
-  Future<void> _saveRecentSearch(String query) async {
-    final normalized = query.trim();
-    if (normalized.isEmpty) return;
-    final updated = [
-      normalized,
-      ..._recentSearches
-          .where((item) => item.toLowerCase() != normalized.toLowerCase())
-    ].take(6).toList();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('recent_product_searches', updated);
-    if (mounted) setState(() => _recentSearches = updated);
+  /// [query]'yi başa ekler; aynısını ve onun yarım yazılmış hallerini
+  /// ("çik" → "çikolata") listeden çıkarır. [query] listedeki bir aramanın
+  /// yarım hali ise onun yerine o tam arama başa alınır.
+  static List<String> _withRecent(List<String> current, String query) {
+    final key = TurkishText.normalize(query);
+    // a, b'nin kelime ortasında kesilmiş başı mı ("çik" / "çikolata")
+    bool isPartial(String a, String b) =>
+        a.length < b.length && b.startsWith(a) && b[a.length] != ' ';
+
+    var first = query;
+    for (final entry in current) {
+      if (isPartial(key, TurkishText.normalize(entry))) {
+        first = entry;
+        break;
+      }
+    }
+    final firstKey = TurkishText.normalize(first);
+    return [
+      first,
+      ...current.where((entry) {
+        final k = TurkishText.normalize(entry);
+        return k != firstKey && !isPartial(k, firstKey);
+      }),
+    ].take(_maxRecentSearches).toList();
   }
 
-  Future<void> _clearRecentSearches() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('recent_product_searches');
-    if (mounted) setState(() => _recentSearches = []);
+  static Future<void> _writeRecentSearches(List<String> searches) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (searches.isEmpty) {
+        await prefs.remove(_recentSearchesKey);
+      } else {
+        await prefs.setStringList(_recentSearchesKey, searches);
+      }
+    } catch (e) {
+      AppLogger.debug('Son aramalar kaydedilemedi: $e');
+    }
   }
 
-  // Kategori önerileri (filtre ve "Kategorilerde keşfet" çipleri):
-  // aktif kategoriler sunucudan okunur.
+  void _rememberSearch(String query) {
+    if (!_recentsLoaded) return;
+    final updated = _withRecent(_recentSearches, query);
+    setState(() => _recentSearches = updated);
+    unawaited(_writeRecentSearches(updated));
+  }
+
+  void _removeRecentSearch(String query) {
+    final updated = _recentSearches.where((item) => item != query).toList();
+    setState(() => _recentSearches = updated);
+    unawaited(_writeRecentSearches(updated));
+  }
+
+  void _clearRecentSearches() {
+    setState(() => _recentSearches = []);
+    unawaited(_writeRecentSearches(const []));
+  }
+
+  // --- Reyonlar --------------------------------------------------------------
+
+  // Kategori önerileri (filtre ve "Kategorilere göz at" çipleri): aktif
+  // kategoriler sunucudan okunur.
   Future<void> _loadSuggestions() async {
     try {
       final categories = await _apiService.getCategories();
       if (!mounted) return;
       setState(() {
-        _suggestions = [
+        _categories = [
           for (final category in categories)
-            if (category.isActive) category.name,
+            if (category.isActive) category,
         ];
       });
     } catch (e) {
@@ -104,9 +211,19 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     }
   }
 
-  // Akıllı arama
-  Future<void> _performSearch(String query) async {
-    if (query.trim().isEmpty) return;
+  void _openCategory(Category category) {
+    FocusScope.of(context).unfocus();
+    context.push('/category', extra: category);
+  }
+
+  // --- Arama -----------------------------------------------------------------
+
+  // Akıllı arama. [remember]: kullanıcı aramayı bilerek yaptı (klavyeden ara,
+  // son arama çipi); sonuç varsa son aramalara eklenir.
+  Future<void> _performSearch(String query, {bool remember = false}) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    _debounce?.cancel();
 
     // Yalnızca en son başlatılan aramanın sonucu ekrana yazılır; yavaş dönen
     // eski bir yanıt yeni sonucu ezemez.
@@ -114,6 +231,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
 
     setState(() {
       _isLoading = true;
+      _error = null;
     });
 
     try {
@@ -121,7 +239,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
         query: query,
         category: _selectedCategory.isNotEmpty ? _selectedCategory : null,
         minPrice: _minPrice > 0 ? _minPrice : null,
-        maxPrice: _maxPrice < 1000 ? _maxPrice : null,
+        maxPrice: _maxPriceFilter < _maxPrice ? _maxPriceFilter : null,
         sort: _sortBy,
       );
 
@@ -144,283 +262,399 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
         _searchResults = products;
         _isLoading = false;
         _hasSearched = true;
+        _shownQuery = trimmed;
       });
-      await _saveRecentSearch(query);
+      if (products.isNotEmpty) {
+        _lastSuccessfulQuery = trimmed;
+        if (remember) _rememberSearch(trimmed);
+      }
     } catch (e) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _isLoading = false;
+        _error = e.toString();
       });
-      showMarketSnack(context, 'Arama yapılamadı. Lütfen tekrar deneyin.', error: true);
+      // Sonuçlar ekrandaysa korunur; hata kısa bir bildirimle söylenir.
+      if (_searchResults.isNotEmpty) {
+        showMarketSnack(
+          context,
+          'Arama yapılamadı. Bağlantını kontrol edip tekrar dene.',
+          error: true,
+        );
+      }
     }
   }
 
   void _onQueryChanged(String value) {
-    setState(() {});
     _debounce?.cancel();
-    if (value.trim().length >= 2) {
-      _debounce = Timer(
-        const Duration(milliseconds: 380),
-        () => _performSearch(value),
-      );
+    if (value.trim().length < _minQueryLength) {
+      // Kutu boşaldı ya da tek harf kaldı: eski sonuçlar ve yoldaki istek
+      // bırakılır, boş ekran (son aramalar, reyonlar) geri gelir.
+      _searchRequestId++;
+      setState(() {
+        _searchResults = [];
+        _hasSearched = false;
+        _isLoading = false;
+        _error = null;
+        _shownQuery = '';
+      });
+      return;
     }
+    // İstek kısa bir beklemeden sonra gider; o sırada yükleniyor gösterilir.
+    setState(() => _isLoading = true);
+    _debounce = Timer(
+      const Duration(milliseconds: 380),
+      () => _performSearch(value),
+    );
+  }
+
+  void _onSubmitted(String value) {
+    _debounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+    // Aynı sorgunun sonuçları zaten ekrandaysa tekrar istek atılmaz.
+    if (trimmed == _shownQuery && !_isLoading && _error == null) {
+      if (_searchResults.isNotEmpty) _rememberSearch(trimmed);
+      return;
+    }
+    _performSearch(value, remember: true);
+  }
+
+  void _searchFor(String text) {
+    _searchController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    FocusScope.of(context).unfocus();
+    _performSearch(text, remember: true);
   }
 
   void _clearQuery() {
     _debounce?.cancel();
+    _searchRequestId++;
     _searchController.clear();
     setState(() {
       _searchResults = [];
       _hasSearched = false;
+      _isLoading = false;
+      _error = null;
+      _shownQuery = '';
     });
+    _searchFocus.requestFocus();
   }
 
   void _research() {
-    if (_searchController.text.trim().isNotEmpty) {
-      _performSearch(_searchController.text);
-    }
+    if (_query.isNotEmpty) _performSearch(_searchController.text);
   }
 
   void _resetFilters() {
     setState(() {
       _selectedCategory = '';
       _minPrice = 0;
-      _maxPrice = 1000;
-      _sortBy = 'createdAt';
+      _maxPriceFilter = _maxPrice;
+      _sortBy = _defaultSort;
     });
     _research();
   }
 
+  String _priceLabel(double min, double max) {
+    if (min > 0 && max >= _maxPrice) return '${formatTlShort(min)} ve üzeri';
+    if (min <= 0) return '${formatTlShort(max)} altı';
+    return '${formatTlShort(min)} – ${formatTlShort(max)}';
+  }
+
+  // --- Görünüm ---------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final fieldHeight = math.max(52.0, scaler.scale(16) * 1.45 + 28);
+    final bottomGap = MediaQuery.paddingOf(context).bottom + 24;
+
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
+      // Gövde sepet çubuğunun arkasına uzanır; alt boşluk paddingOf'tan gelir.
+      extendBody: true,
+      bottomNavigationBar: const BrowseCartBar(),
       body: CustomScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: MarketScrollPhysics(),
+        ),
         slivers: [
-          SliverToBoxAdapter(
-            child: MarketHeader(
-              title: 'Ürün ara',
-              compact: true,
-              bottom: _buildSearchField(),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _SearchBarDelegate(
+              extent: fieldHeight + 24,
+              child: _buildSearchBar(fieldHeight),
             ),
           ),
-          SliverToBoxAdapter(child: _buildFilterChips()),
-          _buildSliverResults(),
+          if (_hasQuery) SliverToBoxAdapter(child: _buildFilterChips()),
+          ..._buildBody(bottomGap),
         ],
       ),
     );
   }
 
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      autofocus: true,
-      textInputAction: TextInputAction.search,
-      onChanged: _onQueryChanged,
-      onSubmitted: _performSearch,
-      style: MarketText.body(size: 16),
-      decoration: InputDecoration(
-        hintText: 'Ürün, kategori veya marka ara',
-        prefixIcon: const Icon(Icons.search_rounded, color: MarketPalette.green),
-        suffixIcon: _searchController.text.isNotEmpty
-            ? IconButton(
-                tooltip: 'Temizle',
-                icon: const Icon(Icons.close_rounded),
-                onPressed: _clearQuery,
-              )
-            : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(MarketRadius.md),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(MarketRadius.md),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(MarketRadius.md),
-          borderSide: const BorderSide(color: MarketPalette.lime, width: 2),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterChips() {
-    final categoryLabel = _selectedCategory.isEmpty
-        ? 'Kategori'
-        : categoryDisplayName(_selectedCategory);
-    final priceLabel = _priceFiltered
-        ? '${formatTlShort(_minPrice)} – ${formatTlShort(_maxPrice)}'
-        : 'Fiyat';
-
-    return SizedBox(
-      height: 64,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+  Widget _buildSearchBar(double fieldHeight) {
+    final gutter = MarketSpace.gutterOf(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 16),
+      child: Row(
         children: [
-          _FilterChip(
-            icon: Icons.tune_rounded,
-            label: 'Filtreler',
-            active: _hasFilters,
-            onTap: _openFilters,
+          MarketHeaderButton(
+            icon: Icons.arrow_back_rounded,
+            tooltip: 'Geri',
+            onTap: _pop,
           ),
-          const SizedBox(width: 8),
-          _FilterChip(
-            icon: Icons.grid_view_rounded,
-            label: categoryLabel,
-            active: _selectedCategory.isNotEmpty,
-            onTap: _openFilters,
-          ),
-          const SizedBox(width: 8),
-          _FilterChip(
-            icon: Icons.sell_outlined,
-            label: priceLabel,
-            active: _priceFiltered,
-            onTap: _openFilters,
-          ),
-          const SizedBox(width: 8),
-          _FilterChip(
-            icon: Icons.swap_vert_rounded,
-            label: _sortLabels[_sortBy] ?? 'Sıralama',
-            active: _sortBy != 'createdAt',
-            onTap: _openFilters,
-          ),
-          if (_hasFilters) ...[
-            const SizedBox(width: 4),
-            TextButton(onPressed: _resetFilters, child: const Text('Sıfırla')),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openFilters() async {
-    var category = _selectedCategory;
-    var range = RangeValues(_minPrice, _maxPrice);
-    var sort = _sortBy;
-
-    final applied = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: MarketPalette.canvas,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * .85,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 5,
-                    margin: const EdgeInsets.only(top: 10, bottom: 12),
-                    decoration: BoxDecoration(
-                      color: MarketPalette.lineStrong,
-                      borderRadius: BorderRadius.circular(MarketRadius.sm),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Semantics(
+              container: true,
+              header: true,
+              label: 'Ürün ara',
+              child: SizedBox(
+                height: fieldHeight,
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocus,
+                  autofocus: widget.initialQuery == null,
+                  textInputAction: TextInputAction.search,
+                  onChanged: _onQueryChanged,
+                  onSubmitted: _onSubmitted,
+                  style: MarketText.body(size: 16),
+                  textAlignVertical: TextAlignVertical.center,
+                  decoration: InputDecoration(
+                    hintText: 'Ürün veya marka ara',
+                    filled: true,
+                    fillColor: MarketPalette.surface,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      color: MarketPalette.green,
+                      size: 22,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            tooltip: 'Aramayı temizle',
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: _clearQuery,
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MarketRadius.md),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MarketRadius.md),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MarketRadius.md),
+                      borderSide:
+                          const BorderSide(color: MarketPalette.lime, width: 2),
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text('Filtreler', style: MarketText.title(size: 22))),
-                      TextButton(
-                        onPressed: () => setSheetState(() {
-                          category = '';
-                          range = const RangeValues(0, 1000);
-                          sort = 'createdAt';
-                        }),
-                        child: const Text('Temizle'),
-                      ),
-                    ],
-                  ),
-                ),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                    children: [
-                      Text('Kategori', style: MarketText.heading(size: 16)),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Tümü'),
-                            selected: category.isEmpty,
-                            onSelected: (_) => setSheetState(() => category = ''),
-                          ),
-                          for (final item in _suggestions)
-                            ChoiceChip(
-                              label: Text(categoryDisplayName(item)),
-                              selected: category == item,
-                              onSelected: (_) => setSheetState(() => category = item),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          Expanded(child: Text('Fiyat aralığı', style: MarketText.heading(size: 16))),
-                          Text(
-                            '${formatTlShort(range.start)} – ${formatTlShort(range.end)}${range.end >= 1000 ? '+' : ''}',
-                            style: MarketText.label(color: MarketPalette.greenDark),
-                          ),
-                        ],
-                      ),
-                      RangeSlider(
-                        values: range,
-                        min: 0,
-                        max: 1000,
-                        divisions: 20,
-                        labels: RangeLabels(
-                          formatTlShort(range.start),
-                          formatTlShort(range.end),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _pop() {
+    final router = GoRouter.maybeOf(context);
+    if (router == null) {
+      Navigator.of(context).maybePop();
+    } else if (router.canPop()) {
+      router.pop();
+    } else {
+      router.go('/home');
+    }
+  }
+
+  Widget _buildFilterChips() {
+    final count = _activeFilterCount;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: BrowseChipRow(
+        padding:
+            EdgeInsets.symmetric(horizontal: MarketSpace.gutterOf(context)),
+        children: [
+          MarketChip(
+            label: 'Filtrele',
+            icon: Icons.tune_rounded,
+            selected: count > 0,
+            badgeCount: count > 0 ? count : null,
+            onTap: _openFilters,
+          ),
+          MarketChip(
+            label: _sortBy == _defaultSort
+                ? 'Sırala'
+                : (_sortLabels[_sortBy] ?? 'Sırala'),
+            icon: Icons.swap_vert_rounded,
+            dropdown: true,
+            selected: _sortBy != _defaultSort,
+            onTap: _openSort,
+            semanticLabel: 'Sırala, ${_sortLabels[_sortBy] ?? 'Önerilen'}',
+          ),
+          if (_selectedCategory.isNotEmpty)
+            MarketChip(
+              label: categoryDisplayName(_selectedCategory),
+              leading: Text(
+                categoryEmoji(_selectedCategory),
+                style: MarketText.emoji(16),
+              ),
+              selected: true,
+              onTap: _openFilters,
+              onClear: () {
+                setState(() => _selectedCategory = '');
+                _research();
+              },
+            ),
+          if (_priceFiltered)
+            MarketChip(
+              label: _priceLabel(_minPrice, _maxPriceFilter),
+              icon: Icons.sell_outlined,
+              selected: true,
+              onTap: _openFilters,
+              onClear: () {
+                setState(() {
+                  _minPrice = 0;
+                  _maxPriceFilter = _maxPrice;
+                });
+                _research();
+              },
+            ),
+          if (_hasFilters) BrowseClearButton(onPressed: _resetFilters),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openSort() async {
+    FocusScope.of(context).unfocus();
+    final picked = await showBrowseSortSheet<String>(
+      context,
+      options: _sortLabels,
+      selected: _sortBy,
+    );
+    if (picked == null || picked == _sortBy || !mounted) return;
+    setState(() => _sortBy = picked);
+    _research();
+  }
+
+  Future<void> _openFilters() async {
+    FocusScope.of(context).unfocus();
+    var category = _selectedCategory;
+    var range = RangeValues(_minPrice, _maxPriceFilter);
+
+    final applied = await showMarketSheet<bool>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final rangeLabel = range.start <= 0 && range.end >= _maxPrice
+              ? 'Tümü'
+              : _priceLabel(range.start, range.end);
+          return MarketSheetScaffold(
+            header: const MarketSheetHeader(
+              title: 'Filtrele',
+              subtitle: 'Sonuçları kategoriye ve fiyata göre daralt.',
+            ),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Kategori', style: MarketText.heading(size: 16)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    MarketChip(
+                      label: 'Tümü',
+                      selected: category.isEmpty,
+                      onTap: () => setSheetState(() => category = ''),
+                    ),
+                    for (final item in _categories)
+                      MarketChip(
+                        label: categoryDisplayName(item.name),
+                        leading: Text(
+                          categoryEmoji(item.name),
+                          style: MarketText.emoji(16),
                         ),
-                        onChanged: (values) => setSheetState(() => range = values),
+                        selected: category == item.name,
+                        onTap: () => setSheetState(() => category = item.name),
                       ),
-                      const SizedBox(height: 12),
-                      Text('Sıralama', style: MarketText.heading(size: 16)),
-                      const SizedBox(height: 4),
-                      RadioGroup<String>(
-                        groupValue: sort,
-                        onChanged: (value) =>
-                            setSheetState(() => sort = value ?? 'createdAt'),
-                        child: Column(
-                          children: [
-                            for (final entry in _sortLabels.entries)
-                              RadioListTile<String>(
-                                value: entry.key,
-                                title: Text(entry.value),
-                                contentPadding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Fiyat aralığı',
+                        style: MarketText.heading(size: 16),
+                      ),
+                    ),
+                    Text(
+                      rangeLabel,
+                      style: MarketText.label(color: MarketPalette.greenDark),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                RangeSlider(
+                  values: range,
+                  min: 0,
+                  max: _maxPrice,
+                  divisions: 20,
+                  labels: RangeLabels(
+                    formatTlShort(range.start),
+                    range.end >= _maxPrice
+                        ? '${formatTlShort(range.end)}+'
+                        : formatTlShort(range.end),
+                  ),
+                  semanticFormatterCallback: (value) => value >= _maxPrice
+                      ? '${formatTlShort(value)} ve üzeri'
+                      : formatTlShort(value),
+                  onChanged: (values) => setSheetState(() => range = values),
+                ),
+              ],
+            ),
+            footer: Row(
+              children: [
+                TextButton(
+                  onPressed: category.isEmpty &&
+                          range.start <= 0 &&
+                          range.end >= _maxPrice
+                      ? null
+                      : () => setSheetState(() {
+                            category = '';
+                            range = const RangeValues(0, _maxPrice);
+                          }),
+                  style: TextButton.styleFrom(
+                    foregroundColor: MarketPalette.greenDark,
+                    minimumSize: const Size(88, MarketSize.button),
+                  ),
+                  child: const Text('Temizle'),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: FilledButton(
                     onPressed: () => Navigator.pop(sheetContext, true),
-                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-                    child: const Text('Sonuçları göster'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(MarketSize.button),
+                    ),
+                    child: const Text('Uygula'),
                   ),
                 ),
               ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
 
@@ -428,199 +662,410 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     setState(() {
       _selectedCategory = category;
       _minPrice = range.start;
-      _maxPrice = range.end;
-      _sortBy = sort;
+      _maxPriceFilter = range.end;
     });
     _research();
   }
 
-  Widget _buildSliverResults() {
-    if (_isLoading) {
-      return const SliverToBoxAdapter(child: MarketProductGridSkeleton());
-    }
+  List<Widget> _buildBody(double bottomGap) {
+    final gutter = MarketSpace.gutterOf(context);
 
-    if (_searchResults.isEmpty && _hasSearched && _searchController.text.isNotEmpty) {
-      return SliverFillRemaining(
-        hasScrollBody: false,
-        child: MarketEmptyState(
-          icon: Icons.search_off_rounded,
-          title: 'Sonuç bulunamadı',
-          message: _hasFilters
-              ? 'Filtreleri gevşetmeyi ya da farklı bir kelime denemeyi unutma.'
-              : 'Farklı bir kelimeyle veya marka adıyla tekrar dene.',
-          actionLabel: _hasFilters ? 'Filtreleri sıfırla' : null,
-          actionIcon: Icons.restart_alt_rounded,
-          onAction: _hasFilters ? _resetFilters : null,
+    if (!_hasQuery) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomGap),
+          sliver: SliverToBoxAdapter(child: _buildIdle()),
         ),
-      );
+      ];
     }
 
     if (_searchResults.isEmpty) {
-      return SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_recentSearches.isNotEmpty) ...[
-                Row(
-                  children: [
-                    Expanded(child: Text('Son aramaların', style: MarketText.heading(size: 16))),
-                    TextButton(
-                      onPressed: _clearRecentSearches,
-                      child: const Text('Temizle'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _recentSearches.map(_buildSearchChip).toList(),
-                ),
-                const SizedBox(height: 26),
-              ],
-              if (_suggestions.isNotEmpty) ...[
-                Text('Kategorilerde keşfet', style: MarketText.heading(size: 16)),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _suggestions.take(12).map(_buildCategoryChip).toList(),
-                ),
-                const SizedBox(height: 26),
-              ],
-              MarketCard(
-                shadow: false,
-                color: MarketPalette.greenSoft,
-                borderColor: MarketPalette.greenLine,
-                child: Row(
-                  children: [
-                    const MarketIconTile(
-                      icon: Icons.manage_search_rounded,
-                      size: 44,
-                      background: Colors.white,
-                    ),
-                    const SizedBox(width: 13),
-                    Expanded(
-                      child: Text(
-                        'En az 2 harf yaz; sonuçlar sen yazarken gelir. Filtrelerle kategori, fiyat ve sıralamayı daralt.',
-                        style: MarketText.body(color: MarketPalette.greenDeep, size: 13),
+      if (_isLoading) {
+        return [
+          SliverToBoxAdapter(
+            child: MarketProductGridSkeleton(
+              padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomGap),
+            ),
+          ),
+        ];
+      }
+      if (_error != null) {
+        return [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomGap),
+              child: MarketEmptyState.error(
+                title: 'Arama yapılamadı',
+                message: 'Bağlantını kontrol edip tekrar dene.',
+                onRetry: _research,
+              ),
+            ),
+          ),
+        ];
+      }
+      if (_hasSearched) {
+        return [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomGap),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  MarketEmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: '“$_shownQuery” için sonuç yok',
+                    message: _activeFilterCount > 0
+                        ? 'Filtreleri kaldırmayı ya da daha genel bir kelime denemeyi unutma.'
+                        : 'Yazımı kontrol et ya da daha genel bir kelime dene.',
+                    actionLabel:
+                        _activeFilterCount > 0 ? 'Filtreleri temizle' : null,
+                    actionIcon: Icons.filter_alt_off_rounded,
+                    onAction: _activeFilterCount > 0 ? _resetFilters : null,
+                  ),
+                  if (_categories.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: gutter),
+                      child: _buildCategorySection(
+                        title: 'Kategorilere göz at',
                       ),
                     ),
-                  ],
+                ],
+              ),
+            ),
+          ),
+        ];
+      }
+      // Bekleme süresi dolmadan: iskelet (boş ekran yanıp sönmesin).
+      return [
+        SliverToBoxAdapter(
+          child: MarketProductGridSkeleton(
+            padding: EdgeInsets.fromLTRB(gutter, 12, gutter, bottomGap),
+          ),
+        ),
+      ];
+    }
+
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Yeni sonuçlar yüklenirken eski ızgara durur; üstte ince bir
+              // çizgi ilerler (yer hep ayrılı, sayfa zıplamaz).
+              SizedBox(
+                height: 3,
+                child: _isLoading
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(MarketRadius.pill),
+                        child: const LinearProgressIndicator(
+                          minHeight: 3,
+                          color: MarketPalette.green,
+                          backgroundColor: MarketPalette.greenSoft,
+                          semanticsLabel: 'Aranıyor',
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 9),
+              Semantics(
+                header: true,
+                liveRegion: true,
+                child: Text(
+                  '“$_shownQuery” için ${_searchResults.length} ürün',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.heading(size: 17),
                 ),
               ),
             ],
           ),
         ),
-      );
-    }
-
-    return SliverMainAxisGroup(slivers: [
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 6, 22, 12),
-          child: Text(
-            '${_searchResults.length} ürün bulundu',
-            style: MarketText.label(color: MarketPalette.muted, size: 13),
-          ),
-        ),
       ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+        padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottomGap),
         sliver: SliverLayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.crossAxisExtent;
-            final columns = width >= 920 ? 4 : width >= 620 ? 3 : 2;
+            final columns = width >= 920
+                ? 4
+                : width >= 620
+                    ? 3
+                    : 2;
             return SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
-                mainAxisExtent: marketProductCardHeight,
-                crossAxisSpacing: 13,
-                mainAxisSpacing: 13,
+                mainAxisExtent: marketProductCardExtent(context),
+                crossAxisSpacing: MarketSpace.md,
+                mainAxisSpacing: MarketSpace.md,
               ),
               delegate: SliverChildBuilderDelegate(
-                (context, index) => MarketProductCard(product: _searchResults[index]),
+                (context, index) =>
+                    MarketProductCard(product: _searchResults[index]),
                 childCount: _searchResults.length,
               ),
             );
           },
         ),
       ),
-    ]);
+    ];
   }
 
-  Widget _buildSearchChip(String text) => ActionChip(
-        avatar: const Icon(Icons.history_rounded, size: 17, color: MarketPalette.muted),
-        label: Text(text),
-        onPressed: () {
-          _searchController.text = text;
-          _performSearch(text);
-          setState(() {});
-        },
-      );
+  /// Boş ekran: son aramalar, reyonlar ve kısa bir ipucu.
+  Widget _buildIdle() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_recentSearches.isNotEmpty) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    'Son aramaların',
+                    style: MarketText.heading(size: 16),
+                  ),
+                ),
+              ),
+              // Düğmenin iç boşluğu kenar boşluğuna taşar; "Temizle" yazısı
+              // sayfa kenarıyla hizalanır.
+              Transform.translate(
+                offset: const Offset(8, 0),
+                child: TextButton(
+                  onPressed: _clearRecentSearches,
+                  style: TextButton.styleFrom(
+                    foregroundColor: MarketPalette.greenDark,
+                    textStyle: MarketText.label(size: 13),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(48, MarketSize.control),
+                  ),
+                  child: const Text(
+                    'Temizle',
+                    semanticsLabel: 'Son aramaları temizle',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final text in _recentSearches)
+                _RecentSearchChip(
+                  label: text,
+                  onTap: () => _searchFor(text),
+                  onRemove: () => _removeRecentSearch(text),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+        ],
+        if (_categories.isNotEmpty) ...[
+          _buildCategorySection(title: 'Kategorilere göz at'),
+          const SizedBox(height: 24),
+        ],
+        const MarketNotice.info(
+          icon: Icons.lightbulb_outline_rounded,
+          text: 'Marka adıyla da arayabilirsin, ör. Ülker.',
+        ),
+      ],
+    );
+  }
 
-  Widget _buildCategoryChip(String text) => ActionChip(
-        avatar: Text(categoryEmoji(text), style: const TextStyle(fontSize: 16)),
-        label: Text(categoryDisplayName(text)),
-        onPressed: () {
-          setState(() => _selectedCategory = text);
-          _searchController.text = text;
-          _performSearch(text);
-        },
-      );
+  Widget _buildCategorySection({required String title}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(title, style: MarketText.heading(size: 16)),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final category in _categories.take(12))
+              MarketChip(
+                label: categoryDisplayName(category.name),
+                leading: _CategoryDot(name: category.name),
+                onTap: () => _openCategory(category),
+                semanticLabel:
+                    '${categoryDisplayName(category.name)} reyonunu aç',
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
-class _FilterChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
+// ---------------------------------------------------------------------------
+// Parçalar
+// ---------------------------------------------------------------------------
 
-  const _FilterChip({
-    required this.icon,
+/// Reyon çipinin solundaki renkli daire + emoji (ana sayfadaki kategori
+/// kutularıyla aynı tonlar).
+class _CategoryDot extends StatelessWidget {
+  final String name;
+
+  const _CategoryDot({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: categoryTint(name),
+        shape: BoxShape.circle,
+      ),
+      child: Text(categoryEmoji(name), style: MarketText.emoji(15)),
+    );
+  }
+}
+
+/// Son arama çipi: dokununca aynı aramayı yapar, ✕ ile listeden kaldırılır.
+/// Görünüm [MarketChip] ile aynıdır (40 pt hap, 48 pt dokunma alanı).
+class _RecentSearchChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _RecentSearchChip({
     required this.label,
-    required this.active,
     required this.onTap,
+    required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: active ? MarketPalette.greenSoft : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(MarketRadius.md),
-        side: BorderSide(color: active ? MarketPalette.green : MarketPalette.line),
-      ),
+    final chip = Material(
+      color: MarketPalette.surface,
+      shape: const StadiumBorder(side: BorderSide(color: MarketPalette.line)),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(MarketRadius.md),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 17, color: active ? MarketPalette.greenDark : MarketPalette.muted),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: MarketText.label(
-                  color: active ? MarketPalette.greenDeep : MarketPalette.ink,
-                  size: 13,
-                  weight: FontWeight.w600,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 40),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 12, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.history_rounded,
+                  size: 17,
+                  color: MarketPalette.muted,
                 ),
-              ),
-              const SizedBox(width: 2),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 18,
-                color: active ? MarketPalette.greenDark : MarketPalette.subtle,
-              ),
-            ],
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.label(size: 13, weight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Semantics(
+                  container: true,
+                  button: true,
+                  label: '“$label” aramasını kaldır',
+                  excludeSemantics: true,
+                  child: Tooltip(
+                    message: 'Kaldır',
+                    excludeFromSemantics: true,
+                    child: InkWell(
+                      onTap: onRemove,
+                      customBorder: const CircleBorder(),
+                      child: const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: MarketPalette.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+
+    return Semantics(
+      container: true,
+      button: true,
+      label: '“$label” ara',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: onTap,
+        // Çipin üstündeki/altındaki 4 pt da dokunmayı alır (48 pt hedef).
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: chip,
+        ),
+      ),
+    );
   }
+}
+
+/// Üstte sabit duran arama çubuğu (geri + arama kutusu).
+class _SearchBarDelegate extends SliverPersistentHeaderDelegate {
+  final double extent;
+  final Widget child;
+
+  _SearchBarDelegate({required this.extent, required this.child});
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return SizedBox.expand(
+      child: ColoredBox(
+        // Köşelerin arkası, içerik henüz çubuğun altına girmemişken zemin
+        // rengindedir (ana sayfadaki arama bandı gibi).
+        color: overlapsContent ? Colors.transparent : MarketPalette.canvas,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: MarketPalette.headerGradient,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(MarketRadius.xl),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: MarketPalette.greenDeep
+                    .withValues(alpha: overlapsContent ? .18 : 0),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  // Arama kutusu ve temizle düğmesi her yeniden çizimde yeni durumla gelir.
+  @override
+  bool shouldRebuild(covariant _SearchBarDelegate oldDelegate) => true;
 }

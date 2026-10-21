@@ -1,10 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flash_sale.dart';
+import '../../models/product.dart';
+import '../../services/image_url.dart';
 import '../../viewmodels/flash_sale_viewmodel.dart';
+import 'category_presentation.dart';
 import 'market_product_card.dart';
 import 'market_ui.dart';
 
@@ -83,7 +87,8 @@ class _FlashCountdownState extends State<FlashCountdown> {
   Widget build(BuildContext context) => widget.builder(context, _remaining);
 }
 
-/// Ürün kartındaki "⚡ %20" rozeti.
+/// Ürün kartındaki "⚡ %20" rozeti. Düz kırmızı zemin: beyaz metin her
+/// yerinde okunur (gradyanın turuncu ucunda kontrast ~2:1'e düşüyordu).
 class FlashBadge extends StatelessWidget {
   final double discountPercentage;
 
@@ -92,15 +97,15 @@ class FlashBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(6, 4, 8, 4),
+      padding: const EdgeInsets.fromLTRB(5, 3, 8, 3),
       decoration: BoxDecoration(
-        gradient: flashSaleGradient,
-        borderRadius: BorderRadius.circular(MarketRadius.sm),
+        color: MarketPalette.red,
+        borderRadius: BorderRadius.circular(MarketRadius.xs),
         boxShadow: [
           BoxShadow(
-            color: MarketPalette.red.withValues(alpha: .25),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: MarketPalette.red.withValues(alpha: .22),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -108,7 +113,7 @@ class FlashBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.bolt_rounded, color: Colors.white, size: 15),
-          const SizedBox(width: 2),
+          const SizedBox(width: 1),
           Text(
             '%${discountPercentage.round()}',
             style: MarketText.label(
@@ -123,7 +128,28 @@ class FlashBadge extends StatelessWidget {
   }
 }
 
-/// Kartın görsel alanına konan küçük geri sayım.
+/// Ekran okuyucu için dakika hassasiyetinde kalan süre: "3 saat 12 dakika".
+/// (Saniye saniye değişen etiket sürekli yeniden okunuyordu.)
+String spokenFlashRemaining(Duration remaining) {
+  if (remaining <= Duration.zero) return 'Kampanya sona erdi';
+  final days = remaining.inDays;
+  final hours = remaining.inHours % 24;
+  final minutes = remaining.inMinutes % 60;
+  final String text;
+  if (days > 0) {
+    text = hours > 0 ? '$days gün $hours saat' : '$days gün';
+  } else if (remaining.inHours > 0) {
+    text = minutes > 0 ? '$hours saat $minutes dakika' : '$hours saat';
+  } else if (minutes > 0) {
+    text = '$minutes dakika';
+  } else {
+    text = 'bir dakikadan az';
+  }
+  return 'Kampanyanın bitmesine $text';
+}
+
+/// Kartın görsel alanına ve flash sale başlığına konan küçük geri sayım.
+/// Son bir saatte kırmızıya döner.
 class FlashTimerChip extends StatelessWidget {
   final DateTime endDate;
 
@@ -133,29 +159,34 @@ class FlashTimerChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return FlashCountdown(
       endDate: endDate,
-      builder: (context, remaining) => Semantics(
-        label: 'Flash sale bitimine ${formatFlashRemaining(remaining)}',
-        excludeSemantics: true,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
-          decoration: BoxDecoration(
-            color: MarketPalette.ink.withValues(alpha: .86),
-            borderRadius: BorderRadius.circular(MarketRadius.pill),
+      builder: (context, remaining) {
+        final urgent = remaining < const Duration(hours: 1);
+        return Semantics(
+          label: spokenFlashRemaining(remaining),
+          excludeSemantics: true,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
+            decoration: BoxDecoration(
+              color: urgent
+                  ? MarketPalette.red
+                  : MarketPalette.ink.withValues(alpha: .86),
+              borderRadius: BorderRadius.circular(MarketRadius.pill),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.timer_outlined, color: Colors.white, size: 13),
+                const SizedBox(width: 4),
+                Text(
+                  formatFlashRemaining(remaining),
+                  style: MarketText.code(color: Colors.white, size: 11)
+                      .copyWith(letterSpacing: 0),
+                ),
+              ],
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.timer_outlined, color: Colors.white, size: 13),
-              const SizedBox(width: 4),
-              Text(
-                formatFlashRemaining(remaining),
-                style: MarketText.code(color: Colors.white, size: 11)
-                    .copyWith(letterSpacing: 0),
-              ),
-            ],
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -326,9 +357,13 @@ class _TimeBox extends StatelessWidget {
   }
 }
 
-/// Süren flash sale ürünlerinin yatay rafı. [productIds] verilirse yalnızca
+/// Süren flash sale ürünlerinin bandı. [productIds] verilirse yalnızca
 /// o ürünler (ör. açık kategorideki ürünler) gösterilir. Kampanya yoksa
 /// hiç yer kaplamaz.
+///
+/// Tek ürün varsa yatay bir vitrin kartı, birden çok ürün varsa kart rafı
+/// gösterilir. Geri sayım başlıkta bir kez, en erken biten kampanyaya göre
+/// gösterilir.
 class FlashSaleShelf extends StatelessWidget {
   final Set<String>? productIds;
   final EdgeInsetsGeometry padding;
@@ -350,73 +385,311 @@ class FlashSaleShelf extends StatelessWidget {
             .toList();
         if (sales.isEmpty) return const SizedBox.shrink();
 
+        final endsAt = sales
+            .map((sale) => sale.endDate)
+            .reduce((a, b) => a.isBefore(b) ? a : b);
+        final width = MediaQuery.sizeOf(context).width;
+        final gutter = MarketSpace.gutterOf(context);
+        final spotlight = sales.length == 1 && width < 620;
+
         return Padding(
           padding: padding,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [MarketPalette.redSoft, MarketPalette.orangeSoft],
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 16, 0, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: gutter),
+                    child: _FlashHeader(count: sales.length, endsAt: endsAt),
+                  ),
+                  const SizedBox(height: MarketSpace.md),
+                  if (spotlight)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: gutter),
+                      child: _FlashSpotlightTile(sale: sales.first),
+                    )
+                  else
+                    SizedBox(
+                      height: marketProductCardExtent(context),
+                      child: ListView.separated(
+                        padding: EdgeInsets.symmetric(horizontal: gutter),
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        clipBehavior: Clip.none,
+                        itemCount: sales.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: MarketSpace.md),
+                        itemBuilder: (context, index) => SizedBox(
+                          width: width < 360 ? 140 : 156,
+                          child: MarketProductCard(
+                            product: sales[index].product,
+                            hero: false,
+                            showFlashTimer: sales[index].endDate != endsAt,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FlashHeader extends StatelessWidget {
+  final int count;
+  final DateTime endsAt;
+
+  const _FlashHeader({required this.count, required this.endsAt});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            gradient: flashSaleGradient,
+            borderRadius: BorderRadius.circular(MarketRadius.sm),
+          ),
+          child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  'Flash Sale',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.heading(size: 18),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                count == 1
+                    ? 'Sınırlı süreli indirim'
+                    : '$count üründe sınırlı süreli indirim',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: MarketText.caption(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        FlashTimerChip(endDate: endsAt),
+      ],
+    );
+  }
+}
+
+/// Tek flash sale ürünü için yatay vitrin kartı (rafın yarısı boş kalmasın).
+class _FlashSpotlightTile extends StatelessWidget {
+  final FlashSale sale;
+
+  const _FlashSpotlightTile({required this.sale});
+
+  @override
+  Widget build(BuildContext context) {
+    final product = context.select<FlashSaleViewModel, Product>(
+      (flash) => flash.latest(sale.product),
+    );
+    final narrow = MediaQuery.sizeOf(context).width < 360;
+    final imageSize = narrow ? 96.0 : 112.0;
+    final showOld = product.price > product.actualPrice;
+    final savings = product.price - product.actualPrice;
+    final discount = product.isDiscounted
+        ? product.discountPercentage
+        : sale.discountPercentage;
+    final name = productDisplayName(product.name);
+
+    final label = StringBuffer('$name, ${formatTl(product.actualPrice)}');
+    if (showOld) {
+      label.write(', eski fiyat ${formatTl(product.price)}, '
+          '%${discount.round()} indirim');
+    }
+    if (product.isOutOfStock) label.write(', stokta yok');
+
+    return Semantics(
+      container: true,
+      label: label.toString(),
+      child: Material(
+        color: MarketPalette.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(MarketRadius.lg),
+          side: const BorderSide(color: MarketPalette.redLine),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => context.push('/product', extra: product),
+          child: Stack(
+            children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.all(10),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        gradient: flashSaleGradient,
-                        borderRadius: BorderRadius.circular(MarketRadius.sm),
-                      ),
-                      child: const Icon(
-                        Icons.bolt_rounded,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    SizedBox.square(
+                      dimension: imageSize,
+                      child: Stack(
                         children: [
-                          Text('Flash Sale', style: MarketText.title(size: 22)),
-                          const SizedBox(height: 2),
-                          Text(
-                            sales.length == 1
-                                ? 'Sınırlı süreli indirim'
-                                : '${sales.length} üründe sınırlı süreli indirim',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: MarketText.caption(size: 13),
+                          Positioned.fill(
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: MarketPalette.surface,
+                                borderRadius:
+                                    BorderRadius.circular(MarketRadius.md),
+                                border: Border.all(color: MarketPalette.line),
+                              ),
+                              child: product.image.isEmpty
+                                  ? const Icon(Icons.inventory_2_outlined,
+                                      color: MarketPalette.subtle, size: 34)
+                                  : Image.network(
+                                      optimizedImageUrl(product.image,
+                                          width: MarketImageSize.card),
+                                      fit: BoxFit.contain,
+                                      cacheWidth: 300,
+                                      excludeFromSemantics: true,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.inventory_2_outlined,
+                                          color: MarketPalette.subtle,
+                                          size: 34),
+                                    ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 6,
+                            top: 6,
+                            child: FlashBadge(discountPercentage: discount),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    FlashTimerChip(endDate: sales.first.endDate),
+                    const SizedBox(width: MarketSpace.md),
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: imageSize),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ExcludeSemantics(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 40),
+                                    child: Text(
+                                      product.category.trim().isEmpty
+                                          ? 'Flash Sale'
+                                          : categoryDisplayName(
+                                              product.category),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MarketText.caption(
+                                          size: 11, weight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 40),
+                                    child: Text(
+                                      name,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MarketText.label(size: 14)
+                                          .copyWith(height: 1.3),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
+                                      children: [
+                                        Text(
+                                          formatTl(product.actualPrice),
+                                          style: MarketText.price(
+                                              color: MarketPalette.red,
+                                              size: 18),
+                                        ),
+                                        if (showOld) ...[
+                                          const SizedBox(width: 6),
+                                          Text(formatTl(product.price),
+                                              style: MarketText.oldPrice()),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: showOld
+                                      ? ExcludeSemantics(
+                                          child: Text(
+                                            '${formatTl(savings)} tasarruf',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: MarketText.label(
+                                                color: MarketPalette.greenDark,
+                                                size: 12),
+                                          ),
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                                if (product.isOutOfStock)
+                                  const MarketPill(
+                                    label: 'Stokta yok',
+                                    background: MarketPalette.fill,
+                                    foreground: MarketPalette.muted,
+                                  )
+                                else
+                                  MarketCartButton(product: product),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: marketProductCardHeight,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: sales.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 13),
-                  itemBuilder: (context, index) => SizedBox(
-                    width: 172,
-                    child: MarketProductCard(
-                      product: sales[index].product,
-                      hero: false,
-                    ),
-                  ),
-                ),
+              // Favori düğmesi kartın sağ üst köşesinde (görselde rozetle
+              // çakışmasın diye)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: MarketFavoriteButton(product: product),
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
+import 'widgets/feedback_parts.dart';
+import 'widgets/market_mascot.dart';
 import 'widgets/market_ui.dart';
 
 class FeedbackPage extends StatefulWidget {
@@ -16,13 +19,14 @@ class FeedbackPage extends StatefulWidget {
 class _FeedbackPageState extends State<FeedbackPage> {
   final _formKey = GlobalKey<FormState>();
   final _messageController = TextEditingController();
+  final _ratingKey = GlobalKey();
   int _rating = 0;
+  bool _ratingMissing = false;
   bool _isSubmitting = false;
-
-  static const _ratingTexts = ['Çok kötü', 'Kötü', 'Orta', 'İyi', 'Mükemmel'];
 
   /// Yönetici yanıtı ya da telafi kuponu olan önceki geri bildirimler
   List<Map<String, dynamic>> _answered = [];
+  bool _loadingAnswered = true;
 
   @override
   void initState() {
@@ -31,10 +35,14 @@ class _FeedbackPageState extends State<FeedbackPage> {
   }
 
   Future<void> _loadAnswered() async {
-    if (!context.read<AuthViewModel>().isLoggedIn) return;
+    if (!context.read<AuthViewModel>().isLoggedIn) {
+      if (mounted) setState(() => _loadingAnswered = false);
+      return;
+    }
     final items = await ApiService().getMyFeedbacks();
     if (!mounted) return;
     setState(() {
+      _loadingAnswered = false;
       _answered = items.where((item) {
         final reply = item['adminReply'];
         final comp = item['compensation'];
@@ -51,9 +59,19 @@ class _FeedbackPageState extends State<FeedbackPage> {
   }
 
   Future<void> _submitFeedback() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_rating == 0) {
-      showMarketSnack(context, 'Lütfen bir puan ver', error: true);
+    final formValid = _formKey.currentState!.validate();
+    final ratingMissing = _rating == 0;
+    if (!formValid || ratingMissing) {
+      HapticFeedback.mediumImpact();
+      setState(() => _ratingMissing = ratingMissing);
+      if (ratingMissing && _ratingKey.currentContext != null) {
+        Scrollable.ensureVisible(
+          _ratingKey.currentContext!,
+          duration: feedbackMotion(context, const Duration(milliseconds: 300)),
+          curve: Curves.easeOutCubic,
+          alignment: .1,
+        );
+      }
       return;
     }
 
@@ -68,6 +86,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         category: 'Genel',
       );
       if (!mounted) return;
+      HapticFeedback.lightImpact();
       showMarketSnack(context, 'Geri bildirimin için teşekkürler!');
       context.pop();
     } catch (e) {
@@ -127,50 +146,32 @@ class _FeedbackPageState extends State<FeedbackPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (_answered.isNotEmpty) ...[
-                          Text('Yanıtlarımız', style: MarketText.heading(size: 16)),
-                          const SizedBox(height: 10),
-                          for (final item in _answered) _AnsweredFeedbackCard(item: item),
-                          const SizedBox(height: 12),
-                          Text('Yeni geri bildirim', style: MarketText.heading(size: 16)),
-                          const SizedBox(height: 10),
-                        ],
                         MarketCard(
+                          key: _ratingKey,
+                          borderColor: _ratingMissing ? MarketPalette.red : MarketPalette.line,
                           child: Column(
                             children: [
-                              Text('Deneyimini nasıl değerlendirirsin?',
-                                  textAlign: TextAlign.center,
-                                  style: MarketText.heading(size: 16)),
-                              const SizedBox(height: 14),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(5, (index) {
-                                  final selected = index < _rating;
-                                  return IconButton(
-                                    tooltip: _ratingTexts[index],
-                                    iconSize: 40,
-                                    onPressed: () => setState(() => _rating = index + 1),
-                                    icon: Icon(
-                                      selected ? Icons.star_rounded : Icons.star_outline_rounded,
-                                      color: selected
-                                          ? MarketPalette.orange
-                                          : MarketPalette.lineStrong,
-                                    ),
-                                  );
-                                }),
+                              Semantics(
+                                header: true,
+                                child: Text('Deneyimini nasıl değerlendirirsin?',
+                                    textAlign: TextAlign.center,
+                                    style: MarketText.heading(size: 16)),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _rating == 0
-                                    ? 'Puan vermek için yıldızlara dokun'
-                                    : _ratingTexts[_rating - 1],
-                                style: MarketText.label(
-                                  color: _rating == 0
-                                      ? MarketPalette.muted
-                                      : MarketPalette.orangeInk,
-                                  size: 14,
-                                ),
+                              const SizedBox(height: MarketSpace.sm),
+                              FeedbackStars(
+                                value: _rating,
+                                size: 40,
+                                onChanged: _isSubmitting
+                                    ? null
+                                    : (value) => setState(() {
+                                          _rating = value;
+                                          _ratingMissing = false;
+                                        }),
                               ),
+                              if (_ratingMissing) ...[
+                                const SizedBox(height: MarketSpace.sm),
+                                const FeedbackFieldError('Bir puan seç'),
+                              ],
                             ],
                           ),
                         ),
@@ -179,11 +180,18 @@ class _FeedbackPageState extends State<FeedbackPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Mesajın', style: MarketText.heading(size: 16)),
+                              Semantics(
+                                header: true,
+                                child: Text('Mesajın', style: MarketText.heading(size: 16)),
+                              ),
                               const SizedBox(height: 12),
                               TextFormField(
                                 controller: _messageController,
+                                enabled: !_isSubmitting,
                                 style: MarketText.body(size: 14),
+                                textCapitalization: TextCapitalization.sentences,
+                                // Klavye açılınca "Gönder" de görünsün
+                                scrollPadding: const EdgeInsets.only(bottom: 120),
                                 decoration: const InputDecoration(
                                   hintText: 'Neyi sevdin, neyi geliştirelim?',
                                   fillColor: MarketPalette.canvas,
@@ -205,20 +213,11 @@ class _FeedbackPageState extends State<FeedbackPage> {
                           ),
                         ),
                         const SizedBox(height: 22),
-                        FilledButton(
-                          onPressed: _isSubmitting ? null : _submitFeedback,
-                          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
-                          child: _isSubmitting
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Gönder'),
+                        FeedbackSubmitButton(
+                          busy: _isSubmitting,
+                          onPressed: _submitFeedback,
                         ),
+                        ..._buildHistory(),
                       ],
                     ),
                   ),
@@ -227,6 +226,33 @@ class _FeedbackPageState extends State<FeedbackPage> {
       ),
     );
   }
+
+  /// Önceki geri bildirimler formun ALTINDA: yüklenince form yerinden oynamaz.
+  List<Widget> _buildHistory() {
+    if (!_loadingAnswered && _answered.isEmpty) return const [];
+    return [
+      const SizedBox(height: MarketSpace.section),
+      Semantics(
+        header: true,
+        child: Text('Önceki geri bildirimlerin', style: MarketText.heading(size: 18)),
+      ),
+      const SizedBox(height: 4),
+      Text('Ekibimizin yanıtları ve telafi kuponların', style: MarketText.caption()),
+      const SizedBox(height: MarketSpace.md),
+      if (_loadingAnswered)
+        const MarketSkeletonPulse(
+          child: Column(
+            children: [
+              MarketSkeleton(height: 96, radius: MarketRadius.lg),
+              SizedBox(height: 10),
+              MarketSkeleton(height: 96, radius: MarketRadius.lg),
+            ],
+          ),
+        )
+      else
+        for (final item in _answered) _AnsweredFeedbackCard(item: item),
+    ];
+  }
 }
 
 /// Önceki geri bildirim + yönetici yanıtı (+ varsa telafi kuponu)
@@ -234,15 +260,24 @@ class _AnsweredFeedbackCard extends StatelessWidget {
   final Map<String, dynamic> item;
   const _AnsweredFeedbackCard({required this.item});
 
+  void _copyCode(BuildContext context, String code) {
+    Clipboard.setData(ClipboardData(text: code));
+    HapticFeedback.selectionClick();
+    showMarketSnack(context, 'Kupon kodu kopyalandı', icon: Icons.copy_rounded);
+  }
+
   @override
   Widget build(BuildContext context) {
     final reply = item['adminReply'] is Map ? item['adminReply'] as Map : const {};
     final replyText = (reply['text'] ?? '').toString().trim();
     final comp = item['compensation'] is Map ? item['compensation'] as Map : const {};
     final code = (comp['code'] ?? '').toString();
-    final amount = (comp['amount'] as num?)?.toInt() ?? 0;
+    final amount = (comp['amount'] as num?) ?? 0;
     final message = (item['message'] ?? '').toString().trim();
     final title = (item['title'] ?? '').toString().trim();
+    final rating = (item['rating'] as num?)?.toInt() ?? 0;
+    final created = DateTime.tryParse((item['createdAt'] ?? '').toString());
+    final date = created == null ? '' : formatTrDateTime(created, withTime: false);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: MarketCard(
@@ -250,9 +285,42 @@ class _AnsweredFeedbackCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (title.isNotEmpty) Text(title, style: MarketText.caption()),
-            if (message.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title.isEmpty ? 'Geri bildirim' : title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: MarketText.label(size: 13, color: MarketPalette.inkSoft),
+                  ),
+                ),
+                if (date.isNotEmpty) ...[
+                  const SizedBox(width: MarketSpace.sm),
+                  Text(date, style: MarketText.caption()),
+                ],
+              ],
+            ),
+            if (rating > 0) ...[
               const SizedBox(height: 4),
+              Semantics(
+                label: '5 üzerinden $rating yıldız',
+                child: ExcludeSemantics(
+                  child: Row(
+                    children: [
+                      for (var star = 1; star <= 5; star++)
+                        Icon(
+                          star <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                          size: 14,
+                          color: star <= rating ? MarketPalette.orange : MarketPalette.subtle,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (message.isNotEmpty) ...[
+              const SizedBox(height: 6),
               Text(message, maxLines: 3, overflow: TextOverflow.ellipsis, style: MarketText.body(size: 13)),
             ],
             if (replyText.isNotEmpty) ...[
@@ -269,7 +337,7 @@ class _AnsweredFeedbackCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.storefront_rounded, size: 16, color: MarketPalette.greenDark),
+                        const ExcludeSemantics(child: MarketMascot(size: 22)),
                         const SizedBox(width: 6),
                         Text('Benim Marketim', style: MarketText.label(color: MarketPalette.greenDark, size: 12)),
                       ],
@@ -282,15 +350,66 @@ class _AnsweredFeedbackCard extends StatelessWidget {
             ],
             if (code.isNotEmpty) ...[
               const SizedBox(height: 10),
-              MarketNotice(
-                icon: Icons.card_giftcard_rounded,
-                text: '$amount TL telafi kuponun: $code. Sepette kupon olarak kullanabilirsin.',
-                background: MarketPalette.orangeSoft,
-                foreground: MarketPalette.orangeInk,
+              _CompensationCoupon(
+                code: code,
+                amount: amount,
+                onCopy: () => _copyCode(context, code),
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Telafi kuponu: tutar, kod ve "Kopyala".
+class _CompensationCoupon extends StatelessWidget {
+  final String code;
+  final num amount;
+  final VoidCallback onCopy;
+
+  const _CompensationCoupon({required this.code, required this.amount, required this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: MarketPalette.orangeSoft,
+        borderRadius: BorderRadius.circular(MarketRadius.md),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.card_giftcard_rounded, color: MarketPalette.orangeInk, size: 20),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  amount > 0 ? '${formatTlShort(amount)} telafi kuponun hazır' : 'Telafi kuponun hazır',
+                  style: MarketText.label(color: MarketPalette.orangeInk, size: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(code, style: MarketText.code(color: MarketPalette.ink, size: 14)),
+                const SizedBox(height: 2),
+                Text('Sepette kupon olarak kullanabilirsin.',
+                    style: MarketText.caption(color: MarketPalette.orangeInk)),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onCopy,
+            style: TextButton.styleFrom(
+              foregroundColor: MarketPalette.orangeInk,
+              minimumSize: const Size(0, MarketSize.tapTarget),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: Text('Kopyala', semanticsLabel: 'Kupon kodunu kopyala: $code'),
+          ),
+        ],
       ),
     );
   }

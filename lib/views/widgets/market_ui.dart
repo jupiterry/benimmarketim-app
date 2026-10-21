@@ -1,11 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../services/turkish_text.dart';
 import 'market_palette.dart';
 
 export 'market_palette.dart';
 export 'market_scroll.dart';
+export 'market_sheet.dart';
 
 // ---------------------------------------------------------------------------
 // Tipografi: başlıklar Manrope, metinler Inter. En küçük metin 11 px.
@@ -76,8 +79,9 @@ abstract final class MarketText {
         fontWeight: weight,
       );
 
-  /// Bölüm üstündeki küçük büyük harfli etiket.
-  static TextStyle eyebrow({Color color = MarketPalette.green}) =>
+  /// Bölüm üstündeki küçük büyük harfli etiket (metni TurkishText.toUpper ile
+  /// büyütülür).
+  static TextStyle eyebrow({Color color = MarketPalette.greenDark}) =>
       GoogleFonts.inter(
         color: color,
         fontSize: 11,
@@ -101,6 +105,21 @@ abstract final class MarketText {
         fontWeight: FontWeight.w700,
         letterSpacing: 1,
       );
+
+  /// İndirimden önceki, üstü çizili fiyat.
+  static TextStyle oldPrice({double size = 12, Color color = MarketPalette.muted}) =>
+      GoogleFonts.inter(
+        color: color,
+        fontSize: size,
+        height: 1.2,
+        fontWeight: FontWeight.w600,
+        decoration: TextDecoration.lineThrough,
+        decorationColor: color,
+        decorationThickness: 1.6,
+      );
+
+  /// Tek başına duran emoji (kategori simgesi vb.).
+  static TextStyle emoji(double size) => GoogleFonts.inter(fontSize: size, height: 1);
 }
 
 /// Türk Lirası biçimi: ₺1.249,90
@@ -127,6 +146,85 @@ String formatTlShort(num value) {
 }
 
 // ---------------------------------------------------------------------------
+// Metin biçimleri
+// ---------------------------------------------------------------------------
+
+const String _nbsp = '\u00A0';
+
+// Rakam + birim ("400 g", "1 L", "10 lu", "4 x"). Birimden sonra harf gelirse
+// eşleşmez ("1 Lira", "3 Lezzet").
+final RegExp _unitAfterNumber = RegExp(
+  r'(\d)\s+(?=(?:kg|kilo|gr|gram|g|mg|litre|lt|l|ml|cl|cc|adet|paket|li|lı|lu|lü|x|×)(?![A-Za-zÇĞİÖŞÜçğıöşü]))',
+  caseSensitive: false,
+);
+// Çoklu paket: "4 x 100 g", "6×200 ml"
+final RegExp _packSize = RegExp(r'\d\s*[x×]\s*\d', caseSensitive: false);
+// Sondaki birim parantezi: "Bütün Piliç (kg)"
+final RegExp _unitParenthesis = RegExp(
+  r'\s+(?=\((?:kg|gr|g|adet|lt|l|ml|demet|paket)\))',
+  caseSensitive: false,
+);
+final RegExp _whitespace = RegExp(r'\s+');
+
+/// Ürün adını ekranda göstermek için hazırlar: sayı ile birimi ("400 g",
+/// "4×100 g") ve sondaki "(kg)" gibi birim parantezini bölünmez boşlukla
+/// birbirine bağlar; böylece birim tek başına alt satıra düşmez.
+///
+/// Yalnızca gösterim içindir; API'ye, aramaya ya da analitiğe giden ad
+/// değiştirilmez.
+String productDisplayName(String name) {
+  return name
+      .replaceAllMapped(_packSize, (m) => m[0]!.replaceAll(_whitespace, _nbsp))
+      .replaceAllMapped(_unitAfterNumber, (m) => '${m[1]}$_nbsp')
+      .replaceAll(_unitParenthesis, _nbsp);
+}
+
+/// Telefon numarasını "0532 123 45 67" biçiminde gösterir. Türk numarasına
+/// benzemiyorsa (10–11 hane, +90 ile 12 hane) girdiyi olduğu gibi döndürür.
+String formatPhoneTr(String raw) {
+  var digits = raw.replaceAll(RegExp(r'\D'), '');
+  if (digits.length == 12 && digits.startsWith('90')) digits = digits.substring(2);
+  if (digits.length == 10 && !digits.startsWith('0')) digits = '0$digits';
+  if (digits.length != 11 || !digits.startsWith('0')) return raw;
+  return '${digits.substring(0, 4)} ${digits.substring(4, 7)} '
+      '${digits.substring(7, 9)} ${digits.substring(9)}';
+}
+
+const List<String> _trMonths = [
+  'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+];
+
+/// Bir anı Türkiye saatine (UTC+3) çevirir. Dönen değer UTC işaretlidir ama
+/// alanları (gün, saat) Türkiye'deki duvar saatidir.
+DateTime turkeyTime(DateTime time) => time.toUtc().add(const Duration(hours: 3));
+
+/// Tarihi Türkiye saatiyle kısa ve okunur yazar: "Bugün 04:40", "Dün 22:15",
+/// "18 Eki 03:05"; başka bir yıldaysa "18 Eki 2025 03:05". [withTime] false
+/// ise yalnızca gün ("Bugün", "18 Eki"). [now] testler içindir.
+String formatTrDateTime(DateTime time, {bool withTime = true, DateTime? now}) {
+  final local = turkeyTime(time);
+  final today = turkeyTime(now ?? DateTime.now());
+  final dayDiff = DateTime.utc(today.year, today.month, today.day)
+      .difference(DateTime.utc(local.year, local.month, local.day))
+      .inDays;
+  final String day;
+  if (dayDiff == 0) {
+    day = 'Bugün';
+  } else if (dayDiff == 1) {
+    day = 'Dün';
+  } else if (dayDiff == -1) {
+    day = 'Yarın';
+  } else {
+    final date = '${local.day} ${_trMonths[local.month - 1]}';
+    day = local.year == today.year ? date : '$date ${local.year}';
+  }
+  if (!withTime) return day;
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$day $hour:$minute';
+}
+
+// ---------------------------------------------------------------------------
 // Sayfa başlığı (koyu yeşil, alt köşeleri yuvarlak)
 // ---------------------------------------------------------------------------
 
@@ -139,6 +237,9 @@ class MarketHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final List<Widget> actions;
   final Widget? bottom;
+
+  /// Alt sayfalar için kısa başlık: geri butonu, başlık ve aksiyonlar tek
+  /// satırda durur (simge kutusu gösterilmez). Ekranın çok daha azını kaplar.
   final bool compact;
 
   const MarketHeader({
@@ -154,8 +255,17 @@ class MarketHeader extends StatelessWidget {
     this.compact = false,
   });
 
+  static const _decoration = BoxDecoration(
+    gradient: MarketPalette.headerGradient,
+    borderRadius: BorderRadius.vertical(bottom: Radius.circular(MarketRadius.xl)),
+  );
+
+  bool get _hasSubtitle => subtitle != null && subtitle!.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
+    if (compact) return _buildCompact(context);
+
     // Geri butonu her zaman görünür; geri gidilecek sayfa yoksa ana sayfaya
     // döner (bildirim / doğrudan link ile açılan sayfalarda kullanıcı kalmaz).
     final canPop = showBack;
@@ -167,7 +277,7 @@ class MarketHeader extends StatelessWidget {
         ] else if (icon != null) ...[
           MarketIconTile(
             icon: icon!,
-            size: compact ? 42 : 48,
+            size: 48,
             background: MarketPalette.lime,
             foreground: MarketPalette.greenDeep,
           ),
@@ -178,13 +288,16 @@ class MarketHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: MarketText.title(color: Colors.white),
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.title(color: Colors.white),
+                ),
               ),
-              if (subtitle != null && subtitle!.isNotEmpty) ...[
+              if (_hasSubtitle) ...[
                 const SizedBox(height: 3),
                 Text(
                   subtitle!,
@@ -210,25 +323,21 @@ class MarketHeader extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: MarketPalette.headerGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(MarketRadius.xl)),
-      ),
+      decoration: _decoration,
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (canPop)
             Padding(
-              padding: EdgeInsets.only(bottom: compact ? 14 : 20),
+              padding: const EdgeInsets.only(bottom: 20),
               child: Row(
                 children: [
-                  if (canPop)
-                    MarketHeaderButton(
-                      icon: Icons.arrow_back_rounded,
-                      tooltip: 'Geri',
-                      onTap: onBack ?? () => _pop(context),
-                    ),
+                  MarketHeaderButton(
+                    icon: Icons.arrow_back_rounded,
+                    tooltip: 'Geri',
+                    onTap: onBack ?? () => _pop(context),
+                  ),
                   const Spacer(),
                   for (var i = 0; i < actions.length; i++) ...[
                     if (i > 0) const SizedBox(width: 8),
@@ -240,6 +349,80 @@ class MarketHeader extends StatelessWidget {
           titleRow,
           if (bottom != null) ...[
             const SizedBox(height: 18),
+            bottom!,
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Tek satır: [geri | leading | simge kutusu] başlık/alt başlık [aksiyonlar].
+  Widget _buildCompact(BuildContext context) {
+    final lead = <Widget>[
+      if (showBack)
+        MarketHeaderButton(
+          icon: Icons.arrow_back_rounded,
+          tooltip: 'Geri',
+          onTap: onBack ?? () => _pop(context),
+        ),
+      if (leading != null)
+        leading!
+      else if (!showBack && icon != null)
+        MarketIconTile(
+          icon: icon!,
+          size: 42,
+          background: MarketPalette.lime,
+          foreground: MarketPalette.greenDeep,
+        ),
+    ];
+    return Container(
+      width: double.infinity,
+      decoration: _decoration,
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottom == null ? 18 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              for (final widget in lead) ...[widget, const SizedBox(width: 12)],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MarketText.title(color: Colors.white, size: 20),
+                      ),
+                    ),
+                    if (_hasSubtitle) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: MarketText.caption(
+                          color: Colors.white.withValues(alpha: .74),
+                          size: 13,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              for (var i = 0; i < actions.length; i++) ...[
+                SizedBox(width: i == 0 ? 12 : 8),
+                actions[i],
+              ],
+            ],
+          ),
+          if (bottom != null) ...[
+            const SizedBox(height: 14),
             bottom!,
           ],
         ],
@@ -275,38 +458,46 @@ class MarketHeaderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Material(
-            color: Colors.white.withValues(alpha: .12),
-            borderRadius: BorderRadius.circular(MarketRadius.md),
-            child: InkWell(
-              onTap: onTap,
+    return Semantics(
+      button: true,
+      label: badgeCount > 0 ? '$tooltip, $badgeCount' : tooltip,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: tooltip,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Material(
+              color: Colors.white.withValues(alpha: .12),
               borderRadius: BorderRadius.circular(MarketRadius.md),
-              child: SizedBox(
-                width: 46,
-                height: 46,
-                child: Icon(icon, color: Colors.white, size: 22),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(MarketRadius.md),
+                child: SizedBox(
+                  width: MarketSize.headerButton,
+                  height: MarketSize.headerButton,
+                  child: Icon(icon, color: Colors.white, size: 22),
+                ),
               ),
             ),
-          ),
-          if (badgeCount > 0)
-            Positioned(
-              right: -4,
-              top: -4,
-              child: MarketCountBadge(count: badgeCount, outline: MarketPalette.greenDeep),
-            ),
-        ],
+            if (badgeCount > 0)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: MarketCountBadge(count: badgeCount, outline: MarketPalette.greenDeep),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
 /// Sayı rozeti (sepet, okunmamış mesaj). Lime zemin + koyu metin: yüksek kontrast.
-class MarketCountBadge extends StatelessWidget {
+/// Sayı artınca kısa bir büyüyüp küçülme ile dikkat çeker ("hareketi azalt"
+/// açıksa durağan kalır).
+class MarketCountBadge extends StatefulWidget {
   final int count;
   final Color outline;
 
@@ -317,23 +508,62 @@ class MarketCountBadge extends StatelessWidget {
   });
 
   @override
+  State<MarketCountBadge> createState() => _MarketCountBadgeState();
+}
+
+class _MarketCountBadgeState extends State<MarketCountBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bump = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+  );
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(begin: 1.0, end: 1.2).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 40,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 1.2, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)),
+      weight: 60,
+    ),
+  ]).animate(_bump);
+
+  @override
+  void didUpdateWidget(covariant MarketCountBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.count > oldWidget.count && !MediaQuery.disableAnimationsOf(context)) {
+      _bump.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _bump.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 5),
-      decoration: BoxDecoration(
-        color: MarketPalette.lime,
-        borderRadius: BorderRadius.circular(MarketRadius.sm),
-        border: Border.all(color: outline, width: 2),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        count > 99 ? '99+' : '$count',
-        style: GoogleFonts.inter(
-          color: MarketPalette.greenDeep,
-          fontSize: 11,
-          height: 1.1,
-          fontWeight: FontWeight.w800,
+    final count = widget.count;
+    return ScaleTransition(
+      scale: _scale,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: MarketPalette.lime,
+          borderRadius: BorderRadius.circular(MarketRadius.sm),
+          border: Border.all(color: widget.outline, width: 2),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          count > 99 ? '99+' : '$count',
+          style: GoogleFonts.inter(
+            color: MarketPalette.greenDeep,
+            fontSize: 11,
+            height: 1.1,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -435,6 +665,14 @@ class MarketSectionTitle extends StatelessWidget {
   final VoidCallback? onAction;
   final Widget? trailing;
 
+  /// İç sayfa bölümleri için sade başlık: 18 pt başlık, tek satır alt başlık,
+  /// üst etiket (eyebrow) gösterilmez. Eylem 44 pt dokunma alanlı "Tümü ›".
+  final bool dense;
+
+  /// Eylem yoksa başlığın yanında "[count] [countLabel]" hapı gösterilir.
+  final int? count;
+  final String countLabel;
+
   const MarketSectionTitle({
     super.key,
     required this.title,
@@ -443,10 +681,19 @@ class MarketSectionTitle extends StatelessWidget {
     this.actionLabel,
     this.onAction,
     this.trailing,
+    this.dense = false,
+    this.count,
+    this.countLabel = 'ürün',
   });
+
+  bool get _hasAction => actionLabel != null && onAction != null;
 
   @override
   Widget build(BuildContext context) {
+    return dense ? _buildDense() : _buildRegular();
+  }
+
+  Widget _buildRegular() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -455,10 +702,13 @@ class MarketSectionTitle extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (eyebrow != null) ...[
-                Text(eyebrow!, style: MarketText.eyebrow()),
+                Text(TurkishText.toUpper(eyebrow!), style: MarketText.eyebrow()),
                 const SizedBox(height: 5),
               ],
-              Text(title, style: MarketText.title(size: 22)),
+              Semantics(
+                header: true,
+                child: Text(title, style: MarketText.title(size: 22)),
+              ),
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
                 Text(subtitle!, style: MarketText.caption(size: 13)),
@@ -467,21 +717,84 @@ class MarketSectionTitle extends StatelessWidget {
           ),
         ),
         if (trailing != null) trailing!,
-        if (actionLabel != null && onAction != null)
+        if (_hasAction)
           TextButton.icon(
             onPressed: onAction,
             iconAlignment: IconAlignment.end,
             icon: const Icon(Icons.arrow_forward_rounded, size: 17),
-            label: Text(actionLabel!),
+            label: Text(actionLabel!, semanticsLabel: '$actionLabel: $title'),
             style: TextButton.styleFrom(
               foregroundColor: MarketPalette.greenDark,
               textStyle: MarketText.label(size: 13),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             ),
-          ),
+          )
+        else if (count != null) ...[
+          const SizedBox(width: 8),
+          _countPill(),
+        ],
       ],
     );
   }
+
+  Widget _buildDense() {
+    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
+    return Row(
+      crossAxisAlignment: hasSubtitle ? CrossAxisAlignment.end : CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.heading(size: 18),
+                ),
+              ),
+              if (hasSubtitle) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.caption(size: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+        if (_hasAction)
+          TextButton.icon(
+            onPressed: onAction,
+            iconAlignment: IconAlignment.end,
+            icon: const Icon(Icons.chevron_right_rounded, size: 18),
+            label: Text(actionLabel!, semanticsLabel: '$actionLabel: $title'),
+            style: TextButton.styleFrom(
+              foregroundColor: MarketPalette.greenDark,
+              textStyle: MarketText.label(size: 13),
+              minimumSize: const Size(MarketSize.control, MarketSize.control),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+          )
+        else if (count != null) ...[
+          const SizedBox(width: 8),
+          _countPill(),
+        ],
+      ],
+    );
+  }
+
+  Widget _countPill() => MarketPill(
+        label: '$count $countLabel',
+        background: MarketPalette.fill,
+        foreground: MarketPalette.muted,
+      );
 }
 
 class MarketPill extends StatelessWidget {
@@ -540,6 +853,10 @@ class MarketEmptyState extends StatelessWidget {
   /// Verilirse simge kutusunun yerine gösterilir (ör. maskot).
   final Widget? illustration;
 
+  /// Ana butonun altında ikincil, yazı görünümlü eylem (ör. "Aramayı temizle").
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
+
   const MarketEmptyState({
     super.key,
     required this.icon,
@@ -551,10 +868,30 @@ class MarketEmptyState extends StatelessWidget {
     this.tint = MarketPalette.greenDark,
     this.tintSoft = MarketPalette.greenSoft,
     this.illustration,
+    this.secondaryLabel,
+    this.onSecondary,
   });
+
+  /// Bağlantı / sunucu hatası: aynı simge, metin ve "Tekrar dene" butonu.
+  const MarketEmptyState.error({
+    super.key,
+    required VoidCallback onRetry,
+    this.title = 'Bağlantı kurulamadı',
+    this.message = 'İnternet bağlantını kontrol edip tekrar dene.',
+    this.illustration,
+    this.secondaryLabel,
+    this.onSecondary,
+  })  : icon = Icons.cloud_off_rounded,
+        actionLabel = 'Tekrar dene',
+        actionIcon = Icons.refresh_rounded,
+        onAction = onRetry,
+        tint = MarketPalette.orangeInk,
+        tintSoft = MarketPalette.orangeSoft;
 
   @override
   Widget build(BuildContext context) {
+    final hasAction = actionLabel != null && onAction != null;
+    final hasSecondary = secondaryLabel != null && onSecondary != null;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(32, 24, 32, 40),
@@ -574,10 +911,13 @@ class MarketEmptyState extends StatelessWidget {
                     child: Icon(icon, size: 52, color: tint),
                   ),
               const SizedBox(height: 24),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: MarketText.title(size: 22),
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: MarketText.title(size: 22),
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -585,13 +925,24 @@ class MarketEmptyState extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: MarketText.body(color: MarketPalette.muted, size: 14),
               ),
-              if (actionLabel != null && onAction != null) ...[
+              if (hasAction) ...[
                 const SizedBox(height: 26),
                 FilledButton.icon(
                   onPressed: onAction,
                   icon: Icon(actionIcon ?? Icons.arrow_forward_rounded, size: 20),
                   label: Text(actionLabel!),
-                  style: FilledButton.styleFrom(minimumSize: const Size(220, 54)),
+                  style: FilledButton.styleFrom(minimumSize: const Size(220, MarketSize.button)),
+                ),
+              ],
+              if (hasSecondary) ...[
+                SizedBox(height: hasAction ? 8 : 22),
+                TextButton(
+                  onPressed: onSecondary,
+                  style: TextButton.styleFrom(
+                    foregroundColor: MarketPalette.greenDark,
+                    minimumSize: const Size(220, MarketSize.tapTarget),
+                  ),
+                  child: Text(secondaryLabel!),
                 ),
               ],
             ],
@@ -617,7 +968,13 @@ class MarketMenuGroup extends StatelessWidget {
         if (title != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-            child: Text(title!.toUpperCase(), style: MarketText.eyebrow(color: MarketPalette.muted)),
+            child: Semantics(
+              header: true,
+              child: Text(
+                TurkishText.toUpper(title!),
+                style: MarketText.eyebrow(color: MarketPalette.muted),
+              ),
+            ),
           ),
         MarketCard(
           padding: EdgeInsets.zero,
@@ -697,13 +1054,33 @@ class MarketMenuTile extends StatelessWidget {
   }
 }
 
-/// Miktar seçici (sepet, ürün detay).
+/// Miktar seçici (sepet, ürün kartı, ürün detay).
+///
+/// Görünür boyutlar: [compact] 44 × 90, normal 44 × 108, [large] 54 × 124
+/// (satın alma çubuğunda 54 pt'lik butonla aynı boy). [height] verilirse
+/// yükseklik onunla değişir (48'den büyükse geniş düğmeler kullanılır).
+/// Seçicinin sol yarısı azaltır, sağ yarısı artırır; her yarı en az 44 pt
+/// genişliğindedir. Ekran okuyucu tek bir ayarlanabilir "Adet" denetimi ve
+/// ayrıca Azalt / Artır düğmeleri duyar.
 class MarketStepper extends StatelessWidget {
   final int quantity;
   final VoidCallback onMinus;
   final VoidCallback onPlus;
   final bool compact;
   final IconData? minusIcon;
+
+  /// Satın alma çubuğu boyu (54).
+  final bool large;
+
+  /// Yüksekliği elle belirler (ör. 52'lik bir butonun yanında).
+  final double? height;
+
+  /// false ise ilgili düğme soluklaşır ve dokunulmaz (ör. en az / en çok adet).
+  final bool canDecrement;
+  final bool canIncrement;
+
+  /// Ekran okuyucunun duyduğu ad.
+  final String semanticLabel;
 
   const MarketStepper({
     super.key,
@@ -712,43 +1089,87 @@ class MarketStepper extends StatelessWidget {
     required this.onPlus,
     this.compact = false,
     this.minusIcon,
+    this.large = false,
+    this.height,
+    this.canDecrement = true,
+    this.canIncrement = true,
+    this.semanticLabel = 'Adet',
   });
 
   @override
   Widget build(BuildContext context) {
-    final height = compact ? 38.0 : 44.0;
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
+    final h = height ?? (large ? MarketSize.button : MarketSize.control);
+    final wide = large || h > 48;
+    final step = wide ? 46.0 : (compact ? 34.0 : 40.0);
+    final countWidth = wide ? 32.0 : (compact ? 22.0 : 28.0);
+    final half = step + countWidth / 2;
+    final fontSize = wide ? 16.0 : (compact ? 13.0 : 14.0);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    final minusTooltip = !canDecrement
+        ? 'En az $quantity adet'
+        : quantity <= 1 && minusIcon != null
+            ? 'Sepetten çıkar'
+            : 'Azalt';
+    final plusTooltip = canIncrement ? 'Artır' : 'En fazla $quantity adet';
+
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      value: '$quantity',
+      increasedValue: canIncrement ? '${quantity + 1}' : null,
+      decreasedValue: canDecrement ? '${quantity - 1}' : null,
+      onIncrease: canIncrement ? onPlus : null,
+      onDecrease: canDecrement ? onMinus : null,
+      child: Material(
         color: MarketPalette.greenSoft,
         borderRadius: BorderRadius.circular(MarketRadius.md),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StepButton(
-            icon: minusIcon ?? Icons.remove_rounded,
-            onTap: onMinus,
-            size: height,
-            width: compact ? 30 : 40,
-            tooltip: quantity <= 1 && minusIcon != null ? 'Sepetten çıkar' : 'Azalt',
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: h,
+          width: half * 2,
+          child: Stack(
+            children: [
+              Row(
+                children: [
+                  _StepButton(
+                    icon: minusIcon ?? Icons.remove_rounded,
+                    onTap: canDecrement ? onMinus : null,
+                    width: half,
+                    iconWidth: step,
+                    alignment: Alignment.centerLeft,
+                    tooltip: minusTooltip,
+                    iconSize: wide ? 22 : 19,
+                  ),
+                  _StepButton(
+                    icon: Icons.add_rounded,
+                    onTap: canIncrement ? onPlus : null,
+                    width: half,
+                    iconWidth: step,
+                    alignment: Alignment.centerRight,
+                    tooltip: plusTooltip,
+                    iconSize: wide ? 22 : 19,
+                  ),
+                ],
+              ),
+              IgnorePointer(
+                child: ExcludeSemantics(
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 150),
+                      child: Text(
+                        '$quantity',
+                        key: ValueKey(quantity),
+                        textAlign: TextAlign.center,
+                        style: MarketText.label(color: MarketPalette.greenDeep, size: fontSize),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          SizedBox(
-            width: compact ? 22 : 28,
-            child: Text(
-              '$quantity',
-              textAlign: TextAlign.center,
-              style: MarketText.label(color: MarketPalette.greenDeep, size: compact ? 13 : 14),
-            ),
-          ),
-          _StepButton(
-            icon: Icons.add_rounded,
-            onTap: onPlus,
-            size: height,
-            width: compact ? 30 : 40,
-            tooltip: 'Artır',
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -756,17 +1177,21 @@ class MarketStepper extends StatelessWidget {
 
 class _StepButton extends StatelessWidget {
   final IconData icon;
-  final VoidCallback onTap;
-  final double size;
+  final VoidCallback? onTap;
   final double width;
+  final double iconWidth;
+  final Alignment alignment;
   final String tooltip;
+  final double iconSize;
 
   const _StepButton({
     required this.icon,
     required this.onTap,
-    required this.size,
     required this.width,
+    required this.iconWidth,
+    required this.alignment,
     required this.tooltip,
+    required this.iconSize,
   });
 
   @override
@@ -775,11 +1200,20 @@ class _StepButton extends StatelessWidget {
       message: tooltip,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(MarketRadius.sm),
         child: SizedBox(
           width: width,
-          height: size,
-          child: Icon(icon, color: MarketPalette.greenDark, size: 19),
+          height: double.infinity,
+          child: Align(
+            alignment: alignment,
+            child: SizedBox(
+              width: iconWidth,
+              child: Icon(
+                icon,
+                color: onTap == null ? MarketPalette.subtle : MarketPalette.greenDark,
+                size: iconSize,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -810,6 +1244,24 @@ class MarketNotice extends StatelessWidget {
     this.trailing,
   })  : background = MarketPalette.orangeSoft,
         foreground = MarketPalette.orangeInk;
+
+  /// Nötr bilgi (mavi): uyarı olmayan açıklamalar için.
+  const MarketNotice.info({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.trailing,
+  })  : background = MarketPalette.blueSoft,
+        foreground = MarketPalette.blue;
+
+  /// Olumlu durum (yeşil); varsayılan kurucuyla aynı görünür.
+  const MarketNotice.success({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.trailing,
+  })  : background = MarketPalette.greenSoft,
+        foreground = MarketPalette.greenDark;
 
   @override
   Widget build(BuildContext context) {
@@ -964,35 +1416,519 @@ class MarketListSkeleton extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Çip (filtre, sıralama, seçenek)
+// ---------------------------------------------------------------------------
+
+enum MarketChipTone { neutral, danger }
+
+/// Uygulamanın tek çip bileşeni: filtre, sıralama, seçenek ve açılır seçim.
+///
+/// Görünür yükseklik 40, dokunma alanı 48 (üst/alt 4 pt boşluk dahil).
+/// Seçiliyken yumuşak zemin + 1,5 pt vurgu çerçevesi; simge yoksa ✓ gösterilir.
+/// [dropdown] sağa açılır ok ekler; [onClear] verilirse ok yerine kendi
+/// dokunma alanı olan ✕ ("Filtreyi kaldır") çıkar.
+class MarketChip extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final Widget? leading;
+  final bool selected;
+  final VoidCallback? onTap;
+  final bool dropdown;
+  final VoidCallback? onClear;
+  final MarketChipTone tone;
+
+  /// Seçili çerçeve/simge, seçili zemin ve seçili metin rengi. Verilmezse
+  /// tona göre: nötr yeşil (green / greenSoft / greenDark), tehlike kırmızı.
+  final Color? accent;
+  final Color? accentSoft;
+  final Color? accentInk;
+
+  /// Etiketin yanında küçük sayı (ör. etkin filtre sayısı).
+  final int? badgeCount;
+
+  /// Seçiliyken simge yoksa ✓ gösterilsin mi.
+  final bool showCheck;
+
+  /// Ekran okuyucu etiketi (verilmezse [label]).
+  final String? semanticLabel;
+
+  final bool _onDark;
+
+  const MarketChip({
+    super.key,
+    required this.label,
+    this.icon,
+    this.leading,
+    this.selected = false,
+    this.onTap,
+    this.dropdown = false,
+    this.onClear,
+    this.tone = MarketChipTone.neutral,
+    this.accent,
+    this.accentSoft,
+    this.accentInk,
+    this.badgeCount,
+    this.showCheck = true,
+    this.semanticLabel,
+  }) : _onDark = false;
+
+  /// Koyu yeşil başlık üzerindeki çip: yarı saydam beyaz zemin; seçiliyken lime.
+  const MarketChip.onDark({
+    super.key,
+    required this.label,
+    this.icon,
+    this.leading,
+    this.selected = false,
+    this.onTap,
+    this.dropdown = false,
+    this.badgeCount,
+    this.semanticLabel,
+  })  : _onDark = true,
+        onClear = null,
+        tone = MarketChipTone.neutral,
+        accent = null,
+        accentSoft = null,
+        accentInk = null,
+        showCheck = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = tone == MarketChipTone.danger;
+    final accentColor = accent ?? (danger ? MarketPalette.red : MarketPalette.green);
+    final Color background;
+    final Color foreground;
+    final Color iconColor;
+    final BorderSide side;
+    if (_onDark) {
+      background = selected ? MarketPalette.lime : Colors.white.withValues(alpha: .12);
+      foreground = selected ? MarketPalette.greenDeep : Colors.white;
+      iconColor = selected ? MarketPalette.greenDeep : MarketPalette.lime;
+      side = BorderSide.none;
+    } else if (selected) {
+      background = accentSoft ?? (danger ? MarketPalette.redSoft : MarketPalette.greenSoft);
+      foreground = accentInk ?? (danger ? MarketPalette.red : MarketPalette.greenDark);
+      iconColor = accentColor;
+      side = BorderSide(color: accentColor, width: 1.5);
+    } else {
+      background = MarketPalette.surface;
+      foreground = MarketPalette.ink;
+      iconColor = MarketPalette.muted;
+      side = const BorderSide(color: MarketPalette.line);
+    }
+
+    final lead = leading ??
+        (icon != null
+            ? Icon(icon, size: 18, color: iconColor)
+            : selected && showCheck
+                ? Icon(Icons.check_rounded, size: 16, color: iconColor)
+                : null);
+    final count = badgeCount ?? 0;
+
+    final chip = Material(
+      color: background,
+      shape: StadiumBorder(side: side),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 40),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: lead == null ? 14 : 12,
+              right: onClear != null ? 4 : (dropdown ? 10 : 14),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (lead != null) ...[lead, const SizedBox(width: 6)],
+                Flexible(
+                  child: ExcludeSemantics(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MarketText.label(color: foreground, size: 13, weight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 18),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: MarketPalette.lime,
+                      borderRadius: BorderRadius.circular(MarketRadius.pill),
+                    ),
+                    child: Text(
+                      count > 99 ? '99+' : '$count',
+                      textAlign: TextAlign.center,
+                      style: MarketText.label(color: MarketPalette.greenDeep, size: 11, weight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+                if (onClear != null) ...[
+                  const SizedBox(width: 2),
+                  Semantics(
+                    container: true,
+                    button: true,
+                    label: 'Filtreyi kaldır',
+                    child: InkWell(
+                      onTap: onClear,
+                      customBorder: const CircleBorder(),
+                      child: SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Icon(Icons.close_rounded, size: 18, color: foreground),
+                      ),
+                    ),
+                  ),
+                ] else if (dropdown) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.expand_more_rounded, size: 18, color: foreground),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final text = semanticLabel ?? (count > 0 ? '$label, $count filtre etkin' : label);
+    return Semantics(
+      container: true,
+      button: true,
+      selected: selected,
+      enabled: onTap != null,
+      label: text,
+      child: ExcludeSemantics(
+        excluding: onClear == null,
+        // Çipin üstündeki/altındaki 4 pt da dokunmayı alır (48 pt hedef).
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: chip,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Alt eylem çubuğu (sepet, ödeme, ürün detay)
+// ---------------------------------------------------------------------------
+
+/// Sayfanın altına sabitlenen beyaz eylem çubuğu. Beyaz zemin ana ekran
+/// çubuğunun (home indicator) altına kadar uzanır; içerik güvenli alanda kalır.
+class MarketBottomBar extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  /// false ise alt güvenli alan eklenmez (ör. altında başka bir çubuk varsa).
+  final bool safeArea;
+
+  const MarketBottomBar({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 12),
+    this.safeArea = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: MarketPalette.surface,
+        border: const Border(top: BorderSide(color: MarketPalette.line)),
+        boxShadow: [
+          BoxShadow(
+            color: MarketPalette.greenDeep.withValues(alpha: .06),
+            blurRadius: 18,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        bottom: safeArea,
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+
+/// Toplam tutar + ana eylem: solda etiket, fiyat ve (varsa) kazanç; sağda
+/// geniş buton. [MarketBottomBar] içinde kullanılır.
+class MarketTotalAction extends StatelessWidget {
+  /// Tutarın üstündeki etiket ("Toplam", "Ödenecek").
+  final String label;
+  final double amount;
+
+  /// 0'dan büyükse "₺X kazanç" satırı gösterilir.
+  final double savings;
+  final String actionLabel;
+
+  /// null ise buton pasif görünür (ör. "₺38,60 daha ekle").
+  final VoidCallback? onPressed;
+
+  /// true iken buton yeşil kalır, yerine dönen gösterge çıkar ve dokunulmaz.
+  final bool loading;
+  final IconData? actionIcon;
+
+  const MarketTotalAction({
+    super.key,
+    required this.label,
+    required this.amount,
+    this.savings = 0,
+    required this.actionLabel,
+    this.onPressed,
+    this.loading = false,
+    this.actionIcon = Icons.arrow_forward_rounded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Row(
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth * .42),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: MarketText.caption()),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(formatTl(amount), style: MarketText.price(size: 22)),
+                  ),
+                  if (savings > 0)
+                    Text(
+                      '${formatTl(savings)} kazanç',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MarketText.caption(color: MarketPalette.greenDark, weight: FontWeight.w700),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: FilledButton(
+                onPressed: loading ? null : onPressed,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(MarketSize.button),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  disabledBackgroundColor: loading ? MarketPalette.green : null,
+                  disabledForegroundColor: loading ? Colors.white : null,
+                ),
+                child: loading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                      )
+                    // Dar ekranda / büyük yazıda önce ok simgesi düşer, sonra
+                    // metin iki satıra iner; yazı küçültülmez. Simge, metin
+                    // onunla tek satıra sığmıyorsa da gösterilmez.
+                    : LayoutBuilder(
+                        builder: (context, box) {
+                          var showIcon = actionIcon != null && box.maxWidth >= 170;
+                          if (showIcon) {
+                            final painter = TextPainter(
+                              text: TextSpan(text: actionLabel, style: DefaultTextStyle.of(context).style),
+                              textDirection: Directionality.of(context),
+                              textScaler: MediaQuery.textScalerOf(context),
+                              maxLines: 1,
+                            )..layout();
+                            showIcon = painter.width + 28 <= box.maxWidth;
+                            painter.dispose();
+                          }
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  actionLabel,
+                                  maxLines: 2,
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (showIcon) ...[
+                                const SizedBox(width: 8),
+                                Icon(actionIcon, size: 20),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Diyalog tonları ve bekleme göstergesi
+// ---------------------------------------------------------------------------
+
+/// Diyalog / onay pencerelerinin tonu: marka (yeşil), tehlike (kırmızı, silme
+/// gibi geri alınamayan işler), favori (pembe kalp).
+enum MarketTone { brand, danger, favorite }
+
+/// [task] bitene kadar ekranı "[message]" yazan bir bekleme kartıyla kilitler
+/// (geri tuşu ve dışarı dokunma kapatmaz), sonra kartı kapatıp sonucu döndürür.
+/// Hata olursa kart yine kapanır ve hata çağırana iletilir. [liveMessage]
+/// verilirse metin ilerledikçe güncellenir (ör. "3/5 ürün ekleniyor").
+Future<T> runWithMarketProgress<T>(
+  BuildContext context, {
+  required String message,
+  ValueListenable<String>? liveMessage,
+  required Future<T> Function() task,
+}) async {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final route = DialogRoute<void>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: MarketPalette.scrim,
+    builder: (_) => _MarketProgressCard(message: message, liveMessage: liveMessage),
+  );
+  navigator.push(route);
+  try {
+    return await task();
+  } finally {
+    if (route.isActive) {
+      if (route.isCurrent) {
+        navigator.pop();
+      } else {
+        navigator.removeRoute(route);
+      }
+    }
+  }
+}
+
+class _MarketProgressCard extends StatelessWidget {
+  final String message;
+  final ValueListenable<String>? liveMessage;
+
+  const _MarketProgressCard({required this.message, this.liveMessage});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget text(String value) => Text(
+          value,
+          textAlign: TextAlign.center,
+          style: MarketText.label(size: 14),
+        );
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: Material(
+            color: MarketPalette.surface,
+            borderRadius: BorderRadius.circular(MarketRadius.lg),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.6, color: MarketPalette.green),
+                  ),
+                  const SizedBox(height: 14),
+                  Semantics(
+                    liveRegion: true,
+                    child: liveMessage == null
+                        ? text(message)
+                        : ValueListenableBuilder<String>(
+                            valueListenable: liveMessage!,
+                            builder: (context, value, _) => text(value),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bildirim çubuğu (snackbar)
+// ---------------------------------------------------------------------------
+
 /// Uygulama genelinde aynı görünen bildirim çubuğu.
+///
+/// Scaffold yüzen çubuğu zaten alt gezinme çubuğunun ve varsa yüzen butonun
+/// üstüne yerleştirir; [aboveNavigation] bu yüzden artık etkisizdir (yalnızca
+/// eski çağrılar derlensin diye duruyor). Sayfanın alt kenarında Scaffold'un
+/// bilmediği bir çubuk varsa [bottomGap] kadar yukarı kaldırılır.
+///
+/// [actionLabel] + [onAction] verilirse sağda lime renkli eylem ("Geri al")
+/// çıkar ve süre 4 sn olur; aksi halde 2,6 sn.
 void showMarketSnack(
   BuildContext context,
   String message, {
   IconData icon = Icons.check_circle_rounded,
   bool error = false,
   bool aboveNavigation = false,
+  double bottomGap = 0,
+  String? actionLabel,
+  VoidCallback? onAction,
+  Duration? duration,
 }) {
+  final hasAction = actionLabel != null && onAction != null;
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(error ? Icons.error_outline_rounded : icon, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: MarketText.label(color: Colors.white, size: 13, weight: FontWeight.w600),
+        content: Semantics(
+          container: true,
+          liveRegion: true,
+          child: Row(
+            children: [
+              Icon(error ? Icons.error_outline_rounded : icon, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.label(color: Colors.white, size: 13, weight: FontWeight.w600),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         backgroundColor: error ? MarketPalette.red : MarketPalette.greenDeep,
-        margin: EdgeInsets.fromLTRB(16, 0, 16, aboveNavigation ? 104 : 16),
-        duration: const Duration(milliseconds: 1800),
+        margin: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomGap),
+        duration: duration ?? Duration(milliseconds: hasAction ? 4000 : 2600),
+        // Eylemli çubuk da süresi dolunca kapanır (Flutter'ın varsayılanı açık
+        // kalmak); ekran okuyucu açıksa eyleme ulaşılabilsin diye açık kalır.
+        persist: hasAction && MediaQuery.accessibleNavigationOf(context),
+        action: hasAction
+            ? SnackBarAction(
+                label: actionLabel,
+                textColor: MarketPalette.lime,
+                onPressed: onAction,
+              )
+            : null,
       ),
     );
 }

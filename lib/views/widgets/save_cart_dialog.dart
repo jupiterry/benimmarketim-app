@@ -1,66 +1,80 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
+import 'custom_dialog.dart';
 import 'market_ui.dart';
 
-/// Verilen ürün listesini favori sepet olarak kaydetmek için ad soran
-/// pencere. [items] her biri `{productId, quantity}` olan satırlardır.
-/// Kaydedildiyse true döner. Alt gezinme çubuğu olan ekranlardan açılıyorsa
-/// [aboveNavigation] true verilir ki bildirim çubuğun üstünde görünsün.
+/// Verilen ürün listesini favori sepet olarak kaydetmek için ad soran alt
+/// sayfa. [items] her biri `{productId, quantity}` olan satırlardır.
+/// Kaydedildiyse true döner. Sayfanın altında Scaffold'un bilmediği bir çubuk
+/// varsa (ör. sepetteki ödeme çubuğu) bildirim [bottomGap] kadar yukarıda
+/// görünür.
+///
+/// Giriş yapılmamışsa önce giriş önerilir; giriş yapılınca kaydetmeye
+/// kalınan yerden devam edilir.
 Future<bool> showSaveCartDialog(
   BuildContext context, {
   required List<Map<String, dynamic>> items,
-  bool aboveNavigation = false,
+  double bottomGap = 0,
 }) async {
-  if (!context.read<AuthViewModel>().isLoggedIn) {
-    showMarketSnack(
-      context,
-      'Sepeti kaydetmek için önce giriş yapmalısın.',
-      error: true,
-      aboveNavigation: aboveNavigation,
-    );
-    return false;
-  }
   if (items.isEmpty) {
     showMarketSnack(
       context,
       'Kaydedilecek ürün yok.',
       error: true,
-      aboveNavigation: aboveNavigation,
+      bottomGap: bottomGap,
     );
     return false;
   }
 
-  final savedName = await showDialog<String>(
-    context: context,
-    builder: (_) => _SaveCartDialog(items: items),
+  if (!context.read<AuthViewModel>().isLoggedIn) {
+    final wantsLogin = await showMarketConfirm(
+      context,
+      icon: Icons.lock_outline_rounded,
+      title: 'Giriş yapman gerekiyor',
+      message:
+          'Favori sepetlerin hesabına kaydedilir; böylece her cihazda tek dokunuşla sepetine ekleyebilirsin.',
+      confirmLabel: 'Giriş yap',
+    );
+    if (!wantsLogin || !context.mounted) return false;
+    await context.push<bool>('/login');
+    if (!context.mounted || !context.read<AuthViewModel>().isLoggedIn) {
+      return false;
+    }
+  }
+
+  final savedName = await showMarketSheet<String>(
+    context,
+    builder: (_) => _SaveCartSheet(items: items),
   );
   if (savedName == null || !context.mounted) return false;
   showMarketSnack(
     context,
     '“$savedName” favori sepetlerine kaydedildi',
     icon: Icons.bookmark_added_rounded,
-    aboveNavigation: aboveNavigation,
+    bottomGap: bottomGap,
   );
   return true;
 }
 
-class _SaveCartDialog extends StatefulWidget {
+class _SaveCartSheet extends StatefulWidget {
   final List<Map<String, dynamic>> items;
 
-  const _SaveCartDialog({required this.items});
+  const _SaveCartSheet({required this.items});
 
   @override
-  State<_SaveCartDialog> createState() => _SaveCartDialogState();
+  State<_SaveCartSheet> createState() => _SaveCartSheetState();
 }
 
-class _SaveCartDialogState extends State<_SaveCartDialog> {
+class _SaveCartSheetState extends State<_SaveCartSheet> {
   static const List<String> _suggestions = [
     'Haftalık alışverişim',
     'Kahvaltılık',
-    'Aylık temizlik',
+    'Film gecesi',
+    'Sınav dönemi',
   ];
 
   final TextEditingController _name = TextEditingController();
@@ -100,81 +114,74 @@ class _SaveCartDialogState extends State<_SaveCartDialog> {
     });
   }
 
+  void _useSuggestion(String suggestion) {
+    _name.value = TextEditingValue(
+      text: suggestion,
+      selection: TextSelection.collapsed(offset: suggestion.length),
+    );
+    setState(() => _error = null);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      icon: const MarketIconTile(
-        icon: Icons.bookmark_add_outlined,
-        size: 52,
+    return MarketSheetScaffold(
+      busy: _saving,
+      header: MarketSheetHeader(
+        title: 'Sepetini kaydet',
+        subtitle: '${widget.items.length} çeşit ürün kaydedilecek. Aynı adla '
+            'kayıtlı bir sepetin varsa yenisiyle değiştirilir.',
       ),
-      title: const Text('Favori sepet olarak kaydet', textAlign: TextAlign.center),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '${widget.items.length} çeşit ürün kaydedilecek. Aynı adla kayıtlı '
-              'bir sepetin varsa yenisiyle değiştirilir.',
-              textAlign: TextAlign.center,
-              style: MarketText.caption(size: 13),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _name,
+            enabled: !_saving,
+            autofocus: true,
+            maxLength: 40,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _save(),
+            onChanged: (_) => setState(() => _error = null),
+            decoration: InputDecoration(
+              labelText: 'Sepetin adı',
+              hintText: 'Örn. Haftalık alışverişim',
+              prefixIcon: const Icon(Icons.bookmark_border_rounded),
+              counterText: '',
+              errorText: _error,
+              errorMaxLines: 3,
             ),
-            const SizedBox(height: MarketSpace.lg),
-            TextField(
-              controller: _name,
-              enabled: !_saving,
-              autofocus: true,
-              maxLength: 40,
-              textCapitalization: TextCapitalization.sentences,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _save(),
-              decoration: InputDecoration(
-                hintText: 'Örn. Haftalık alışverişim',
-                counterText: '',
-                errorText: _error,
-                errorMaxLines: 3,
-              ),
-            ),
-            const SizedBox(height: MarketSpace.md),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: MarketSpace.sm,
-              runSpacing: MarketSpace.sm,
-              children: [
-                for (final suggestion in _suggestions)
-                  ActionChip(
-                    label: Text(
-                      suggestion,
-                      style: MarketText.label(
-                          color: MarketPalette.greenDark, size: 12),
-                    ),
-                    onPressed: _saving
-                        ? null
-                        : () {
-                            _name.text = suggestion;
-                            _name.selection = TextSelection.collapsed(
-                                offset: suggestion.length);
-                            setState(() => _error = null);
-                          },
-                    backgroundColor: MarketPalette.greenSoft,
-                    side: BorderSide.none,
-                  ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: MarketSpace.sm),
+          Wrap(
+            spacing: MarketSpace.sm,
+            children: [
+              for (final suggestion in _suggestions)
+                MarketChip(
+                  label: suggestion,
+                  selected: _name.text.trim() == suggestion,
+                  onTap: _saving ? null : () => _useSuggestion(suggestion),
+                ),
+            ],
+          ),
+        ],
       ),
-      actionsAlignment: MainAxisAlignment.center,
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Vazgeç'),
+      footer: FilledButton(
+        onPressed: _saving ? null : _save,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(MarketSize.button),
+          disabledBackgroundColor: _saving ? MarketPalette.green : null,
+          disabledForegroundColor: _saving ? Colors.white : null,
         ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Kaydediliyor…' : 'Kaydet'),
-        ),
-      ],
+        child: _saving
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.4, color: Colors.white),
+              )
+            : const Text('Kaydet'),
+      ),
     );
   }
 }

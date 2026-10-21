@@ -49,20 +49,19 @@ class _ReferralPageState extends State<ReferralPage> {
               else if (referral == null)
                 Padding(
                   padding: const EdgeInsets.only(top: 40),
-                  child: MarketEmptyState(
-                    icon: Icons.cloud_off_rounded,
+                  child: MarketEmptyState.error(
                     title: 'Davet bilgilerin yüklenemedi',
-                    message: 'Bağlantını kontrol edip tekrar dene.',
-                    actionLabel: 'Tekrar dene',
-                    actionIcon: Icons.refresh_rounded,
-                    onAction: viewModel.loadReferralInfo,
-                    tint: MarketPalette.red,
-                    tintSoft: MarketPalette.redSoft,
+                    onRetry: viewModel.loadReferralInfo,
                   ),
                 )
               else
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  padding: EdgeInsets.fromLTRB(
+                    MarketSpace.gutterOf(context),
+                    20,
+                    MarketSpace.gutterOf(context),
+                    32 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   child: _buildContent(viewModel, referral),
                 ),
             ],
@@ -73,14 +72,20 @@ class _ReferralPageState extends State<ReferralPage> {
   }
 
   Widget _buildContent(ReferralViewModel viewModel, Referral referral) {
+    // Henüz kimse davet edilmediyse sıfırlı sayaçlar yerine "Nasıl çalışır?"
+    // kodun hemen altında gösterilir.
+    final fresh = referral.totalReferrals == 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildCodeCard(referral),
         const SizedBox(height: 14),
-        _buildStatisticsRow(referral),
+        if (fresh)
+          _buildHowItWorks(referral)
+        else
+          _buildStatisticsRow(referral),
         const SizedBox(height: 14),
-        MarketNotice.warning(
+        MarketNotice(
           icon: Icons.info_outline_rounded,
           text: referral.isActive
               ? '${referral.remainingInvites} davet hakkın kaldı. Ödül kuponun arkadaşının ilk siparişinden sonra oluşur ve ${referral.rewardExpiresInDays} gün geçerlidir.'
@@ -108,8 +113,10 @@ class _ReferralPageState extends State<ReferralPage> {
             ),
           ),
         ],
-        const SizedBox(height: 24),
-        _buildHowItWorks(referral),
+        if (!fresh) ...[
+          const SizedBox(height: 24),
+          _buildHowItWorks(referral),
+        ],
       ],
     );
   }
@@ -124,22 +131,28 @@ class _ReferralPageState extends State<ReferralPage> {
             style: MarketText.label(color: MarketPalette.muted, size: 13),
           ),
           const SizedBox(height: 10),
-          InkWell(
-            onTap: () => _copyCode(referral.code),
-            borderRadius: BorderRadius.circular(MarketRadius.md),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: MarketPalette.limeSoft,
-                borderRadius: BorderRadius.circular(MarketRadius.md),
-                border: Border.all(color: MarketPalette.limeLine, width: 1.5),
-              ),
-              child: Text(
-                referral.code,
-                textAlign: TextAlign.center,
-                style: MarketText.code(color: MarketPalette.greenDeep, size: 28)
-                    .copyWith(letterSpacing: 4),
+          Semantics(
+            button: true,
+            label: 'Davet kodun ${referral.code}. Kopyalamak için dokun.',
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: () => _copyCode(referral.code),
+              borderRadius: BorderRadius.circular(MarketRadius.md),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: MarketPalette.limeSoft,
+                  borderRadius: BorderRadius.circular(MarketRadius.md),
+                  border: Border.all(color: MarketPalette.limeLine, width: 1.5),
+                ),
+                child: Text(
+                  referral.code,
+                  textAlign: TextAlign.center,
+                  style:
+                      MarketText.code(color: MarketPalette.greenDeep, size: 28)
+                          .copyWith(letterSpacing: 4),
+                ),
               ),
             ),
           ),
@@ -149,16 +162,24 @@ class _ReferralPageState extends State<ReferralPage> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _copyCode(referral.code),
+                  // Dar ekranda etiket bölünmesin diye iç boşluk daraltılır
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
                   icon: const Icon(Icons.copy_rounded, size: 19),
-                  label: const Text('Kopyala'),
+                  label: const Text('Kopyala', maxLines: 1, softWrap: false),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: referral.isActive ? () => _shareCode(referral) : null,
+                  onPressed:
+                      referral.isActive ? () => _shareCode(referral) : null,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
                   icon: const Icon(Icons.share_rounded, size: 19),
-                  label: const Text('Paylaş'),
+                  label: const Text('Paylaş', maxLines: 1, softWrap: false),
                 ),
               ),
             ],
@@ -169,41 +190,70 @@ class _ReferralPageState extends State<ReferralPage> {
   }
 
   Widget _buildStatisticsRow(Referral referral) {
-    Widget stat(IconData icon, String value, String label, Color fg, Color bg) =>
+    Widget stat(
+            IconData icon, String value, String label, Color fg, Color bg) =>
         Expanded(
           child: MarketCard(
             shadow: false,
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
             child: Column(
               children: [
-                MarketIconTile(icon: icon, size: 38, background: bg, foreground: fg),
+                MarketIconTile(
+                    icon: icon, size: 38, background: bg, foreground: fg),
                 const SizedBox(height: 8),
                 Text(value, style: MarketText.title(size: 22)),
-                Text(label, style: MarketText.caption()),
+                Text(
+                  label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.caption(),
+                ),
               ],
             ),
           ),
         );
 
-    return Row(
-      children: [
-        stat(Icons.people_outline_rounded, '${referral.totalReferrals}', 'Davet',
-            MarketPalette.blue, MarketPalette.blueSoft),
-        const SizedBox(width: 10),
-        stat(Icons.check_circle_outline_rounded, '${referral.successfulReferrals}',
-            'Sipariş veren', MarketPalette.greenDark, MarketPalette.greenSoft),
-        const SizedBox(width: 10),
-        stat(Icons.redeem_rounded, '${referral.totalRewardsEarned}', 'Ödül',
-            MarketPalette.orangeInk, MarketPalette.orangeSoft),
-      ],
+    // Kartlar en uzun etikete göre aynı boyda kalır
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          stat(Icons.people_outline_rounded, '${referral.totalReferrals}',
+              'Davet', MarketPalette.blue, MarketPalette.blueSoft),
+          const SizedBox(width: 10),
+          stat(
+              Icons.check_circle_outline_rounded,
+              '${referral.successfulReferrals}',
+              'Sipariş veren',
+              MarketPalette.greenDark,
+              MarketPalette.greenSoft),
+          const SizedBox(width: 10),
+          stat(Icons.redeem_rounded, '${referral.totalRewardsEarned}', 'Ödül',
+              MarketPalette.orangeInk, MarketPalette.orangeSoft),
+        ],
+      ),
     );
   }
 
   Widget _buildUserRow(ReferredUser user) {
-    final (Color fg, Color bg) = switch (user.status) {
-      ReferralStatus.pending => (MarketPalette.orangeInk, MarketPalette.orangeSoft),
-      ReferralStatus.completed => (MarketPalette.blue, MarketPalette.blueSoft),
-      ReferralStatus.rewarded => (MarketPalette.greenDark, MarketPalette.greenSoft),
+    // Etiketler cümle düzeninde (modeldeki statusText değişmez)
+    final (Color fg, Color bg, String label) = switch (user.status) {
+      ReferralStatus.pending => (
+          MarketPalette.orangeInk,
+          MarketPalette.orangeSoft,
+          'Beklemede'
+        ),
+      ReferralStatus.completed => (
+          MarketPalette.blue,
+          MarketPalette.blueSoft,
+          'Sipariş verdi'
+        ),
+      ReferralStatus.rewarded => (
+          MarketPalette.greenDark,
+          MarketPalette.greenSoft,
+          'Ödül kazanıldı'
+        ),
     };
 
     return Padding(
@@ -219,8 +269,11 @@ class _ReferralPageState extends State<ReferralPage> {
               shape: BoxShape.circle,
             ),
             child: Text(
-              user.name.isNotEmpty ? user.name.characters.first.toUpperCase() : '?',
-              style: MarketText.heading(color: MarketPalette.greenDark, size: 16),
+              user.name.isNotEmpty
+                  ? user.name.characters.first.toUpperCase()
+                  : '?',
+              style:
+                  MarketText.heading(color: MarketPalette.greenDark, size: 16),
             ),
           ),
           const SizedBox(width: 14),
@@ -228,12 +281,21 @@ class _ReferralPageState extends State<ReferralPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(user.name, style: MarketText.label(size: 14)),
-                Text(_formatDate(user.signedUpAt), style: MarketText.caption()),
+                Text(
+                  user.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: MarketText.label(size: 14),
+                ),
+                Text(
+                  'Katıldı: ${formatTrDateTime(user.signedUpAt, withTime: false)}',
+                  style: MarketText.caption(),
+                ),
               ],
             ),
           ),
-          MarketPill(label: user.statusText, background: bg, foreground: fg),
+          const SizedBox(width: 8),
+          MarketPill(label: label, background: bg, foreground: fg),
         ],
       ),
     );
@@ -263,17 +325,22 @@ class _ReferralPageState extends State<ReferralPage> {
                     height: 28,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: i == steps.length - 1 ? MarketPalette.lime : MarketPalette.greenSoft,
+                      color: i == steps.length - 1
+                          ? MarketPalette.lime
+                          : MarketPalette.greenSoft,
                       borderRadius: BorderRadius.circular(MarketRadius.xs),
                     ),
                     child: Text(
                       '${i + 1}',
-                      style: MarketText.label(color: MarketPalette.greenDeep, size: 13),
+                      style: MarketText.label(
+                          color: MarketPalette.greenDeep, size: 13),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(steps[i], style: MarketText.body(color: MarketPalette.inkSoft, size: 14)),
+                    child: Text(steps[i],
+                        style: MarketText.body(
+                            color: MarketPalette.inkSoft, size: 14)),
                   ),
                 ],
               ),
@@ -300,10 +367,6 @@ class _ReferralPageState extends State<ReferralPage> {
 ${referral.link}
 ''';
     Share.share(message);
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
   }
 
   Widget _buildCouponCard(Coupon coupon) {
@@ -341,20 +404,32 @@ ${referral.link}
                   Text(
                     isExpiringSoon
                         ? '${coupon.daysUntilExpiration} gün içinde süresi doluyor'
-                        : 'Son gün ${_formatDate(coupon.expirationDate)}',
+                        : 'Son gün ${formatTrDateTime(coupon.expirationDate, withTime: false)}',
                     style: MarketText.caption(
-                      color: isExpiringSoon ? MarketPalette.orangeInk : MarketPalette.muted,
-                      weight: isExpiringSoon ? FontWeight.w700 : FontWeight.w500,
+                      color: isExpiringSoon
+                          ? MarketPalette.orangeInk
+                          : MarketPalette.muted,
+                      weight:
+                          isExpiringSoon ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
-            TextButton.icon(
-              onPressed: () => _copyCode(coupon.code),
-              icon: const Icon(Icons.copy_rounded, size: 17),
-              label: const Text('Kopyala'),
-            ),
+            // Dar ekranda yalnızca simge: kupon kodu kesilmesin
+            if (MediaQuery.sizeOf(context).width < 360)
+              IconButton(
+                onPressed: () => _copyCode(coupon.code),
+                tooltip: 'Kodu kopyala',
+                color: MarketPalette.greenDark,
+                icon: const Icon(Icons.copy_rounded, size: 20),
+              )
+            else
+              TextButton.icon(
+                onPressed: () => _copyCode(coupon.code),
+                icon: const Icon(Icons.copy_rounded, size: 17),
+                label: const Text('Kopyala'),
+              ),
           ],
         ),
       ),

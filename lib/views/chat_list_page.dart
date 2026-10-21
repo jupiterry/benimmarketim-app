@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat_model.dart';
+import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/chat_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/market_ui.dart';
@@ -19,16 +20,31 @@ class _ChatListPageState extends State<ChatListPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Misafirin görüşmesi olmaz; giriş ekranına yönlendiren durum gösterilir
+      if (!context.read<AuthViewModel>().isLoggedIn) return;
       context.read<ChatViewModel>().loadChats();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = context.select<AuthViewModel, bool>((a) => a.isLoggedIn);
+    final gutter = MarketSpace.gutterOf(context);
     return Scaffold(
       backgroundColor: MarketPalette.canvas,
       body: Consumer2<ChatViewModel, SettingsViewModel>(
         builder: (context, chatViewModel, settings, _) {
+          final chats = chatViewModel.chats;
+          final hoursNotice = loggedIn && !settings.isWithinOrderHours
+              ? Padding(
+                  padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 0),
+                  child: MarketNotice.warning(
+                    icon: Icons.schedule_rounded,
+                    text: 'Şu an mesai dışındayız. Mesajını bırakabilirsin; ekibimiz '
+                        'açılışta (${_hhmm(settings.orderStartHour, settings.orderStartMinute)}) yanıtlar.',
+                  ),
+                )
+              : null;
           return CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(
               parent: MarketScrollPhysics(),
@@ -41,17 +57,44 @@ class _ChatListPageState extends State<ChatListPage> {
                   icon: Icons.support_agent_rounded,
                   compact: true,
                   actions: [
-                    MarketHeaderButton(
-                      icon: Icons.refresh_rounded,
-                      tooltip: 'Yenile',
-                      onTap: chatViewModel.loadChats,
-                    ),
+                    if (loggedIn)
+                      MarketHeaderButton(
+                        icon: Icons.refresh_rounded,
+                        tooltip: 'Yenile',
+                        onTap: chatViewModel.loadChats,
+                      ),
                   ],
                 ),
               ),
-              if (chatViewModel.isLoading && chatViewModel.chats.isEmpty)
+              if (hoursNotice != null) SliverToBoxAdapter(child: hoursNotice),
+              if (!loggedIn)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: MarketEmptyState(
+                    icon: Icons.lock_outline_rounded,
+                    title: 'Giriş yapman gerekiyor',
+                    message: 'Destek ekibine yazmak için hesabına giriş yap.',
+                    actionLabel: 'Giriş yap',
+                    actionIcon: Icons.login_rounded,
+                    onAction: () async {
+                      final viewModel = context.read<ChatViewModel>();
+                      final auth = context.read<AuthViewModel>();
+                      await context.push('/login');
+                      if (mounted && auth.isLoggedIn) viewModel.loadChats();
+                    },
+                  ),
+                )
+              else if (chatViewModel.isLoading && chats.isEmpty)
                 const SliverToBoxAdapter(child: MarketListSkeleton())
-              else if (chatViewModel.chats.isEmpty)
+              else if (chats.isEmpty && chatViewModel.error != null)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: MarketEmptyState.error(
+                    title: 'Görüşmeler yüklenemedi',
+                    onRetry: chatViewModel.loadChats,
+                  ),
+                )
+              else if (chats.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: MarketEmptyState(
@@ -59,30 +102,31 @@ class _ChatListPageState extends State<ChatListPage> {
                     title: 'Nasıl yardımcı olabiliriz?',
                     message:
                         'Sorunu bize yaz, destek ekibimiz görüşme üzerinden seninle ilgilensin.',
-                    actionLabel: 'Sohbet başlat',
+                    actionLabel: 'Görüşme başlat',
                     actionIcon: Icons.add_comment_rounded,
                     onAction: () => _startNewChat(context),
                   ),
                 )
               else ...[
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 25, 20, 14),
+                  padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 12),
                   sliver: SliverToBoxAdapter(
                     child: MarketSectionTitle(
                       title: 'Destek görüşmeleri',
-                      trailing: MarketPill(
-                        label: '${chatViewModel.chats.length} görüşme',
-                      ),
+                      dense: true,
+                      count: chats.length,
+                      countLabel: 'görüşme',
                     ),
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+                  // Alttaki "Yeni görüşme" butonu son kartı örtmesin
+                  padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 112),
                   sliver: SliverList.separated(
-                    itemCount: chatViewModel.chats.length,
+                    itemCount: chats.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
-                      final chat = chatViewModel.chats[index];
+                      final chat = chats[index];
                       return _ChatCard(
                         chat: chat,
                         onTap: () {
@@ -100,42 +144,41 @@ class _ChatListPageState extends State<ChatListPage> {
       ),
       floatingActionButton: Consumer<ChatViewModel>(
         builder: (context, viewModel, _) {
-          if (viewModel.chats.isEmpty) return const SizedBox.shrink();
+          if (!loggedIn || viewModel.chats.isEmpty) return const SizedBox.shrink();
           return FloatingActionButton.extended(
             onPressed: () => _startNewChat(context),
             backgroundColor: MarketPalette.green,
             foregroundColor: Colors.white,
             elevation: 3,
             icon: const Icon(Icons.add_comment_rounded, size: 20),
-            label: const Text('Yeni sohbet'),
+            label: const Text('Yeni görüşme'),
           );
         },
       ),
     );
   }
 
+  static String _hhmm(int h, int m) =>
+      '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+
   Future<void> _startNewChat(BuildContext context) async {
     final viewModel = context.read<ChatViewModel>();
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const _StartingChatDialog(),
-    );
-
     try {
-      final chat = await viewModel.startChat();
+      final chat = await runWithMarketProgress(
+        context,
+        message: 'Destek ekibine bağlanılıyor…',
+        task: viewModel.startChat,
+      );
       if (!context.mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
 
       if (chat != null) {
         context.push('/chat/${chat.id}');
       } else {
-        _showError(viewModel.error ?? 'Sohbet başlatılamadı');
+        _showError(viewModel.error ?? 'Görüşme başlatılamadı. Tekrar dene.');
       }
     } catch (error) {
       if (!context.mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
-      _showError('Sohbet başlatılırken bir sorun oluştu.');
+      _showError('Görüşme başlatılırken bir sorun oluştu. Tekrar dene.');
     }
   }
 
@@ -221,7 +264,7 @@ class _ChatCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            isOrder ? 'Sipariş Desteği' : 'Genel Destek',
+                            isOrder ? 'Sipariş desteği' : 'Genel destek',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: MarketText.label(size: 14, weight: hasUnread ? FontWeight.w800 : FontWeight.w700),
@@ -277,31 +320,6 @@ class _ChatCard extends StatelessWidget {
     if (difference.inMinutes < 60) return '${difference.inMinutes} dk';
     if (difference.inHours < 24) return '${difference.inHours} sa';
     if (difference.inDays < 7) return '${difference.inDays} gün';
-    return '${date.day}.${date.month}.${date.year}';
-  }
-}
-
-class _StartingChatDialog extends StatelessWidget {
-  const _StartingChatDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(MarketRadius.lg),
-        ),
-        child: const SizedBox(
-          width: 28,
-          height: 28,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.6,
-            color: MarketPalette.green,
-          ),
-        ),
-      ),
-    );
+    return formatTrDateTime(date, withTime: false);
   }
 }
