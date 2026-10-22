@@ -11,6 +11,11 @@ enum PaymentMethod {
   final String label;
   final String description;
 
+  /// Mobilde sipariş verirken seçilebilen yöntemler: yalnızca kapıda ödeme.
+  /// Havale/EFT yeni siparişte sunulmaz; eski siparişlerin doğru
+  /// görünmesi için enum değeri korunur.
+  static const List<PaymentMethod> selectable = [cash, card];
+
   static PaymentMethod? fromKey(Object? value) {
     if (value is! String) return null;
     for (final method in PaymentMethod.values) {

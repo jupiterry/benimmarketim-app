@@ -20,7 +20,6 @@ import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
-import 'widgets/bank_transfer_card.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/custom_dialog.dart';
 import 'widgets/first_order_rating.dart';
@@ -53,7 +52,7 @@ class _OrderPageState extends State<OrderPage> {
   String? _rememberedDeliveryPoint; // Son siparişte seçilen yurt
   bool _deliveryFromHistory = false; // Seçim son siparişten mi geldi
   bool _deliveryError = false;
-  PaymentMethod? _selectedPaymentMethod; // Zorunlu: nakit, POS ya da havale/EFT
+  PaymentMethod? _selectedPaymentMethod; // Zorunlu: kapıda nakit ya da POS
   bool _paymentError = false;
   bool _phoneValid = false;
   final _contactSectionKey = GlobalKey();
@@ -652,8 +651,7 @@ class _OrderPageState extends State<OrderPage> {
       AppLogger.debug('Order ID: ${order.id}');
 
       if (mounted) {
-        // Ödeme yöntemi, tutar ve teslimat noktası onay ekranında gösterilir
-        // (havale/EFT ise IBAN ve havale edilecek tutar).
+        // Ödeme yöntemi, tutar ve teslimat noktası onay ekranında gösterilir.
         final payment =
             (order.paymentMethod ?? orderRequest.paymentMethod).key;
         final point = Uri.encodeQueryComponent(orderRequest.deliveryPointName);
@@ -743,7 +741,7 @@ class _OrderPageState extends State<OrderPage> {
                       const SizedBox(height: 14),
                       _buildContactSection(),
                       const SizedBox(height: 14),
-                      _buildPaymentSection(settings, cart),
+                      _buildPaymentSection(),
                       const SizedBox(height: 14),
                       _buildNotesSection(),
                       const SizedBox(height: 14),
@@ -1068,10 +1066,9 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  // Ödeme yöntemi (zorunlu). Ödeme teslimatta ya da havale/EFT ile alınır;
-  // seçim yönetim panelinde sipariş kartında görünür.
-  Widget _buildPaymentSection(SettingsViewModel settings, CartViewModel cart) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+  // Ödeme yöntemi (zorunlu). Ödeme teslimatta nakit ya da kartla (POS)
+  // alınır; seçim yönetim panelinde sipariş kartında görünür.
+  Widget _buildPaymentSection() {
     return KeyedSubtree(
       key: _paymentSectionKey,
       child: _section(
@@ -1083,27 +1080,11 @@ class _OrderPageState extends State<OrderPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final method in PaymentMethod.values) ...[
-              if (method != PaymentMethod.values.first)
+            for (final method in PaymentMethod.selectable) ...[
+              if (method != PaymentMethod.selectable.first)
                 const SizedBox(height: 10),
               _buildPaymentOption(method),
             ],
-            AnimatedSize(
-              duration: reduceMotion
-                  ? Duration.zero
-                  : const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: _selectedPaymentMethod == PaymentMethod.bankTransfer
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: BankTransferCard(
-                        settings: settings,
-                        amount: cart.finalPrice,
-                      ),
-                    )
-                  : const SizedBox(width: double.infinity),
-            ),
             if (_paymentError) ...[
               const SizedBox(height: 10),
               Text(
