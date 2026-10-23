@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../services/meta_app_events_service.dart';
 import 'feedback_parts.dart';
 import 'market_ui.dart';
 
@@ -97,7 +100,12 @@ class _QuickFeedbackSheetState extends State<_QuickFeedbackSheet> {
       comment: _comment.text,
       problemItems: problems,
     );
-    if (result.ok) widget.onSubmitted();
+    if (result.ok) {
+      widget.onSubmitted();
+      // 👍 = 1, 👎 = 0 (ölçek 0-1)
+      unawaited(MetaAppEventsService.instance.logRate(
+          rating: thumb == 'up' ? 1 : 0, maxRating: 1, contentType: 'order'));
+    }
     if (!mounted) return;
     setState(() {
       _sending = false;

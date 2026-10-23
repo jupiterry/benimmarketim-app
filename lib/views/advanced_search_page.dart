@@ -9,6 +9,7 @@ import '../models/category.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import '../services/meta_app_events_service.dart';
 import '../services/turkish_text.dart';
 import 'widgets/browse_cart_bar.dart';
 import 'widgets/browse_controls.dart';
@@ -292,6 +293,11 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       if (products.isNotEmpty) {
         _lastSuccessfulQuery = trimmed;
         if (remember) _rememberSearch(trimmed);
+      }
+      // Meta: yalnızca gönderilen arama sayılır, yazarken yapılanlar değil
+      if (remember) {
+        unawaited(MetaAppEventsService.instance
+            .logSearch(trimmed, resultCount: products.length));
       }
     } catch (e) {
       if (!mounted || requestId != _searchRequestId) return;

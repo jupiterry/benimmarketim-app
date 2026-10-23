@@ -48,8 +48,14 @@ class TrackingAuthorization {
   }
 }
 
-/// Meta (Facebook) uygulama olayları: uygulama açılışı/kurulum, sepete
-/// ekleme ve sipariş (Purchase).
+/// Meta (Facebook) uygulama olayları. Gönderilenler:
+/// - kurulum / uygulama açılışı, bildirimle açılış
+/// - ürün ve kategori görüntüleme (ViewContent), arama (Search)
+/// - favorilere ekleme (AddToWishlist), sepete ekleme / çıkarma
+/// - ödeme adımı (InitiateCheckout), ödeme yöntemi seçimi (AddPaymentInfo),
+///   kupon, sipariş (Purchase)
+/// - kayıt (CompleteRegistration), giriş, destek sohbeti (Contact),
+///   puan / anket (Rate), paylaşım, sepet asistanı
 ///
 /// İzin verilmeden Meta'ya hiçbir uygulama olayı gönderilmez ve reklam
 /// kimliği toplanmaz. AndroidManifest ve Info.plist'te otomatik olay kaydı
@@ -71,8 +77,8 @@ class TrackingAuthorization {
 ///   uygulama arka plandan her döndüğünde buradan elle bildirilir (SDK geç
 ///   başlatıldığı için iOS'un ilk "aktif oldu" anını kaçırır).
 ///
-/// Sepete ekleme ve Purchase olayları her iki platformda yalnızca buradan,
-/// elle gönderilir.
+/// Açılış dışındaki tüm olaylar her iki platformda yalnızca buradan, elle
+/// gönderilir.
 class MetaAppEventsService {
   MetaAppEventsService({
     FacebookAppEvents? sdk,
@@ -96,6 +102,10 @@ class MetaAppEventsService {
       bool.fromEnvironment('META_EVENTS_DEBUG') && !kReleaseMode;
 
   static const String currency = 'TRY';
+
+  // Meta'nın standart parametreleri; facebook_app_events pakette sabiti yok.
+  static const String _paramSuccess = 'fb_success';
+  static const String _paramMaxRatingValue = 'fb_max_rating_value';
   static const int _rememberedOrderLimit = 50;
 
   final FacebookAppEvents _sdk;
@@ -417,6 +427,244 @@ class MetaAppEventsService {
       AppLogger.debug('Meta Purchase gönderilemedi: $e');
     } finally {
       _purchasesInFlight.remove(orderId);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Diğer olaylar. Hepsi aynı kurala uyar: izin yoksa hiçbir şey gönderilmez,
+  // ölçüm hatası uygulama akışını etkilemez. Meta'nın standart olay adları
+  // kullanılır; böylece Events Manager ve reklam optimizasyonunda hazır
+  // olarak görünürler. Standardı olmayanlar özel olay olarak gider.
+  // -------------------------------------------------------------------------
+
+  /// Ürün detay sayfası açıldığında (ViewContent).
+  Future<void> logViewContent(Product product) {
+    if (product.id.isEmpty) return Future.value();
+    return _logEvent(
+      'ViewContent',
+      FacebookAppEvents.eventNameViewedContent,
+      valueToSum: _money(product.actualPrice),
+      parameters: {
+        FacebookAppEvents.paramNameContentId: product.id,
+        FacebookAppEvents.paramNameContentType: 'product',
+        FacebookAppEvents.paramNameDescription: product.name,
+        FacebookAppEvents.paramNameCurrency: currency,
+        'category': product.category,
+      },
+    );
+  }
+
+  /// Kategori sayfası açıldığında (ViewContent, ürün grubu olarak).
+  Future<void> logViewCategory(String category) {
+    if (category.trim().isEmpty) return Future.value();
+    return _logEvent(
+      'ViewCategory',
+      FacebookAppEvents.eventNameViewedContent,
+      parameters: {
+        FacebookAppEvents.paramNameContentId: category,
+        FacebookAppEvents.paramNameContentType: 'product_group',
+        FacebookAppEvents.paramNameDescription: category,
+      },
+    );
+  }
+
+  /// Kullanıcı bir aramayı gönderdiğinde (yazarken değil) (Search).
+  Future<void> logSearch(String query, {required int resultCount}) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return Future.value();
+    return _logEvent(
+      'Search',
+      FacebookAppEvents.eventNameSearched,
+      parameters: {
+        FacebookAppEvents.paramNameSearchString: trimmed,
+        FacebookAppEvents.paramNameContentType: 'product',
+        _paramSuccess: resultCount > 0
+            ? FacebookAppEvents.paramValueYes
+            : FacebookAppEvents.paramValueNo,
+        'result_count': resultCount,
+      },
+    );
+  }
+
+  /// Ürün favorilere eklendiğinde (AddToWishlist).
+  Future<void> logAddToWishlist(Product product) {
+    if (product.id.isEmpty) return Future.value();
+    return _logEvent(
+      'AddToWishlist',
+      FacebookAppEvents.eventNameAddedToWishlist,
+      valueToSum: _money(product.actualPrice),
+      parameters: {
+        FacebookAppEvents.paramNameContentId: product.id,
+        FacebookAppEvents.paramNameContentType: 'product',
+        FacebookAppEvents.paramNameCurrency: currency,
+      },
+    );
+  }
+
+  /// Ürün sepetten tamamen çıkarıldığında (özel olay: RemoveFromCart).
+  Future<void> logRemoveFromCart(Product product, {int quantity = 1}) {
+    if (product.id.isEmpty || quantity < 1) return Future.value();
+    return _logEvent(
+      'RemoveFromCart',
+      'RemoveFromCart',
+      valueToSum: _money(product.actualPrice * quantity),
+      parameters: {
+        FacebookAppEvents.paramNameContentId: product.id,
+        FacebookAppEvents.paramNameContentType: 'product',
+        FacebookAppEvents.paramNameNumItems: quantity,
+        FacebookAppEvents.paramNameCurrency: currency,
+      },
+    );
+  }
+
+  /// Sipariş (ödeme) sayfası açıldığında (InitiateCheckout).
+  Future<void> logInitiateCheckout({
+    required List<CartItem> items,
+    required double amount,
+  }) {
+    if (items.isEmpty) return Future.value();
+    return _logEvent(
+      'InitiateCheckout',
+      FacebookAppEvents.eventNameInitiatedCheckout,
+      valueToSum: _money(amount),
+      parameters: {
+        FacebookAppEvents.paramNameContentType: 'product',
+        FacebookAppEvents.paramNameContentId:
+            jsonEncode([for (final item in items) item.product.id]),
+        FacebookAppEvents.paramNameNumItems:
+            items.fold<int>(0, (sum, item) => sum + item.quantity),
+        FacebookAppEvents.paramNamePaymentInfoAvailable:
+            FacebookAppEvents.paramValueNo,
+        FacebookAppEvents.paramNameCurrency: currency,
+      },
+    );
+  }
+
+  /// Ödeme yöntemi seçildiğinde (AddPaymentInfo). [method] sunucu anahtarı
+  /// (cash, card).
+  Future<void> logAddPaymentInfo(String method) {
+    return _logEvent(
+      'AddPaymentInfo',
+      FacebookAppEvents.eventNameAddedPaymentInfo,
+      parameters: {
+        _paramSuccess: FacebookAppEvents.paramValueYes,
+        'payment_method': method,
+      },
+    );
+  }
+
+  /// Kupon başarıyla uygulandığında (özel olay: ApplyCoupon).
+  Future<void> logApplyCoupon(String code, {required double discount}) {
+    return _logEvent(
+      'ApplyCoupon',
+      'ApplyCoupon',
+      valueToSum: _money(discount),
+      parameters: {
+        'coupon_code': code,
+        FacebookAppEvents.paramNameCurrency: currency,
+      },
+    );
+  }
+
+  /// Kayıt başarıyla tamamlandığında (CompleteRegistration).
+  Future<void> logCompleteRegistration({bool withReferral = false}) {
+    return _logEvent(
+      'CompleteRegistration',
+      FacebookAppEvents.eventNameCompletedRegistration,
+      parameters: {
+        FacebookAppEvents.paramNameRegistrationMethod: 'email',
+        'referral': withReferral
+            ? FacebookAppEvents.paramValueYes
+            : FacebookAppEvents.paramValueNo,
+      },
+    );
+  }
+
+  /// Giriş başarılı olduğunda (özel olay: Login).
+  Future<void> logLogin() => _logEvent('Login', 'Login');
+
+  /// Destek sohbeti açıldığında (Contact).
+  Future<void> logContact({String channel = 'chat'}) => _logEvent(
+        'Contact',
+        FacebookAppEvents.eventNameContact,
+        parameters: {'channel': channel},
+      );
+
+  /// Uygulama içi puan / geri bildirim gönderildiğinde (Rate). [maxRating]
+  /// ölçeğin üst sınırı (yıldızlarda 5, NPS'te 10).
+  Future<void> logRate({
+    required num rating,
+    num maxRating = 5,
+    String contentType = 'app',
+  }) {
+    return _logEvent(
+      'Rate',
+      FacebookAppEvents.eventNameRated,
+      valueToSum: rating.toDouble(),
+      parameters: {
+        FacebookAppEvents.paramNameContentType: contentType,
+        _paramMaxRatingValue: maxRating,
+      },
+    );
+  }
+
+  /// Ürün ya da davet kodu paylaşıldığında (özel olay: Share).
+  Future<void> logShare({required String contentType, String? contentId}) {
+    return _logEvent(
+      'Share',
+      'Share',
+      parameters: {
+        FacebookAppEvents.paramNameContentType: contentType,
+        if (contentId != null && contentId.isNotEmpty)
+          FacebookAppEvents.paramNameContentId: contentId,
+      },
+    );
+  }
+
+  /// Sepet asistanı bir öneri ürettiğinde (özel olay: UseCartAssistant).
+  Future<void> logUseCartAssistant({required int itemCount}) => _logEvent(
+        'UseCartAssistant',
+        'UseCartAssistant',
+        parameters: {FacebookAppEvents.paramNameNumItems: itemCount},
+      );
+
+  /// Bildirime dokunularak uygulama açıldığında (push open).
+  Future<void> logPushOpen(Map<String, dynamic> payload) async {
+    if (!isSupported) return;
+    await init();
+    if (!_canLog) {
+      _diag('PushOpen gönderilmedi (izin: ${_consent.name}, sdk: $_sdkReady)');
+      return;
+    }
+    try {
+      await _sdk.logPushNotificationOpen(payload: payload);
+      await _flushDiagnostics();
+    } catch (e) {
+      AppLogger.debug('Meta PushOpen gönderilemedi: $e');
+    }
+  }
+
+  Future<void> _logEvent(
+    String label,
+    String name, {
+    double? valueToSum,
+    Map<String, dynamic> parameters = const {},
+  }) async {
+    if (!isSupported) return;
+    await init();
+    if (!_canLog) {
+      _diag('$label gönderilmedi (izin: ${_consent.name}, sdk: $_sdkReady)');
+      return;
+    }
+    try {
+      await _sdk.logEvent(
+        name: name,
+        valueToSum: valueToSum,
+        parameters: parameters.isEmpty ? null : parameters,
+      );
+      await _flushDiagnostics();
+    } catch (e) {
+      AppLogger.debug('Meta $label gönderilemedi: $e');
     }
   }
 

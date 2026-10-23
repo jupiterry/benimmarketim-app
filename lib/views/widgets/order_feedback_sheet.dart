@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../services/meta_app_events_service.dart';
 import 'feedback_parts.dart';
 import 'market_ui.dart';
 
@@ -206,7 +209,10 @@ class _OrderFeedbackSheetState extends State<_OrderFeedbackSheet> {
           : const [],
       orderId: widget.orderId,
     );
-    if (result.ok) widget.onSubmitted();
+    if (result.ok) {
+      widget.onSubmitted();
+      unawaited(MetaAppEventsService.instance.logRate(rating: _rating, contentType: 'order'));
+    }
     if (!mounted) return;
     setState(() {
       _sending = false;

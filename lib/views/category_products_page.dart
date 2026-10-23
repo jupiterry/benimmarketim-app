@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/category.dart';
 import '../models/product.dart';
 import '../services/app_logger.dart';
+import '../services/meta_app_events_service.dart';
 import '../services/turkish_text.dart';
 import '../viewmodels/category_products_viewmodel.dart';
 import '../viewmodels/flash_sale_viewmodel.dart';
@@ -86,6 +89,9 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
           .read<CategoryProductsViewModel>()
           .loadCategoryProducts(widget.category.id);
     });
+    // Meta: kategori görüntülendi (izin yoksa gönderilmez)
+    unawaited(
+        MetaAppEventsService.instance.logViewCategory(widget.category.name));
     _searchController.addListener(() {
       if (_searchQuery != _searchController.text) {
         setState(() => _searchQuery = _searchController.text);

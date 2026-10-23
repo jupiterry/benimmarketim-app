@@ -75,6 +75,17 @@
 		<false/>
 		<key>FacebookAdvertiserIDCollectionEnabled</key>
 		<false/>
+		<!-- Meta: fb{AppID} URL şeması (Meta Quickstart; Facebook uygulamasından
+		     geri dönüş ve derin bağlantılar için) -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>fb911432225234141</string>
+				</array>
+			</dict>
+		</array>
 		<!-- iOS izleme izni (ATT) penceresindeki açıklama -->
 		<key>NSUserTrackingUsageDescription</key>
 		<string>Reklamlarımızın işe yarayıp yaramadığını ölçmek için uygulama açılışı, sepete ekleme ve sipariş bilgileri reklam kimliğinle birlikte Meta (Facebook) ile paylaşılır. Adın, telefonun ve adresin paylaşılmaz.</string>

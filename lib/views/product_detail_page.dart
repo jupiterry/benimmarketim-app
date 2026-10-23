@@ -15,6 +15,7 @@ import '../models/flash_sale.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import '../services/meta_app_events_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/category_viewmodel.dart';
@@ -84,6 +85,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     _sheetController.addListener(_onSheetMoved);
     _refreshProduct();
     _loadSimilarProducts();
+    // Meta: ürün görüntülendi (izin yoksa gönderilmez)
+    unawaited(MetaAppEventsService.instance.logViewContent(widget.product));
   }
 
   @override
@@ -372,6 +375,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
   void _share(Product product) {
     HapticFeedback.lightImpact();
+    unawaited(MetaAppEventsService.instance
+        .logShare(contentType: 'product', contentId: product.id));
     Share.share(
       '${product.name} – ${formatTl(product.actualPrice)}\n'
       "Benim Marketim'de gördüm, yurda kadar getiriyorlar 🛵\n"

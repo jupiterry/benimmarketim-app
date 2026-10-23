@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/api_service.dart';
+import '../../services/meta_app_events_service.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import 'feedback_parts.dart';
 import 'market_ui.dart';
@@ -142,6 +145,7 @@ class _FirstOrderRatingCardState extends State<FirstOrderRatingCard> {
         message: _message.text.trim(),
         category: 'Genel',
       );
+      unawaited(MetaAppEventsService.instance.logRate(rating: _rating));
       if (!mounted) return;
       HapticFeedback.lightImpact();
       setState(() => _state = _CardState.sent);

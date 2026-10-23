@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/coupon.dart';
 import '../models/referral.dart';
+import '../services/meta_app_events_service.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import 'widgets/market_ui.dart';
 
@@ -366,6 +369,8 @@ class _ReferralPageState extends State<ReferralPage> {
 
 ${referral.link}
 ''';
+    unawaited(MetaAppEventsService.instance
+        .logShare(contentType: 'referral', contentId: referral.code));
     Share.share(message);
   }
 

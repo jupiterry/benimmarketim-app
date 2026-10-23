@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 import '../models/product.dart';
 import '../services/app_logger.dart';
+import '../services/meta_app_events_service.dart';
 
 class FavoritesViewModel extends ChangeNotifier {
   List<Product> _favorites = [];
@@ -41,6 +44,7 @@ class FavoritesViewModel extends ChangeNotifier {
     } else {
       _favorites.add(product);
       await _databaseService.addToFavorites(product);
+      unawaited(MetaAppEventsService.instance.logAddToWishlist(product));
     }
     notifyListeners();
   }

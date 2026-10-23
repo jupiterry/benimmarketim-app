@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_logger.dart';
+import 'meta_app_events_service.dart';
 
 class NotificationService {
   static NotificationService? _instance;
@@ -91,7 +94,14 @@ class NotificationService {
   void _registerOneSignalListeners() {
     // Bildirime dokunulduğunda ilgili ekranı aç
     OneSignal.Notifications.addClickListener((event) {
-      final route = _routeFromData(event.notification.additionalData);
+      // Meta: bildirimle açılış (izin yoksa gönderilmez)
+      final data = event.notification.additionalData;
+      unawaited(MetaAppEventsService.instance.logPushOpen({
+        if (data != null) ...data,
+        if (event.notification.notificationId.isNotEmpty)
+          'notification_id': event.notification.notificationId,
+      }));
+      final route = _routeFromData(data);
       if (route == null) return;
       final handler = _onOpenRoute;
       if (handler != null) {

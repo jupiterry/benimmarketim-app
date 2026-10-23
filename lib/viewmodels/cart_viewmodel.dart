@@ -215,6 +215,7 @@ class CartViewModel extends ChangeNotifier {
         // Ürünü tamamen çıkar
         _cartItems.removeAt(existingItemIndex);
         _databaseService.removeFromCart(product.id);
+        unawaited(MetaAppEventsService.instance.logRemoveFromCart(product));
       }
     }
 
@@ -232,8 +233,10 @@ class CartViewModel extends ChangeNotifier {
       // Ürünü miktarından bağımsız olarak tamamen çıkar.
       final index = _cartItems.indexWhere((i) => i.product.id == product.id);
       if (index < 0) return;
-      _cartItems.removeAt(index);
+      final removed = _cartItems.removeAt(index);
       _databaseService.removeFromCart(product.id);
+      unawaited(MetaAppEventsService.instance
+          .logRemoveFromCart(product, quantity: removed.quantity));
       _scheduleCouponSync();
       NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
       notifyListeners();
@@ -304,6 +307,8 @@ class CartViewModel extends ChangeNotifier {
         // Doğrulama sürerken sepet değiştiyse indirim güncel sepete göre
         // yeniden hesaplanır.
         if (requestId != _couponRequestSeq) _scheduleCouponSync();
+        unawaited(MetaAppEventsService.instance
+            .logApplyCoupon(_appliedCouponCode!, discount: _discountAmount));
         notifyListeners();
         return true;
       } else {

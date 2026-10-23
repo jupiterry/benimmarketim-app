@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../services/meta_app_events_service.dart';
 import '../../services/image_url.dart';
 import '../../services/review_service.dart';
 import '../../viewmodels/referral_viewmodel.dart';
@@ -1464,6 +1465,8 @@ class _ReferralCardState extends State<_ReferralCard> {
 
   void _share() {
     HapticFeedback.lightImpact();
+    unawaited(MetaAppEventsService.instance
+        .logShare(contentType: 'referral', contentId: widget.code));
     Share.share(
       '🎁 Benim Marketim\'e davetlisin!\n\n"${widget.code}" koduyla kayıt ol, ilk siparişinde %${widget.inviteePercent} indirim kazan!\n\n${widget.link}',
     );

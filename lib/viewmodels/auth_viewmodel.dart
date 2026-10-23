@@ -5,6 +5,7 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/token_manager.dart';
 import '../services/app_logger.dart';
+import '../services/meta_app_events_service.dart';
 import '../services/notification_service.dart';
 
 
@@ -71,6 +72,7 @@ class AuthViewModel extends ChangeNotifier {
 
       AppLogger.debug('Giriş başarılı');
       NotificationService.instance.identifyUser(response.user.id);
+      unawaited(MetaAppEventsService.instance.logLogin());
 
 
 
@@ -120,6 +122,9 @@ class AuthViewModel extends ChangeNotifier {
 
       AppLogger.debug('Kayıt başarılı');
       NotificationService.instance.identifyUser(response.user.id);
+      unawaited(MetaAppEventsService.instance.logCompleteRegistration(
+        withReferral: referralCode != null && referralCode.trim().isNotEmpty,
+      ));
 
 
 

@@ -111,6 +111,69 @@ void main() {
     expect(names(), isNot(contains('activateApp')));
   });
 
+  test('yeni olaylar izin yokken gönderilmez', () async {
+    SharedPreferences.setMockInitialValues(
+        {MetaAppEventsService.consentKey: 'denied'});
+    final meta = service();
+    await meta.init();
+    await meta.logViewContent(_product('p1', 10));
+    await meta.logSearch('süt', resultCount: 3);
+    await meta.logAddToWishlist(_product('p1', 10));
+    await meta.logInitiateCheckout(
+        items: [CartItem(product: _product('p1', 10))], amount: 10);
+    await meta.logAddPaymentInfo('cash');
+    await meta.logCompleteRegistration();
+    await meta.logLogin();
+    await meta.logContact();
+    await meta.logRate(rating: 5);
+    await meta.logShare(contentType: 'product', contentId: 'p1');
+    await meta.logPushOpen({'route': '/orders'});
+    expect(calls, isEmpty);
+  });
+
+  test('izinle standart Meta olay adları gönderilir', () async {
+    SharedPreferences.setMockInitialValues(
+        {MetaAppEventsService.consentKey: 'granted'});
+    final meta = service();
+    await meta.init();
+    calls.clear();
+
+    await meta.logViewContent(_product('p1', 10));
+    await meta.logSearch('süt', resultCount: 0);
+    await meta.logAddToWishlist(_product('p1', 10));
+    await meta.logInitiateCheckout(
+        items: [CartItem(product: _product('p1', 10), quantity: 2)],
+        amount: 20);
+    await meta.logAddPaymentInfo('card');
+    await meta.logCompleteRegistration();
+    await meta.logContact();
+    await meta.logRate(rating: 4);
+
+    final events = [
+      for (final c in calls)
+        Map<String, dynamic>.from(c.arguments as Map)['name'],
+    ];
+    expect(events, [
+      'fb_mobile_content_view',
+      'fb_mobile_search',
+      'fb_mobile_add_to_wishlist',
+      'fb_mobile_initiated_checkout',
+      'fb_mobile_add_payment_info',
+      'fb_mobile_complete_registration',
+      'Contact',
+      'fb_mobile_rate',
+    ]);
+    final search = Map<String, dynamic>.from(
+        (calls[1].arguments as Map)['parameters'] as Map);
+    expect(search['fb_search_string'], 'süt');
+    expect(search['fb_success'], '0');
+    final checkout = Map<String, dynamic>.from(calls[3].arguments as Map);
+    expect(checkout['_valueToSum'], 20.0);
+    expect(
+        Map<String, dynamic>.from(checkout['parameters'] as Map)['fb_num_items'],
+        2);
+  });
+
   test('AddToCart tutar, adet ve para birimiyle gönderilir', () async {
     SharedPreferences.setMockInitialValues(
         {MetaAppEventsService.consentKey: 'granted'});

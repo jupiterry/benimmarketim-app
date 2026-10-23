@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/meta_app_events_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/feedback_parts.dart';
 import 'widgets/market_mascot.dart';
@@ -97,6 +100,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         message: _messageController.text.trim(),
         category: 'Genel',
       );
+      unawaited(MetaAppEventsService.instance.logRate(rating: _rating));
       if (!mounted) return;
       HapticFeedback.lightImpact();
       showMarketSnack(context, 'Geri bildirimin için teşekkürler!');

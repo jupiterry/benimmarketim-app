@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/meta_app_events_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'widgets/cart_proposal_card.dart';
 import 'widgets/market_mascot.dart';
@@ -167,6 +170,13 @@ class _CartAssistantPageState extends State<CartAssistantPage> {
             : null;
       }
     });
+    // Meta: asistan bir sepet önerdi (izin yoksa gönderilmez)
+    final suggested = _proposal?['items'];
+    if (suggested is List) {
+      final items = suggested;
+      unawaited(MetaAppEventsService.instance
+          .logUseCartAssistant(itemCount: items.length));
+    }
     _revealResult();
   }
 

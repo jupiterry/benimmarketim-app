@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../services/meta_app_events_service.dart';
 import 'feedback_parts.dart';
 import 'market_ui.dart';
 
@@ -54,7 +57,11 @@ class _NpsSheetState extends State<_NpsSheet> {
       _error = null;
     });
     final result = await ApiService().submitNps(score: _score!, comment: _comment.text);
-    if (result.ok) widget.onSubmitted();
+    if (result.ok) {
+      widget.onSubmitted();
+      unawaited(MetaAppEventsService.instance
+          .logRate(rating: _score!, maxRating: 10, contentType: 'nps'));
+    }
     if (!mounted) return;
     setState(() {
       _sending = false;

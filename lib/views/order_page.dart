@@ -88,7 +88,14 @@ class _OrderPageState extends State<OrderPage> {
     _restoreLastDeliveryPoint(user?.id ?? '');
     _startFeedbackCheck(user?.id ?? '');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<ReferralViewModel>().loadCoupons();
+      if (!mounted) return;
+      // Meta: ödeme adımına geçildi (izin yoksa gönderilmez)
+      final cart = context.read<CartViewModel>();
+      unawaited(MetaAppEventsService.instance.logInitiateCheckout(
+        items: List.of(cart.items),
+        amount: cart.finalPrice,
+      ));
+      context.read<ReferralViewModel>().loadCoupons();
       // Bildirim izni (yalnızca bir kez sorulur): sipariş durumu bildirimleri
       // için en anlamlı yer burası.
       unawaited(NotificationService.instance.requestPermissionIfNeeded());
@@ -1119,6 +1126,9 @@ class _OrderPageState extends State<OrderPage> {
       semanticsLabel: '${method.label} ödeme yöntemi',
       onTap: () {
         HapticFeedback.selectionClick();
+        if (_selectedPaymentMethod != method) {
+          unawaited(MetaAppEventsService.instance.logAddPaymentInfo(method.key));
+        }
         setState(() {
           _selectedPaymentMethod = method;
           _paymentError = false;

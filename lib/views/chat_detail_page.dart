@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat_model.dart';
+import '../services/meta_app_events_service.dart';
 import '../viewmodels/chat_viewmodel.dart';
 import 'widgets/cart_proposal_card.dart';
 import 'widgets/market_ui.dart';
@@ -40,6 +41,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
   @override
   void initState() {
     super.initState();
+    // Meta: destek sohbeti açıldı (izin yoksa gönderilmez)
+    unawaited(MetaAppEventsService.instance.logContact());
     _messageController.addListener(_onMessageChanged);
     // Hızlı yanıtlar yalnızca alan boş ve klavye kapalıyken görünür
     _focusNode.addListener(_onFocusChanged);
