@@ -13,6 +13,7 @@ import '../models/search_result.dart';
 import '../models/banner.dart';
 import '../models/referral.dart';
 import '../models/coupon.dart';
+import '../models/delivery.dart';
 import 'token_manager.dart';
 import 'app_logger.dart';
 import 'socket_service.dart';
@@ -24,7 +25,31 @@ class ApiException implements Exception {
   final String message;
   final int? statusCode;
 
-  const ApiException(this.message, {this.statusCode});
+  /// Sunucunun makine okunur hata kodu (ör. ZONE_CLOSED, BELOW_MINIMUM)
+  final String? code;
+
+  /// Hata yanıtının tamamı (ör. BELOW_MINIMUM → minimumOrderAmount)
+  final Map<String, dynamic>? data;
+
+  const ApiException(this.message, {this.statusCode, this.code, this.data});
+
+  /// Dio hatasından sunucunun `{ error, message, code }` yanıtını okur.
+  factory ApiException.fromDio(DioException e, String fallback) {
+    final raw = e.response?.data;
+    final data = raw is Map ? Map<String, dynamic>.from(raw) : null;
+    final message = data?['message'];
+    final code = data?['code'] ?? data?['error'];
+    return ApiException(
+      message is String && message.trim().isNotEmpty
+          ? message.trim()
+          : e.response == null
+              ? 'Sunucuya bağlanılamıyor. İnternet bağlantını kontrol et.'
+              : fallback,
+      statusCode: e.response?.statusCode,
+      code: code is String && code.isNotEmpty ? code : null,
+      data: data,
+    );
+  }
 
   @override
   String toString() => message;
@@ -979,18 +1004,9 @@ class ApiService {
       }
       // Sunucu 4xx ile anlaşılır mesaj döner (sipariş saatleri, minimum
       // tutar, kupon 409 vb.); aynen göster.
-      final message = _serverMessage(e);
-      if (message != null) {
-        throw ApiException(message, statusCode: status);
-      }
-      if (e.response == null) {
-        throw const ApiException(
-          'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.',
-        );
-      }
-      throw ApiException(
-        'Sipariş oluşturulurken hata oluştu. Lütfen tekrar deneyin.',
-        statusCode: status,
+      throw ApiException.fromDio(
+        e,
+        'Sipariş oluşturulurken hata oluştu. Lütfen tekrar dene.',
       );
     } on ApiException {
       rethrow;
@@ -1058,6 +1074,7 @@ class ApiService {
     double orderAmount, {
     List<Map<String, dynamic>> products = const [],
     String? deliveryPoint,
+    String? deliveryZone,
     String? channel,
   }) async {
     try {
@@ -1067,7 +1084,9 @@ class ApiService {
         'code': code,
         'orderAmount': orderAmount,
         'products': products,
+        'zoneAware': true,
         if (deliveryPoint != null) 'deliveryPoint': deliveryPoint,
+        if (deliveryZone != null) 'deliveryZone': deliveryZone,
         if (channel != null) 'channel': channel,
       });
 
@@ -1088,13 +1107,16 @@ class ApiService {
     double orderAmount, {
     List<Map<String, dynamic>> products = const [],
     String? deliveryPoint,
+    String? deliveryZone,
     String? channel,
   }) async {
     try {
       final response = await _dio.post('/coupons/recommend', data: {
         'orderAmount': orderAmount,
         'products': products,
+        'zoneAware': true,
         if (deliveryPoint != null) 'deliveryPoint': deliveryPoint,
+        if (deliveryZone != null) 'deliveryZone': deliveryZone,
         if (channel != null) 'channel': channel,
       });
       return response.data ?? {};
@@ -1280,9 +1302,149 @@ class ApiService {
   }
 
   /// Kullanıcının kuponlarını getir
-  Future<List<Coupon>> getUserCoupons() async {
+  // -------------------------------------------------------------------------
+  // Adrese teslimat
+  // -------------------------------------------------------------------------
+
+  /// Adrese teslimat bu kullanıcıya açık mı? Hata verirse çağıran güvenli
+  /// tarafta kalır (yurt akışı).
+  Future<DeliveryAccess> getDeliveryAccess() async {
+    final response = await _dio.get('/delivery/me');
+    final data = response.data;
+    if (data is Map) {
+      return DeliveryAccess.fromJson(Map<String, dynamic>.from(data));
+    }
+    return DeliveryAccess.disabled;
+  }
+
+  /// Açık teslimat bölgeleri (sıralı). Giriş gerekmez.
+  Future<DeliveryZonesResult> getDeliveryZones() async {
     try {
-      final response = await _dio.get('/coupons');
+      final response = await _dio.get('/delivery/zones');
+      final data = response.data;
+      if (data is Map) {
+        return DeliveryZonesResult.fromJson(Map<String, dynamic>.from(data));
+      }
+      throw const ApiException('Teslimat bölgeleri alınamadı.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Teslimat bölgeleri alınamadı.');
+    }
+  }
+
+  /// Kayıtlı adresler ve en fazla adres sayısı.
+  Future<({List<DeliveryAddress> addresses, int max})> getAddresses() async {
+    try {
+      final response = await _dio.get('/addresses');
+      final data = response.data;
+      if (data is Map) {
+        final max = data['max'];
+        return (
+          addresses: DeliveryAddress.listFromJson(data['addresses']),
+          max: max is num && max > 0 ? max.toInt() : 5,
+        );
+      }
+      throw const ApiException('Adreslerin alınamadı.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Adreslerin alınamadı.');
+    }
+  }
+
+  /// Yeni adres. Yanıt güncel listeyi de döndürür.
+  Future<({DeliveryAddress address, List<DeliveryAddress> addresses})>
+      createAddress({
+    required String label,
+    required String zoneId,
+    required AddressFields fields,
+    bool? isDefault,
+  }) async {
+    try {
+      final response = await _dio.post('/addresses', data: {
+        'label': label.trim(),
+        'zoneId': zoneId,
+        ...fields.toJson(),
+        if (isDefault != null) 'isDefault': isDefault,
+      });
+      return _addressResult(response.data, 'Adres kaydedilemedi.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Adres kaydedilemedi.');
+    }
+  }
+
+  /// Adresi günceller; yalnızca değişen alanlar gönderilir.
+  Future<({DeliveryAddress address, List<DeliveryAddress> addresses})>
+      updateAddress(String id, Map<String, dynamic> changes) async {
+    try {
+      final response = await _dio.put('/addresses/$id', data: changes);
+      return _addressResult(response.data, 'Adres güncellenemedi.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Adres güncellenemedi.');
+    }
+  }
+
+  /// Adresi siler; güncel listeyi döndürür.
+  Future<List<DeliveryAddress>> deleteAddress(String id) async {
+    try {
+      final response = await _dio.delete('/addresses/$id');
+      final data = response.data;
+      if (data is Map) return DeliveryAddress.listFromJson(data['addresses']);
+      throw const ApiException('Adres silinemedi.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Adres silinemedi.');
+    }
+  }
+
+  /// Adresi varsayılan yapar.
+  Future<({DeliveryAddress address, List<DeliveryAddress> addresses})>
+      setDefaultAddress(String id) async {
+    try {
+      final response = await _dio.patch('/addresses/$id/default');
+      return _addressResult(response.data, 'Varsayılan adres değiştirilemedi.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Varsayılan adres değiştirilemedi.');
+    }
+  }
+
+  ({DeliveryAddress address, List<DeliveryAddress> addresses}) _addressResult(
+      Object? data, String fallback) {
+    if (data is Map && data['address'] is Map) {
+      return (
+        address: DeliveryAddress.fromJson(
+            Map<String, dynamic>.from(data['address'] as Map)),
+        addresses: DeliveryAddress.listFromJson(data['addresses']),
+      );
+    }
+    throw ApiException(fallback);
+  }
+
+  /// Seçili bölge ve sepet için teslimat ücreti ve minimum.
+  Future<DeliveryQuote> getDeliveryQuote({
+    required String zoneId,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    try {
+      final response = await _dio.post('/delivery/quote', data: {
+        'zoneId': zoneId,
+        'products': products,
+      });
+      final data = response.data;
+      if (data is Map) {
+        return DeliveryQuote.fromJson(Map<String, dynamic>.from(data));
+      }
+      throw const ApiException('Teslimat ücreti hesaplanamadı.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Teslimat ücreti hesaplanamadı.');
+    }
+  }
+
+  /// [deliveryZone]: seçili adresin bölgesi; bölgeye özel kuponlar ancak bu
+  /// verilince döner.
+  Future<List<Coupon>> getUserCoupons({String? deliveryZone}) async {
+    try {
+      final response = await _dio.get('/coupons', queryParameters: {
+        'zoneAware': 1,
+        if (deliveryZone != null && deliveryZone.isNotEmpty)
+          'deliveryZone': deliveryZone,
+      });
 
       if (response.statusCode == 200 && response.data != null) {
         if (response.data['success'] == true &&

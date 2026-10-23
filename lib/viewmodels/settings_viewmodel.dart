@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
 
@@ -17,28 +20,41 @@ class SettingsViewModel extends ChangeNotifier {
   }
 
   Timer? _refreshTimer;
+  AppLifecycleListener? _lifecycle;
+  bool _disposed = false;
+
+  /// Sessiz yenileme aralığı. Uygulama ön plana gelince ayrıca yenilenir.
+  static const Duration refreshInterval = Duration(seconds: 60);
 
   void _startPeriodicUpdate() {
-    // Her 5 saniyede bir ayarları güncelle (kullanıcı görmeden). Zamanlayıcı
-    // dispose'da durdurulur.
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    // Zamanlayıcı ve yaşam döngüsü dinleyicisi dispose'da durdurulur.
+    _refreshTimer = Timer.periodic(refreshInterval, (_) {
+      if (!_isLoading) _loadSettingsSilently();
+    });
+    _lifecycle = AppLifecycleListener(onResume: () {
       if (!_isLoading) _loadSettingsSilently();
     });
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _refreshTimer?.cancel();
+    _lifecycle?.dispose();
     super.dispose();
   }
 
+  /// Ayarları arka planda yeniler; yalnızca değer değiştiyse ekranları
+  /// bilgilendirir (sipariş saatleri, minimum tutar, teslimat noktaları).
   Future<void> _loadSettingsSilently() async {
     try {
       final settings = await _apiService.getSettings();
+      if (_disposed) return;
+      final changed = jsonEncode(settings) != jsonEncode(_settings);
       _settings = settings;
-      // notifyListeners() çağrılmıyor - kullanıcı görmez
+      if (changed) notifyListeners();
     } catch (e) {
-      // Sessizce hata yok sayılır
+      // Sessizce hata yok sayılır; son bilinen ayarlar geçerli kalır.
     }
   }
 
@@ -102,7 +118,7 @@ class SettingsViewModel extends ChangeNotifier {
       AppLogger.debug('Settings load error: $e');
     } finally {
       _isLoading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 

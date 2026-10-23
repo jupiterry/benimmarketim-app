@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Adres formunda "Konumumu kullan": yalnızca kullanıcı istediğinde, uygulama
+         açıkken tek seferlik. Arka planda konum izni istenmez. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     
     <!-- Dosya yükleme ve kamera için gerekli izinler -->
     <uses-permission android:name="android.permission.CAMERA" />

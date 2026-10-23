@@ -18,6 +18,7 @@ import 'viewmodels/flash_sale_viewmodel.dart';
 import 'viewmodels/banner_viewmodel.dart';
 import 'viewmodels/referral_viewmodel.dart';
 import 'viewmodels/chat_viewmodel.dart';
+import 'viewmodels/delivery_viewmodel.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
 import 'services/notification_service.dart';
@@ -154,6 +155,12 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => BannerViewModel()),
         ChangeNotifierProvider(create: (_) => ReferralViewModel()),
         ChangeNotifierProvider(create: (_) => ChatViewModel()),
+        // Adrese teslimat: oturum açılınca/kapanınca erişim ve adresler yenilenir
+        ChangeNotifierProxyProvider<AuthViewModel, DeliveryViewModel>(
+          create: (_) => DeliveryViewModel(),
+          update: (_, auth, delivery) =>
+              delivery!..onAuthChanged(auth.isLoggedIn),
+        ),
       ],
       child: Builder(
         builder: (context) {
