@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
@@ -14,14 +16,20 @@ class SettingsViewModel extends ChangeNotifier {
     _startPeriodicUpdate();
   }
 
+  Timer? _refreshTimer;
+
   void _startPeriodicUpdate() {
-    // Her 5 saniyede bir ayarları güncelle (kullanıcı görmeden)
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!_isLoading) {
-        _loadSettingsSilently();
-      }
-      _startPeriodicUpdate(); // Kendini tekrarla
+    // Her 5 saniyede bir ayarları güncelle (kullanıcı görmeden). Zamanlayıcı
+    // dispose'da durdurulur.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_isLoading) _loadSettingsSilently();
     });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadSettingsSilently() async {
