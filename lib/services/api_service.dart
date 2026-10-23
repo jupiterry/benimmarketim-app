@@ -921,7 +921,8 @@ class ApiService {
   }
 
   // Sipariş iptal et
-  /// [reason]: iptal nedeni kimliği (gec, fikir, yanlis_siparis, fiyat, baska_yer, diger)
+  /// [reason]: iptal nedeni kimliği (gec, fikir, yanlis_siparis, fiyat, baska_yer,
+  /// bolge_disi, ucret_yuksek, diger)
   Future<bool> cancelOrder(String orderId, {String? reason, String? note}) async {
     try {
       AppLogger.debug('Cancelling order: $orderId');
