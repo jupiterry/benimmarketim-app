@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import 'support/fake_delivery_api.dart';
 import 'support/test_utils.dart';
+import 'package:benimmarketim_app/views/widgets/address_map.dart';
 
 Future<void> settle(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
@@ -51,6 +52,7 @@ FilledButton _addButton(WidgetTester tester) => tester.widget<FilledButton>(
 
 void main() {
   configureMarketTests();
+  setUpAll(() => AddressMap.debugShowTiles = false);
 
   testWidgets('adresler kartlarda listelenir; varsayılan rozeti görünür',
       (tester) async {
@@ -136,7 +138,8 @@ void main() {
       expect(find.text('Henüz kayıtlı adresin yok'), findsOneWidget);
       await tester.tap(find.text('Adres ekle'));
       await settle(tester);
-      expect(find.text('Yeni adres'), findsOneWidget);
+      // Yeni adres haritayla başlar
+      expect(find.text('Teslimat konumunu seç'), findsOneWidget);
     });
   });
 

@@ -76,6 +76,8 @@ dependencies:
   # Adres formundaki isteğe bağlı "Konumumu kullan" (yalnızca butona basınca,
   # tek seferlik; arka planda konum yok)
   geolocator: ^14.0.2
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
 
 dev_dependencies:
   flutter_test:

@@ -8,18 +8,20 @@ import '../models/delivery.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../viewmodels/delivery_viewmodel.dart';
+import 'widgets/address_map.dart';
 import 'widgets/custom_dialog.dart';
 import 'widgets/delivery_ui.dart';
 import 'widgets/market_ui.dart';
 import 'widgets/zone_picker.dart';
 
-/// Adres ekleme / düzenleme formu. Önce teslimat bölgesi seçilir; zorunlu
-/// alanlar bölge tipine göre değişir:
+/// Adres ekleme / düzenleme formu. Yeni adreste önce harita açılır: kullanıcı
+/// kendi konumunu görür ve iğneyi kapısına getirir; ardından mahalle/köyü ve
+/// adres bilgilerini girer. Zorunlu alanlar bölge tipine göre değişir:
 ///
-/// * mahalle: sokak/cadde ve bina no zorunlu,
-/// * köy: adres tarifi zorunlu (en az 10 karakter), diğerleri isteğe bağlı,
-/// * yurt: yalnızca isteğe bağlı "Blok / oda" tarifi; sokak/bina alanları
-///   gizlenir ve kaydedilirken boş gönderilir.
+/// * mahalle: haritada konum, sokak/cadde ve bina no zorunlu,
+/// * köy: haritada konum ve adres tarifi (en az 10 karakter) zorunlu,
+/// * yurt: yurtlar adres değildir (ödemede teslimat noktası olarak seçilir);
+///   eski bir yurt adresi düzenlenirse yalnızca "Blok / oda" tarifi kalır.
 ///
 /// Kaydedilince sayfa kaydedilen [DeliveryAddress] ile kapanır
 /// (`context.pop(saved)`); ödeme ekranı yeni adresi buradan alır.
@@ -30,7 +32,7 @@ class AddressFormPage extends StatefulWidget {
   /// Yeni adreste önceden seçili bölge (ör. ödeme ekranından gelince).
   final String? initialZoneId;
 
-  /// Testte sahte konum vermek için.
+  /// Haritada konum göstermek için (testte sahte konum).
   final LocationService locationService;
 
   const AddressFormPage({
@@ -43,9 +45,6 @@ class AddressFormPage extends StatefulWidget {
   @override
   State<AddressFormPage> createState() => _AddressFormPageState();
 }
-
-/// Konum isteğinin kullanıcıya gösterilen sonucu (bulunamadıysa).
-enum _LocationNote { denied, deniedForever, serviceOff, failed }
 
 class _AddressFormPageState extends State<AddressFormPage> {
   static const _labelPresets = ['Ev', 'İş'];
@@ -62,6 +61,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
   // Hata olunca ilk hatalı alana kaydırmak için
   final Map<String, GlobalKey> _fieldKeys = {
     for (final key in const [
+      'location',
       'zone',
       'street',
       'buildingNo',
@@ -72,8 +72,6 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
   String? _zoneId;
   GeoPoint? _location;
-  bool _locating = false;
-  _LocationNote? _locationNote;
   late bool _makeDefault;
 
   /// "Diğer" etiketi seçildi (alan serbest yazılır)
@@ -115,6 +113,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
       unawaited(delivery.loadZones());
       // İlk adres otomatik varsayılan olur; bunu bilmek için liste gerekir.
       if (!delivery.addressesLoaded) unawaited(delivery.loadAddresses());
+      // Yeni adreste ilk adım harita: konum seçilmeden forma geçilmez.
+      if (!_isEdit) unawaited(_pickLocation(firstStep: true));
     });
   }
 
@@ -178,7 +178,12 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
   Future<void> _pickZone() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final zone = await showDeliveryZonePicker(context, selectedZoneId: _zoneId);
+    // Yurtlar adres değildir; ödemede teslimat noktası olarak seçilir.
+    final zone = await showDeliveryZonePicker(
+      context,
+      selectedZoneId: _zoneId,
+      includeDorms: false,
+    );
     if (zone == null || !mounted) return;
     setState(() {
       _zoneId = zone.id;
@@ -210,9 +215,17 @@ class _AddressFormPageState extends State<AddressFormPage> {
   Map<String, String> _errors(DeliveryViewModel delivery) {
     final type = _zoneType(delivery);
     if (_zoneId == null || type == null) {
-      return {'zone': 'Önce teslimat bölgeni seç'};
+      return {
+        if (!_isEdit && _location == null)
+          'location': 'Haritada teslimat konumunu işaretle',
+        'zone': 'Mahalleni ya da köyünü seç',
+      };
     }
     final errors = _fields(type).validate(type);
+    // Yeni mahalle/köy adresinde haritada konum zorunlu
+    if (!_isEdit && type != DeliveryZoneType.yurt && _location == null) {
+      errors['location'] = 'Haritada teslimat konumunu işaretle';
+    }
     // Yeni adres yalnızca açık bölgeye eklenebilir.
     if (!_isEdit && _zoneClosed(delivery)) {
       errors['zone'] = '$zoneClosedNote Başka bir bölge seç.';
@@ -270,37 +283,26 @@ class _AddressFormPageState extends State<AddressFormPage> {
   // Konum
   // -------------------------------------------------------------------------
 
-  Future<void> _useLocation() async {
-    if (_locating) return;
+  /// Haritayı açar; seçilen noktayı konum yapar. [firstStep]: yeni adreste
+  /// form açılınca ilk adım. Haritadan konum seçmeden çıkılırsa form da
+  /// kapanır (adres eklemekten vazgeçildi).
+  Future<void> _pickLocation({bool firstStep = false}) async {
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() {
-      _locating = true;
-      _locationNote = null;
-    });
-    final result = await widget.locationService.currentPoint();
+    final point = await showAddressMapPicker(
+      context,
+      initial: _location,
+      locationService: widget.locationService,
+    );
     if (!mounted) return;
+    if (point == null) {
+      if (firstStep && _location == null) context.pop();
+      return;
+    }
     setState(() {
-      _locating = false;
-      switch (result.outcome) {
-        case LocationOutcome.found:
-          _location = result.point;
-          _serverError = null;
-        case LocationOutcome.denied:
-          _locationNote = _LocationNote.denied;
-        case LocationOutcome.deniedForever:
-          _locationNote = _LocationNote.deniedForever;
-        case LocationOutcome.serviceOff:
-          _locationNote = _LocationNote.serviceOff;
-        case LocationOutcome.failed:
-          _locationNote = _LocationNote.failed;
-      }
+      _location = point;
+      _serverError = null;
     });
   }
-
-  void _removeLocation() => setState(() {
-        _location = null;
-        _serverError = null;
-      });
 
   // -------------------------------------------------------------------------
   // Kaydet / geri
@@ -377,7 +379,13 @@ class _AddressFormPageState extends State<AddressFormPage> {
   }
 
   void _scrollToFirstError(Map<String, String> errors) {
-    for (final key in const ['zone', 'directions', 'street', 'buildingNo']) {
+    for (final key in const [
+      'location',
+      'zone',
+      'directions',
+      'street',
+      'buildingNo',
+    ]) {
       if (!errors.containsKey(key)) continue;
       final target = _fieldKeys[key]?.currentContext;
       if (target == null) continue;
@@ -467,14 +475,15 @@ class _AddressFormPageState extends State<AddressFormPage> {
                     ),
                     const SizedBox(height: 14),
                   ],
+                  // Eski bir yurt adresi dışında önce haritadaki konum
+                  if (type != DeliveryZoneType.yurt) ...[
+                    _buildLocationSection(errors['location']),
+                    const SizedBox(height: 14),
+                  ],
                   _buildZoneSection(delivery, errors['zone']),
                   if (type != null) ...[
                     const SizedBox(height: 14),
                     _buildFieldsSection(type, errors),
-                    if (type != DeliveryZoneType.yurt) ...[
-                      const SizedBox(height: 14),
-                      _buildLocationSection(),
-                    ],
                     const SizedBox(height: 14),
                     _buildLabelSection(delivery),
                   ] else ...[
@@ -482,7 +491,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
                     const MarketNotice.info(
                       icon: Icons.touch_app_outlined,
                       text:
-                          'Önce teslimat bölgeni seç; adres bilgileri bölgeye göre değişir.',
+                          'Mahalleni ya da köyünü seç; adres bilgileri bölgeye göre değişir.',
                     ),
                   ],
                 ],
@@ -513,7 +522,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       // Uzun açıklama altta uyarı olarak çıkar (düzenlemede)
       subtitle = _isEdit ? 'Teslimat şu an kapalı' : zoneClosedNote;
     } else {
-      subtitle = 'Mahalle, köy ya da yurdunu listeden seç';
+      subtitle = 'Mahalleni ya da köyünü listeden seç';
     }
 
     return KeyedSubtree(
@@ -745,98 +754,57 @@ class _AddressFormPageState extends State<AddressFormPage> {
     );
   }
 
-  Widget _buildLocationSection() {
+  Widget _buildLocationSection(String? error) {
     final location = _location;
     final Widget body;
     if (location != null) {
-      body = Align(
-        alignment: Alignment.centerLeft,
-        child: _LocationChip(onRemove: _saving ? null : _removeLocation),
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AddressMapPreview(point: location),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _saving ? null : _pickLocation,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(MarketSize.buttonSm),
+              foregroundColor: MarketPalette.greenDark,
+            ),
+            icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+            label: const Text('Konumu değiştir'),
+          ),
+        ],
       );
     } else {
-      body = OutlinedButton.icon(
-        onPressed: _locating || _saving ? null : _useLocation,
-        style: OutlinedButton.styleFrom(
+      body = FilledButton.tonalIcon(
+        onPressed: _saving ? null : _pickLocation,
+        style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(MarketSize.buttonSm),
-          foregroundColor: MarketPalette.greenDark,
         ),
-        icon: _locating
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: MarketPalette.green),
-              )
-            : const Icon(Icons.my_location_rounded, size: 18),
-        label: Text(_locating ? 'Konumun alınıyor…' : 'Konumumu kullan'),
+        icon: const Icon(Icons.map_outlined, size: 18),
+        label: const Text('Haritada işaretle'),
       );
     }
 
-    return _FormSection(
-      title: 'Konum',
-      trailing: 'İsteğe bağlı',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Kuryenin seni kolay bulması için şu anki konumunu ekleyebilirsin. '
-            'Konum yalnızca butona bastığında bir kez alınır.',
-            style: MarketText.caption(size: 13),
-          ),
-          const SizedBox(height: 12),
-          body,
-          if (location == null && _locationNote != null) ...[
-            const SizedBox(height: 10),
-            _buildLocationNote(_locationNote!),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLocationNote(_LocationNote note) {
-    final service = widget.locationService;
-    final (icon, text, action, onAction) = switch (note) {
-      _LocationNote.denied => (
-          Icons.location_disabled_outlined,
-          'Konum izni verilmedi. Sorun değil, adresini konumsuz da kaydedebilirsin.',
-          null,
-          null,
-        ),
-      _LocationNote.deniedForever => (
-          Icons.location_disabled_outlined,
-          'Konum izni kapalı. İstersen ayarlardan açabilirsin; adresini konumsuz da kaydedebilirsin.',
-          'Ayarları aç',
-          service.openAppSettings,
-        ),
-      _LocationNote.serviceOff => (
-          Icons.location_off_outlined,
-          'Telefonunun konum servisi kapalı. Açıp tekrar deneyebilir ya da konumsuz devam edebilirsin.',
-          'Konum ayarlarını aç',
-          service.openLocationSettings,
-        ),
-      _LocationNote.failed => (
-          Icons.location_searching_rounded,
-          'Konumun alınamadı. Tekrar deneyebilir ya da konumsuz devam edebilirsin.',
-          null,
-          null,
-        ),
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        MarketNotice.info(icon: icon, text: text),
-        if (action != null && onAction != null)
-          TextButton.icon(
-            onPressed: onAction,
-            icon: const Icon(Icons.settings_outlined, size: 18),
-            label: Text(action),
-            style: TextButton.styleFrom(
-              foregroundColor: MarketPalette.greenDark,
-              minimumSize: const Size(0, MarketSize.control),
+    return KeyedSubtree(
+      key: _fieldKeys['location'],
+      child: _FormSection(
+        title: 'Teslimat konumu',
+        trailing: _isEdit ? 'Önerilir' : 'Zorunlu',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              location != null
+                  ? 'Kurye seni haritadaki bu noktada arayacak.'
+                  : 'Kuryenin seni kolay bulması için kapını haritada işaretle.',
+              style: MarketText.caption(size: 13),
             ),
-          ),
-      ],
+            const SizedBox(height: 12),
+            body,
+            if (error != null) _ErrorLine(error),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1098,42 +1066,6 @@ class _ErrorLine extends StatelessWidget {
               style: MarketText.caption(
                   color: MarketPalette.red, weight: FontWeight.w600),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// "Konum eklendi" çipi; ✕ ile konum kaldırılır.
-class _LocationChip extends StatelessWidget {
-  final VoidCallback? onRemove;
-
-  const _LocationChip({this.onRemove});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.only(left: 12),
-      decoration: BoxDecoration(
-        color: MarketPalette.greenSoft,
-        borderRadius: BorderRadius.circular(MarketRadius.pill),
-        border: Border.all(color: MarketPalette.green, width: 1.5),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.where_to_vote_rounded,
-              size: 18, color: MarketPalette.green),
-          const SizedBox(width: 6),
-          Text('Konum eklendi',
-              style: MarketText.label(color: MarketPalette.greenDark)),
-          IconButton(
-            onPressed: onRemove,
-            tooltip: 'Konumu kaldır',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.close_rounded,
-                size: 18, color: MarketPalette.greenDark),
           ),
         ],
       ),

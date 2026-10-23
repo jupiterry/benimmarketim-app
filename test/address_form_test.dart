@@ -3,6 +3,7 @@ import 'package:benimmarketim_app/services/api_service.dart';
 import 'package:benimmarketim_app/services/location_service.dart';
 import 'package:benimmarketim_app/viewmodels/delivery_viewmodel.dart';
 import 'package:benimmarketim_app/views/address_form_page.dart';
+import 'package:benimmarketim_app/views/widgets/address_map.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -39,12 +40,16 @@ class _FormHarness {
 
   _FormHarness(this.api) : delivery = createTestDeliveryViewModel(api);
 
+  /// Yeni adreste form önce haritayı açar; [confirmMap] ise haritada
+  /// "Bu konumu kullan"a basılıp forma geçilir.
   Future<void> open(
     WidgetTester tester, {
     DeliveryAddress? initial,
     String? initialZoneId,
-    LocationService location = const LocationService(),
+    LocationService? location,
+    bool confirmMap = true,
   }) async {
+    location ??= _FakeLocation(LocationOutcome.found);
     await pumpMarket(
       tester,
       Builder(
@@ -66,7 +71,7 @@ class _FormHarness {
           builder: (context, state) => AddressFormPage(
             initial: initial,
             initialZoneId: initialZoneId,
-            locationService: location,
+            locationService: location!,
           ),
         ),
       ],
@@ -80,8 +85,16 @@ class _FormHarness {
     await settle(tester);
     await tester.tap(find.text('Formu aç'));
     await settle(tester);
+    if (initial == null && confirmMap) {
+      expect(find.text('Teslimat konumunu seç'), findsOneWidget);
+      await tester.tap(find.text('Bu konumu kullan'));
+      await settle(tester);
+    }
   }
 }
+
+/// Haritada bulunan sahte konum
+const _foundLocation = {'lat': 41.2215, 'lng': 31.9561};
 
 Future<void> settle(WidgetTester tester) async {
   for (var i = 0; i < 8; i++) {
@@ -98,6 +111,8 @@ Future<void> _tapSave(WidgetTester tester, [String text = 'Adresi kaydet']) asyn
 
 void main() {
   configureMarketTests();
+  // Testte harita karoları ağdan indirilmez
+  setUpAll(() => AddressMap.debugShowTiles = false);
 
   group('Mahalle', () {
     testWidgets('sokak ve bina no zorunlu; dolunca kaydedip adresle kapanır',
@@ -125,7 +140,7 @@ void main() {
         expect(h.api.lastCreateBody!['zoneId'], 'cumhuriyet');
         expect(h.api.lastCreateBody!['street'], 'Atatürk Cd.');
         expect(h.api.lastCreateBody!['buildingNo'], '5');
-        expect(h.api.lastCreateBody!['location'], isNull);
+        expect(h.api.lastCreateBody!['location'], _foundLocation);
         // İlk adres: varsayılan olarak gönderilir
         expect(h.api.lastCreateBody!['isDefault'], isTrue);
         expect(h.popped, isTrue);
@@ -205,21 +220,25 @@ void main() {
   });
 
   group('Yurt', () {
-    testWidgets('yalnızca isteğe bağlı blok/oda alanı; boş kaydedilebilir',
+    testWidgets('eski yurt adresinde yalnızca blok/oda alanı, harita yok',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneYurt.id);
+        final h = _FormHarness(FakeDeliveryApi(addresses: [
+          testAddress(
+            zone: testZoneYurt,
+            isDefault: true,
+            fields: const AddressFields(),
+          ),
+        ]));
+        await h.open(
+          tester,
+          initial: h.api.addresses.single,
+        );
 
         expect(_field('Blok / oda (isteğe bağlı)'), findsOneWidget);
         expect(find.textContaining('Sokak / cadde'), findsNothing);
         expect(_field('Bina no'), findsNothing);
-        expect(find.text('Konumumu kullan'), findsNothing);
-
-        await _tapSave(tester);
-        expect(h.api.lastCreateBody!['zoneId'], 'girlsDorm');
-        expect(h.api.lastCreateBody!['directions'], '');
-        expect(h.popped, isTrue);
+        expect(find.text('Teslimat konumu'), findsNothing);
       });
     });
   });
@@ -234,13 +253,15 @@ void main() {
         expect(find.text('Bölgeni seç'), findsOneWidget);
         expect(_field('Sokak / cadde'), findsNothing);
         await _tapSave(tester);
-        expect(find.text('Önce teslimat bölgeni seç'), findsOneWidget);
+        expect(find.text('Mahalleni ya da köyünü seç'), findsOneWidget);
 
         await tester.tap(find.text('Bölgeni seç'));
         await settle(tester);
         expect(find.text('MAHALLELER'), findsOneWidget);
         expect(find.text('KÖYLER'), findsOneWidget);
-        expect(find.text('YURTLAR'), findsOneWidget);
+        // Yurtlar adres değil; ödemede teslimat noktası olarak seçilir
+        expect(find.text('YURTLAR'), findsNothing);
+        expect(find.text('Kız KYK Yurdu'), findsNothing);
 
         // Türkçe duyarsız arama: "ozbag" → "Özbağ Mahallesi"
         await tester.enterText(find.byType(TextField).last, 'ozbag');
@@ -308,17 +329,23 @@ void main() {
         expect(tester.widget<FilledButton>(save).onPressed, isNull);
 
         await tester.enterText(_field('Bina / site adı'), 'Lale Sitesi');
-        await tester.tap(find.byTooltip('Konumu kaldır'));
-        await tester.pump();
+        // Konum haritadan değiştirilir: kayıtlı noktada açılır, "Konumuma
+        // git" ile kullanıcının konumuna gidilir
+        await tester.tap(find.text('Konumu değiştir'));
+        await settle(tester);
+        await tester.tap(find.byTooltip('Konumuma git'));
+        await settle(tester);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
         expect(tester.widget<FilledButton>(save).onPressed, isNotNull);
 
         await _tapSave(tester, 'Değişiklikleri kaydet');
         expect(h.api.lastUpdateChanges, {
           'buildingName': 'Lale Sitesi',
-          'location': null,
+          'location': _foundLocation,
         });
         expect(h.result?.fields.buildingName, 'Lale Sitesi');
-        expect(h.result?.fields.location, isNull);
+        expect(h.result?.fields.location?.lat, 41.2215);
       });
     });
 
@@ -381,8 +408,9 @@ void main() {
 
     testWidgets('değişiklik yoksa onaysız kapanır', (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneMahalle.id);
+        final address = testAddress(isDefault: true);
+        final h = _FormHarness(FakeDeliveryApi(addresses: [address]));
+        await h.open(tester, initial: address);
         await tester.tap(find.byTooltip('Geri'));
         await settle(tester);
         expect(find.text('Değişiklikler kaydedilmesin mi?'), findsNothing);
@@ -402,7 +430,9 @@ void main() {
             code: 'ADDRESS_LIMIT',
           );
         final h = _FormHarness(api);
-        await h.open(tester, initialZoneId: testZoneYurt.id);
+        await h.open(tester, initialZoneId: testZoneKoy.id);
+        await tester.enterText(
+            _field('Adres tarifi'), 'Cami yanındaki yeşil kapılı ev');
         await _tapSave(tester);
         expect(find.text('En fazla 5 adres kaydedebilirsin.'), findsOneWidget);
         expect(h.popped, isFalse);
@@ -415,7 +445,7 @@ void main() {
           for (var i = 0; i < 5; i++) testAddress(id: 'a$i'),
         ]);
         final h = _FormHarness(api);
-        await h.open(tester, initialZoneId: testZoneYurt.id);
+        await h.open(tester, initialZoneId: testZoneKoy.id);
         expect(find.textContaining('En fazla 5 adres kaydedebilirsin'),
             findsOneWidget);
         final save = find.widgetWithText(FilledButton, 'Adresi kaydet');
@@ -424,38 +454,58 @@ void main() {
     });
   });
 
-  group('Konumumu kullan', () {
-    testWidgets('bulununca "Konum eklendi" ve konum gönderilir', (tester) async {
+  group('Harita', () {
+    testWidgets('yeni adreste önce harita açılır ve konum gösterilir',
+        (tester) async {
       await withoutFontErrors(() async {
         final location = _FakeLocation(LocationOutcome.found);
         final h = _FormHarness(FakeDeliveryApi());
         await h.open(tester,
-            initialZoneId: testZoneMahalle.id, location: location);
-        expect(location.calls, 0); // yalnızca butona basınca
+            initialZoneId: testZoneMahalle.id,
+            location: location,
+            confirmMap: false);
+        expect(find.text('Teslimat konumunu seç'), findsOneWidget);
+        expect(find.text('İğneyi kapına getir'), findsOneWidget);
+        expect(location.calls, 1); // açılır açılmaz konum istenir
 
-        await tester.tap(find.text('Konumumu kullan'));
+        await tester.tap(find.text('Bu konumu kullan'));
         await settle(tester);
-        expect(location.calls, 1);
-        expect(find.text('Konum eklendi'), findsOneWidget);
-
-        await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
-        await tester.enterText(_field('Bina no'), '5');
-        await _tapSave(tester);
-        expect(h.api.lastCreateBody!['location'],
-            {'lat': 41.2215, 'lng': 31.9561});
+        expect(find.text('Teslimat konumu'), findsOneWidget);
+        expect(find.byType(AddressMapPreview), findsOneWidget);
+        expect(find.text('Konumu değiştir'), findsOneWidget);
       });
     });
 
-    testWidgets('izin verilmezse konumsuz devam edilir', (tester) async {
+    testWidgets('haritadan seçmeden çıkılırsa form da kapanır', (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(FakeDeliveryApi());
+        await h.open(tester, confirmMap: false);
+        await tester.tap(find.byTooltip('Geri'));
+        await settle(tester);
+        expect(h.popped, isTrue);
+        expect(h.result, isNull);
+        expect(h.api.calls, isNot(contains('POST /addresses')));
+      });
+    });
+
+    testWidgets('izin verilmezse harita Devrek merkezinde açılır',
+        (tester) async {
       await withoutFontErrors(() async {
         final h = _FormHarness(FakeDeliveryApi());
         await h.open(tester,
             initialZoneId: testZoneMahalle.id,
-            location: _FakeLocation(LocationOutcome.denied));
-        await tester.tap(find.text('Konumumu kullan'));
-        await settle(tester);
+            location: _FakeLocation(LocationOutcome.denied),
+            confirmMap: false);
         expect(find.textContaining('Konum izni verilmedi'), findsOneWidget);
-        expect(find.text('Konum eklendi'), findsNothing);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+
+        await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
+        await tester.enterText(_field('Bina no'), '5');
+        await _tapSave(tester);
+        final sent = h.api.lastCreateBody!['location'] as Map;
+        expect(sent['lat'], closeTo(AddressMap.devrekCenter.latitude, 1e-6));
+        expect(sent['lng'], closeTo(AddressMap.devrekCenter.longitude, 1e-6));
       });
     });
 
@@ -463,10 +513,8 @@ void main() {
       await withoutFontErrors(() async {
         final h = _FormHarness(FakeDeliveryApi());
         await h.open(tester,
-            initialZoneId: testZoneMahalle.id,
-            location: _FakeLocation(LocationOutcome.deniedForever));
-        await tester.tap(find.text('Konumumu kullan'));
-        await settle(tester);
+            location: _FakeLocation(LocationOutcome.deniedForever),
+            confirmMap: false);
         expect(find.text('Ayarları aç'), findsOneWidget);
       });
     });
@@ -476,13 +524,29 @@ void main() {
       await withoutFontErrors(() async {
         final h = _FormHarness(FakeDeliveryApi());
         await h.open(tester,
-            initialZoneId: testZoneMahalle.id,
-            location: _FakeLocation(LocationOutcome.serviceOff));
-        await tester.tap(find.text('Konumumu kullan'));
-        await settle(tester);
+            location: _FakeLocation(LocationOutcome.serviceOff),
+            confirmMap: false);
         expect(find.text('Konum ayarlarını aç'), findsOneWidget);
-        expect(find.text('Konumumu kullan'), findsOneWidget);
+        expect(find.text('Bu konumu kullan'), findsOneWidget);
+      });
+    });
+
+    testWidgets('Devrek dışındaysa uyarı gösterilir, harita Devrek\'te kalır',
+        (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(FakeDeliveryApi());
+        await h.open(tester,
+            location: _OutsideLocation(), confirmMap: false);
+        expect(find.textContaining('Devrek dışında görünüyorsun'),
+            findsOneWidget);
       });
     });
   });
+}
+
+/// Devrek dışında (Ankara) bir konum
+class _OutsideLocation extends LocationService {
+  @override
+  Future<({LocationOutcome outcome, GeoPoint? point})> currentPoint() async =>
+      (outcome: LocationOutcome.found, point: const GeoPoint(39.92, 32.85));
 }
