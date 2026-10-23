@@ -26,6 +26,9 @@ import '../models/order.dart' show PaymentMethod;
 import '../views/onboarding_page.dart';
 import '../views/cart_assistant_page.dart';
 import '../views/saved_carts_page.dart';
+import '../views/addresses_page.dart';
+import '../views/address_form_page.dart';
+import '../models/delivery.dart' show DeliveryAddress;
 import '../views/widgets/market_system_frame.dart';
 
 
@@ -82,6 +85,30 @@ class AppRouter {
       GoRoute(
         path: '/saved-carts',
         builder: (context, state) => const SavedCartsPage(),
+      ),
+      GoRoute(
+        path: '/addresses',
+        builder: (context, state) => const AddressesPage(),
+      ),
+      GoRoute(
+        // extra: önceden seçili bölge kimliği (String, isteğe bağlı).
+        // Kaydedilince yeni adres (DeliveryAddress) ile pop edilir.
+        path: '/addresses/new',
+        builder: (context, state) {
+          final extra = state.extra;
+          return AddressFormPage(initialZoneId: extra is String ? extra : null);
+        },
+      ),
+      GoRoute(
+        // extra: düzenlenecek adres (DeliveryAddress). Kaydedilince güncel
+        // adresle pop edilir.
+        path: '/addresses/edit',
+        builder: (context, state) {
+          final extra = state.extra;
+          return AddressFormPage(
+            initial: extra is DeliveryAddress ? extra : null,
+          );
+        },
       ),
       GoRoute(
         path: '/profile',
