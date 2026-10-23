@@ -76,7 +76,7 @@ class MarketWordmark extends StatelessWidget {
 }
 
 /// Marka imzası: maskot + "benim marketim" logosu ve isteğe bağlı kısa bir
-/// alt satır (ör. "Devrek • Yurda teslimat"). Giriş, kayıt ve tanıtım
+/// alt satır (ör. "Devrek • Kapına teslimat"). Giriş, kayıt ve tanıtım
 /// ekranlarında ana sayfadaki markayla aynı görünüm için kullanılır.
 class MarketBrandMark extends StatelessWidget {
   /// Açık zemin için yeşil logo ve gri alt satır.

@@ -28,8 +28,13 @@ class CartViewModel extends ChangeNotifier {
   // değiştiyse eski (geç gelen) yanıt yok sayılır.
   int _couponRequestSeq = 0;
   // Teslimat noktası doğrulamaları da numaralanır: müşteri yanıt gelmeden
-  // başka yurdu seçtiyse ekranda yalnızca son seçilen noktanın sonucu kalır.
+  // başka noktayı seçtiyse ekranda yalnızca son seçilen noktanın sonucu kalır.
   int _pointRequestSeq = 0;
+
+  /// Adrese teslimatta seçili teslimat bölgesi. Kupon doğrulama ve önerisi
+  /// bu bölgeye göre yapılır (bölgeye özel kuponlar). Yurt akışında null;
+  /// o zaman istekler bugünkü gibi bölgesiz gider.
+  String? _deliveryZone;
 
   CartViewModel() {
     _loadCart();
@@ -107,6 +112,25 @@ class CartViewModel extends ChangeNotifier {
   bool get isValidatingCoupon => _isValidatingCoupon;
   String? get couponError => _couponError;
   Map<String, dynamic>? get recommendedCoupon => _recommendedCoupon;
+  String? get deliveryZone => _deliveryZone;
+
+  /// Ödeme/sepet ekranı seçili teslimat bölgesini bildirir (adres akışında
+  /// adresin ya da yurdun bölgesi; yurt akışında ya da seçim yokken null).
+  /// Bölge değişince uygulanan kupon yeniden doğrulanır (geçersizse kod
+  /// kalır, indirim düşülmez), kupon yoksa öneri yenilenir.
+  void setDeliveryZone(String? zone) {
+    final next = zone == null || zone.isEmpty ? null : zone;
+    if (next == _deliveryZone) return;
+    _deliveryZone = next;
+    if (_cartItems.isEmpty) return;
+    if (_appliedCouponCode != null) {
+      unawaited(validateCouponForDeliveryPoint(null));
+    } else {
+      _couponSyncTimer?.cancel();
+      _couponSyncTimer =
+          Timer(const Duration(milliseconds: 400), _syncCoupon);
+    }
+  }
   double get finalPrice =>
       (totalPrice - _discountAmount).clamp(0, double.infinity);
 
@@ -295,6 +319,7 @@ class CartViewModel extends ChangeNotifier {
         totalPrice,
         products: _couponProducts,
         channel: _channel,
+        deliveryZone: _deliveryZone,
       );
 
       if (response['success'] == true && response['coupon'] != null) {
@@ -325,7 +350,9 @@ class CartViewModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> validateCouponForDeliveryPoint(String deliveryPoint) async {
+  /// Uygulanan kuponu teslimat noktasına (yurt) ve seçili bölgeye göre
+  /// doğrular. [deliveryPoint] null ise yalnızca bölge gönderilir.
+  Future<bool> validateCouponForDeliveryPoint(String? deliveryPoint) async {
     if (_appliedCouponCode == null) return true;
     final requestId = ++_pointRequestSeq;
     _isValidatingCoupon = true;
@@ -338,6 +365,7 @@ class CartViewModel extends ChangeNotifier {
         products: _couponProducts,
         channel: _channel,
         deliveryPoint: deliveryPoint,
+        deliveryZone: _deliveryZone,
       );
       final valid = response['success'] == true && response['coupon'] != null;
       // Bu arada başka bir nokta için soruldu: yanıt eskidir, ekrana yansımaz.
@@ -349,7 +377,9 @@ class CartViewModel extends ChangeNotifier {
         return true;
       }
       _couponError = response['message'] ??
-          'Bu kupon seçtiğin teslimat noktasında geçerli değil';
+          (deliveryPoint == null && _deliveryZone != null
+              ? 'Bu kupon seçtiğin adreste geçerli değil'
+              : 'Bu kupon seçtiğin teslimat noktasında geçerli değil');
       // Bu noktada geçerli olmayan kuponun indirimi tutarlardan düşülmez
       // (kupon kodu kalır; geçerli bir nokta seçilince yeniden hesaplanır).
       _discountAmount = 0;
@@ -430,6 +460,7 @@ class CartViewModel extends ChangeNotifier {
           totalPrice,
           products: _couponProducts,
           channel: _channel,
+          deliveryZone: _deliveryZone,
         );
         // Bu arada yeni bir istek başladıysa bu yanıt eskidir
         if (requestId != _couponRequestSeq) return;
@@ -450,6 +481,7 @@ class CartViewModel extends ChangeNotifier {
           totalPrice,
           products: _couponProducts,
           channel: _channel,
+          deliveryZone: _deliveryZone,
         );
         if (requestId != _couponRequestSeq) return;
         _recommendedCoupon = response['bestCoupon'] == null

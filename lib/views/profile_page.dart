@@ -9,10 +9,12 @@ import '../services/app_logger.dart';
 import '../services/image_url.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/chat_viewmodel.dart';
+import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/favorites_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/account_actions.dart';
 import 'widgets/auth_ui.dart';
+import 'widgets/delivery_zones_info.dart';
 import 'widgets/market_ui.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -286,6 +288,9 @@ class _LoggedInContent extends StatelessWidget {
     final unreadCount =
         context.select<ChatViewModel, int>((c) => c.totalUnreadCount);
     final phone = (auth.user?.phone ?? '').trim();
+    // Adreslerim yalnızca adrese teslimat bu kullanıcıya açıkken görünür
+    final canOrderToAddress = context.select<DeliveryViewModel?, bool>(
+        (d) => d?.canOrderToAddress ?? false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -357,6 +362,13 @@ class _LoggedInContent extends StatelessWidget {
         MarketMenuGroup(
           title: 'Hesap',
           children: [
+            if (canOrderToAddress)
+              MarketMenuTile(
+                icon: Icons.location_on_outlined,
+                title: 'Adreslerim',
+                subtitle: 'Teslimat adreslerini yönet',
+                onTap: () => context.push('/addresses'),
+              ),
             MarketMenuTile(
               icon: Icons.phone_outlined,
               title: 'Telefon numarası',
@@ -685,8 +697,22 @@ class _Benefit extends StatelessWidget {
 // Ortak
 // ---------------------------------------------------------------------------
 
-class _StoreInfoGroup extends StatelessWidget {
+class _StoreInfoGroup extends StatefulWidget {
   const _StoreInfoGroup();
+
+  @override
+  State<_StoreInfoGroup> createState() => _StoreInfoGroupState();
+}
+
+class _StoreInfoGroupState extends State<_StoreInfoGroup> {
+  @override
+  void initState() {
+    super.initState();
+    // Bölge listesi giriş gerektirmez; misafir de görür.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<DeliveryViewModel?>()?.loadZones();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -702,10 +728,6 @@ class _StoreInfoGroup extends StatelessWidget {
     final opensAt = hhmm(settings.orderStartHour, settings.orderStartMinute);
     final hours = '$opensAt – ${hhmm(settings.orderEndHour, settings.orderEndMinute)}';
     final open = settings.isWithinOrderHours;
-    final points = [
-      if (settings.girlsDormEnabled) settings.girlsDormName,
-      if (settings.boysDormEnabled) settings.boysDormName,
-    ];
 
     final String hoursText;
     final Widget status;
@@ -741,13 +763,110 @@ class _StoreInfoGroup extends StatelessWidget {
             style: MarketText.label(size: 14),
           ),
         ),
-        MarketMenuTile(
-          icon: Icons.location_on_outlined,
-          title: 'Teslimat noktaları',
-          subtitle: points.isEmpty ? 'Şu an teslimat yapılmıyor' : points.join(' • '),
-        ),
+        ..._deliveryTiles(context, settings),
       ],
     );
+  }
+
+  /// Teslimat bölgeleri (`GET /delivery/zones`): az bölge varsa tek tek,
+  /// çoksa özet + "Tüm teslimat bölgeleri" alt sayfası. Liste alınamazsa
+  /// ayarlardaki yurt adlarına düşülür.
+  List<Widget> _deliveryTiles(BuildContext context, SettingsViewModel settings) {
+    final delivery = context.watch<DeliveryViewModel?>();
+    final loggedIn = context.select<AuthViewModel, bool>((a) => a.isLoggedIn);
+    final dormNames = [
+      if (settings.girlsDormEnabled) settings.girlsDormName,
+      if (settings.boysDormEnabled) settings.boysDormName,
+    ];
+    Widget dormFallback({Widget? trailing}) => MarketMenuTile(
+          icon: Icons.location_on_outlined,
+          title: 'Teslimat noktaları',
+          subtitle: dormNames.isEmpty
+              ? 'Teslimat bölgeleri yüklenemedi'
+              : dormNames.join(' • '),
+          trailing: trailing,
+        );
+
+    if (delivery == null) return [dormFallback()];
+
+    if (!delivery.zonesLoaded) {
+      if (delivery.zonesError != null && !delivery.zonesLoading) {
+        return [
+          dormFallback(
+            trailing: IconButton(
+              onPressed: () => delivery.loadZones(force: true),
+              tooltip: 'Teslimat bölgelerini yeniden yükle',
+              color: MarketPalette.greenDark,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ),
+        ];
+      }
+      return const [
+        MarketMenuTile(
+          icon: Icons.location_on_outlined,
+          title: 'Teslimat bölgeleri',
+          subtitle: 'Yükleniyor…',
+          trailing: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: MarketPalette.green),
+          ),
+        ),
+      ];
+    }
+
+    // Adrese teslimat bu kullanıcıya kapalıysa yalnızca yurtlar gösterilir
+    // (sipariş verebileceği yerler). Misafir tüm açık bölgeleri görür.
+    final zones = loggedIn && !delivery.canOrderToAddress
+        ? delivery.zones.where((z) => z.isDorm).toList()
+        : delivery.zones;
+    final campaign = delivery.freeDeliveryEverywhere;
+
+    if (zones.isEmpty) {
+      return const [
+        MarketMenuTile(
+          icon: Icons.location_off_outlined,
+          title: 'Teslimat bölgeleri',
+          subtitle: 'Şu an teslimat yapılmıyor',
+        ),
+      ];
+    }
+
+    final onlyDorms = zones.every((z) => z.isDorm);
+    final title = onlyDorms ? 'Teslimat noktaları' : 'Teslimat bölgeleri';
+
+    if (zones.length <= deliveryZonesInlineLimit) {
+      return [
+        MarketMenuTile(
+          icon: Icons.location_on_outlined,
+          title: title,
+          subtitle: campaign
+              ? freeDeliveryCampaignNote
+              : 'Teslimat ücreti ve tahmini süre',
+        ),
+        for (final zone in zones) DeliveryZoneTile(zone: zone, campaign: campaign),
+      ];
+    }
+
+    return [
+      MarketMenuTile(
+        icon: Icons.location_on_outlined,
+        title: title,
+        subtitle: [
+          zoneCountsSummary(zones),
+          campaign ? freeDeliveryCampaignNote : zoneFeeRangeSummary(zones),
+        ].join('\n'),
+      ),
+      MarketMenuTile(
+        icon: Icons.map_outlined,
+        title: 'Tüm teslimat bölgeleri',
+        subtitle: 'Ücret ve tahmini süreleri gör',
+        onTap: () =>
+            showDeliveryZonesSheet(context, zones: zones, campaign: campaign),
+      ),
+    ];
   }
 }
 

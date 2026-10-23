@@ -19,6 +19,7 @@ import '../services/meta_app_events_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/cart_viewmodel.dart';
 import '../viewmodels/category_viewmodel.dart';
+import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/favorites_viewmodel.dart';
 import '../viewmodels/flash_sale_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
@@ -379,7 +380,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         .logShare(contentType: 'product', contentId: product.id));
     Share.share(
       '${product.name} – ${formatTl(product.actualPrice)}\n'
-      "Benim Marketim'de gördüm, yurda kadar getiriyorlar 🛵\n"
+      "Benim Marketim'de gördüm, kapına kadar getiriyorlar 🛵\n"
       'https://devrekbenimmarketim.com',
     );
   }
@@ -1407,6 +1408,9 @@ class _DeliveryInfoCard extends StatelessWidget {
       if (settings.girlsDormEnabled) settings.girlsDormName,
       if (settings.boysDormEnabled) settings.boysDormName,
     ];
+    // Adrese teslimat açıksa bölgelerdeki adreslere de teslim edilir
+    final toAddress = context.select<DeliveryViewModel?, bool>(
+        (d) => d?.canOrderToAddress ?? false);
     final open = settings.isWithinOrderHours;
     final allDay = settings.orderStartHour == 0 &&
         settings.orderStartMinute == 0 &&
@@ -1443,18 +1447,25 @@ class _DeliveryInfoCard extends StatelessWidget {
                         ),
                       ),
               ),
-      points.isEmpty
-          ? const _InfoRow(
-              icon: Icons.location_off_outlined,
-              iconColor: MarketPalette.orangeInk,
-              title: 'Şu an teslimat yapılmıyor',
-              titleColor: MarketPalette.orangeInk,
-            )
-          : _InfoRow(
-              icon: Icons.location_on_outlined,
-              title: 'Yurduna teslim',
-              detail: points.join(' · '),
-            ),
+      if (toAddress)
+        const _InfoRow(
+          icon: Icons.location_on_outlined,
+          title: 'Kapına teslim',
+          detail: 'Teslimat ücreti ve süresi bölgene göre değişir',
+        )
+      else
+        points.isEmpty
+            ? const _InfoRow(
+                icon: Icons.location_off_outlined,
+                iconColor: MarketPalette.orangeInk,
+                title: 'Şu an teslimat yapılmıyor',
+                titleColor: MarketPalette.orangeInk,
+              )
+            : _InfoRow(
+                icon: Icons.location_on_outlined,
+                title: 'Teslimat noktaları',
+                detail: points.join(' · '),
+              ),
       open
           ? _InfoRow(
               icon: Icons.schedule_rounded,

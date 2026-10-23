@@ -7,7 +7,7 @@ import 'package:benimmarketim_app/viewmodels/referral_viewmodel.dart';
 class CouponApi extends ApiService {
   final requests = <Completer<List<Coupon>>>[];
   @override
-  Future<List<Coupon>> getUserCoupons() {
+  Future<List<Coupon>> getUserCoupons({String? deliveryZone}) {
     final request = Completer<List<Coupon>>();
     requests.add(request);
     return request.future;

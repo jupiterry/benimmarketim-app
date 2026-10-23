@@ -4,10 +4,14 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/order.dart';
+import '../services/api_service.dart';
+import '../services/app_logger.dart';
+import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/bank_transfer_card.dart';
 import 'widgets/first_order_rating.dart';
 import 'widgets/market_ui.dart';
+import 'widgets/order_delivery_parts.dart';
 
 class OrderConfirmationPage extends StatefulWidget {
   final String? orderId;
@@ -19,12 +23,17 @@ class OrderConfirmationPage extends StatefulWidget {
   /// Teslimat noktasının adı (`?point=` sorgu parametresi).
   final String? deliveryPointName;
 
+  /// Siparişin ayrıntısını (adres, teslimat ücreti, teyit) getirir. Verilmezse
+  /// kullanıcının siparişlerinden [orderId] ile bulunur. Testler sahte verir.
+  final Future<Order?> Function(String orderId)? orderLoader;
+
   const OrderConfirmationPage({
     super.key,
     this.orderId,
     this.paymentMethod,
     this.amount,
     this.deliveryPointName,
+    this.orderLoader,
   });
 
   @override
@@ -36,6 +45,10 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
   late final AnimationController _controller;
   late final Animation<double> _arrival;
 
+  /// Sunucudaki sipariş (adres, ücret, teyit). Gelene kadar ya da
+  /// alınamazsa sayfa yalnızca rota bilgileriyle (tutar, nokta) çalışır.
+  Order? _order;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +57,30 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
       duration: const Duration(milliseconds: 850),
     )..forward();
     _arrival = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+    _loadOrder();
+  }
+
+  Future<void> _loadOrder() async {
+    final id = widget.orderId ?? '';
+    if (id.isEmpty) return;
+    try {
+      final loader = widget.orderLoader ?? _findOrder;
+      final order = await loader(id);
+      if (!mounted || order == null) return;
+      setState(() => _order = order);
+      // Tahmini teslimat süresi bölge listesinden gelir
+      context.read<DeliveryViewModel?>()?.loadZones();
+    } catch (e) {
+      AppLogger.debug('Sipariş onayı: sipariş ayrıntısı alınamadı: $e');
+    }
+  }
+
+  static Future<Order?> _findOrder(String id) async {
+    final orders = await ApiService().getUserOrders();
+    for (final order in orders) {
+      if (order.id == id) return order;
+    }
+    return null;
   }
 
   @override
@@ -123,6 +160,11 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
                         const SizedBox(height: 14),
                       ],
                       _buildOrderCard(showAmount: !bankTransfer),
+                      if (_order != null &&
+                          OrderDeliveryNotes.hasAny(_order!)) ...[
+                        const SizedBox(height: 14),
+                        OrderDeliveryNotes(order: _order!),
+                      ],
                       const SizedBox(height: 14),
                       const MarketNotice(
                         icon: Icons.notifications_active_outlined,
@@ -251,15 +293,40 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
 
   /// [showAmount] false ise tutar satırı gösterilmez (havale kartında var).
   Widget _buildOrderCard({bool showAmount = true}) {
-    final amount = showAmount ? widget.amount : null;
+    final order = _order;
+    // Sunucudaki tutar esas; sipariş gelene kadar rotadaki tutar gösterilir
+    final amount = showAmount ? (order?.totalAmount ?? widget.amount) : null;
     final point = widget.deliveryPointName;
-    final payment = widget.paymentMethod;
+    final payment = widget.paymentMethod ?? order?.paymentMethod;
+    final place = order == null ? null : OrderPlace.of(order);
+    final eta = order == null
+        ? null
+        : context
+            .watch<DeliveryViewModel?>()
+            ?.zoneById(orderZoneId(order))
+            ?.etaText
+            .trim();
+    final showFee = order != null && orderShowsDeliveryFee(order);
     final details = <Widget>[
-      if (point != null && point.isNotEmpty)
+      if (place != null && order!.isAddressDelivery)
+        _AddressBlock(place: place)
+      else if (place != null)
         _DetailRow(
           icon: Icons.apartment_rounded,
           label: 'Teslimat noktası',
+          value: place.title,
+        )
+      else if (point != null && point.isNotEmpty)
+        _DetailRow(
+          icon: Icons.place_outlined,
+          label: 'Teslimat',
           value: point,
+        ),
+      if (eta != null && eta.isNotEmpty)
+        _DetailRow(
+          icon: Icons.schedule_rounded,
+          label: 'Tahmini teslimat',
+          value: eta,
         ),
       if (payment != null)
         _DetailRow(
@@ -267,6 +334,30 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
           label: 'Ödeme',
           value: payment.label,
         ),
+      // Ürünler − kupon + teslimat = ödenecek tutar
+      if (order != null && (showFee || order.hasDiscount)) ...[
+        _DetailRow(
+          icon: Icons.shopping_basket_outlined,
+          label: 'Ürünler',
+          value: formatTl(orderProductsBeforeCoupon(order)),
+        ),
+        if (order.hasDiscount)
+          _DetailRow(
+            icon: Icons.local_activity_outlined,
+            label: order.couponCode == null
+                ? 'Kupon indirimi'
+                : 'Kupon ${order.couponCode}',
+            value: '−${formatTl(order.couponDiscount)}',
+            valueColor: MarketPalette.green,
+          ),
+        if (showFee)
+          _DetailRow(
+            icon: Icons.delivery_dining_outlined,
+            label: 'Teslimat',
+            value: orderDeliveryFeeText(order),
+            valueColor: order.deliveryFee <= 0 ? MarketPalette.green : null,
+          ),
+      ],
       if (amount != null && amount > 0)
         _DetailRow(
           icon: Icons.payments_outlined,
@@ -313,7 +404,18 @@ class _OrderConfirmationPageState extends State<OrderConfirmationPage>
             const SizedBox(height: 10),
             const Divider(height: 1, endIndent: 6),
             const SizedBox(height: 4),
-            ...details,
+            // Sipariş ayrıntısı gelince satırlar yumuşakça eklenir
+            AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: details,
+              ),
+            ),
           ],
           const SizedBox(height: 16),
           const Padding(
@@ -404,17 +506,68 @@ class _SuccessDot extends StatelessWidget {
   }
 }
 
+/// Adresli siparişte tam teslimat adresi: bölge, sokak/bina özeti, tarif.
+class _AddressBlock extends StatelessWidget {
+  final OrderPlace place;
+
+  const _AddressBlock({required this.place});
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 8, 6, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 1),
+              child: Icon(Icons.location_on_outlined,
+                  size: 18, color: MarketPalette.muted),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Teslimat adresi',
+                      style:
+                          MarketText.body(color: MarketPalette.muted, size: 13)),
+                  const SizedBox(height: 2),
+                  Text(place.title, style: MarketText.label(size: 14)),
+                  if (place.detail != null) ...[
+                    const SizedBox(height: 1),
+                    Text(place.detail!,
+                        style: MarketText.body(
+                            color: MarketPalette.inkSoft, size: 13)),
+                  ],
+                  if (place.directions != null) ...[
+                    const SizedBox(height: 2),
+                    Text(place.directions!, style: MarketText.caption()),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _DetailRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
   final bool emphasized;
+  final Color? valueColor;
 
   const _DetailRow({
     required this.icon,
     required this.label,
     required this.value,
     this.emphasized = false,
+    this.valueColor,
   });
 
   @override
@@ -443,7 +596,7 @@ class _DetailRow extends StatelessWidget {
                   style: emphasized
                       ? MarketText.price(
                           color: MarketPalette.greenDark, size: 18)
-                      : MarketText.label(size: 13),
+                      : MarketText.label(size: 13, color: valueColor ?? MarketPalette.ink),
                 ),
               ),
             ],

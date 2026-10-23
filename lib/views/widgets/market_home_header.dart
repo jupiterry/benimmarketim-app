@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../viewmodels/auth_viewmodel.dart';
 import '../../viewmodels/cart_viewmodel.dart';
 import '../../viewmodels/chat_viewmodel.dart';
+import '../../viewmodels/delivery_viewmodel.dart';
 import '../../viewmodels/home_page_viewmodel.dart';
 import '../../viewmodels/settings_viewmodel.dart';
 import 'home_quick_carts.dart';
@@ -27,7 +28,8 @@ class MarketHomeHeader extends StatefulWidget {
 }
 
 class _MarketHomeHeaderState extends State<MarketHomeHeader> {
-  /// Son siparişte seçilen teslimat noktası ('girlsDorm' / 'boysDorm').
+  /// Son siparişte seçilen teslimat noktası ('girlsDorm' / 'boysDorm');
+  /// adresli siparişte başka bir değer olabilir, o zaman yok sayılır.
   String? _lastPoint;
 
   @override
@@ -62,18 +64,25 @@ class _MarketHomeHeaderState extends State<MarketHomeHeader> {
     final narrow = MediaQuery.sizeOf(context).width < 360;
     final gutter = homeGutter(context);
 
-    final place = context.select<SettingsViewModel, String?>((settings) {
+    final dorm = context.select<SettingsViewModel, String?>((settings) {
       return switch (_lastPoint) {
         'girlsDorm' => settings.girlsDormName,
         'boysDorm' => settings.boysDormName,
         _ => null,
       };
     });
+    // Adrese teslimat açıksa varsayılan adresin bölgesi ("Cumhuriyet Mah.")
+    final zone = context.select<DeliveryViewModel?, String?>((delivery) {
+      if (delivery == null || !delivery.canOrderToAddress) return null;
+      final name = delivery.defaultAddress?.zoneName.trim() ?? '';
+      return name.isEmpty ? null : name;
+    });
+    final place = dorm ?? zone;
     // Dar ekranda ve büyük yazıda şehir adı düşer, satır kesilmez
     final roomy =
         !narrow && MediaQuery.textScalerOf(context).scale(1) <= 1.15;
     final placeText =
-        place ?? (roomy ? 'Devrek • Yurda teslimat' : 'Yurda teslimat');
+        place ?? (roomy ? 'Devrek • Kapına teslimat' : 'Kapına teslimat');
 
     return ColoredBox(
       color: MarketPalette.greenDeep,

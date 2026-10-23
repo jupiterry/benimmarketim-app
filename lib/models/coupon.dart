@@ -19,6 +19,9 @@ class Coupon {
   final int userUsageLimit;
   final int? remainingGlobalUses;
   final List<String> deliveryPoints;
+
+  /// Kuponun geçerli olduğu teslimat bölgeleri (boşsa her yerde geçerli)
+  final List<String> deliveryZones;
   final List<String> channels;
   final List<String> applicableCategories;
   final List<int> validDays;
@@ -47,6 +50,7 @@ class Coupon {
     this.userUsageLimit = 1,
     this.remainingGlobalUses,
     this.deliveryPoints = const [],
+    this.deliveryZones = const [],
     this.channels = const [],
     this.applicableCategories = const [],
     this.validDays = const [],
@@ -79,6 +83,7 @@ class Coupon {
       userUsageLimit: (json['userUsageLimit'] as num?)?.toInt() ?? 1,
       remainingGlobalUses: (json['remainingGlobalUses'] as num?)?.toInt(),
       deliveryPoints: List<String>.from(json['deliveryPoints'] ?? const []),
+      deliveryZones: parseDeliveryZones(json),
       channels: List<String>.from(json['channels'] ?? const []),
       applicableCategories:
           List<String>.from(json['applicableCategories'] ?? const []),
@@ -113,6 +118,7 @@ class Coupon {
       'userUsageLimit': userUsageLimit,
       'remainingGlobalUses': remainingGlobalUses,
       'deliveryPoints': deliveryPoints,
+      'deliveryZones': deliveryZones,
       'channels': channels,
       'applicableCategories': applicableCategories,
       'validDays': validDays,
@@ -121,6 +127,31 @@ class Coupon {
       'firstOrderOnly': firstOrderOnly,
       'newUsersOnly': newUsersOnly,
     };
+  }
+
+  /// Bölgeye özel kupon: yalnızca belirli teslimat bölgelerinde geçerli
+  bool get isZoneRestricted => deliveryZones.isNotEmpty;
+
+  /// Kupon koşullarında gösterilen bölge kısıtı metni
+  static const String zoneRestrictedLabel = 'Belirli bölgelerde geçerli';
+
+  /// `deliveryZones` kuponun kendisinde ya da `couponPublicData` içinde
+  /// gelebilir (kupon listesi, öneri ve doğrulama yanıtları).
+  static List<String> parseDeliveryZones(Map<String, dynamic>? json) {
+    if (json == null) return const [];
+    Object? raw = json['deliveryZones'];
+    final public = json['couponPublicData'];
+    if ((raw is! List || raw.isEmpty) && public is Map) {
+      raw = public['deliveryZones'];
+    }
+    if (raw is! List) return const [];
+    return [
+      for (final zone in raw)
+        if (zone is Map)
+          '${zone['id'] ?? zone['_id'] ?? zone['zoneId'] ?? ''}'
+        else
+          '$zone',
+    ].where((zone) => zone.isNotEmpty).toList();
   }
 
   /// Check if coupon is expired

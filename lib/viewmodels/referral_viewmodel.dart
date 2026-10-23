@@ -19,6 +19,10 @@ class ReferralViewModel extends ChangeNotifier {
   int _couponRequestId = 0;
   String? _error;
 
+  /// Adrese teslimatta seçili bölge: bölgeye özel kuponlar ancak bölge
+  /// gönderilince listelenir. Yurt akışında null.
+  String? _deliveryZone;
+
   // For code checking on register page
   ReferralCodeCheck? _codeCheck;
   bool _isCheckingCode = false;
@@ -34,6 +38,16 @@ class ReferralViewModel extends ChangeNotifier {
   String? get error => _error;
   ReferralCodeCheck? get codeCheck => _codeCheck;
   bool get isCheckingCode => _isCheckingCode;
+  String? get deliveryZone => _deliveryZone;
+
+  /// Seçili teslimat bölgesi değişti: cüzdan yüklendiyse (ya da yükleniyorsa)
+  /// o bölgeye göre yeniden istenir.
+  void setDeliveryZone(String? zone) {
+    final next = zone == null || zone.isEmpty ? null : zone;
+    if (next == _deliveryZone) return;
+    _deliveryZone = next;
+    if (_couponsLoaded || _couponsLoading) loadCoupons(force: true);
+  }
 
   /// Load user's referral information
   Future<void> loadReferralInfo() async {
@@ -131,7 +145,8 @@ class ReferralViewModel extends ChangeNotifier {
     final requestId = ++_couponRequestId;
     _couponsLoading = true;
     try {
-      final coupons = await _apiService.getUserCoupons();
+      final coupons =
+          await _apiService.getUserCoupons(deliveryZone: _deliveryZone);
       if (requestId != _couponRequestId) return;
       _coupons = coupons;
       _couponsLoaded = true;
@@ -160,6 +175,7 @@ class ReferralViewModel extends ChangeNotifier {
     _referral = null;
     _coupons = [];
     _couponsLoaded = false;
+    _deliveryZone = null;
     _error = null;
     _codeCheck = null;
     notifyListeners();

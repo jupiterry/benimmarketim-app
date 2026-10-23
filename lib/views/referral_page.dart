@@ -8,7 +8,9 @@ import 'package:share_plus/share_plus.dart';
 import '../models/coupon.dart';
 import '../models/referral.dart';
 import '../services/meta_app_events_service.dart';
+import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
+import 'widgets/delivery_fee_summary.dart';
 import 'widgets/market_ui.dart';
 
 class ReferralPage extends StatefulWidget {
@@ -25,6 +27,9 @@ class _ReferralPageState extends State<ReferralPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final viewModel = context.read<ReferralViewModel>();
       viewModel.loadReferralInfo();
+      // Adrese teslimatta seçili bölgenin kuponları da listelenir
+      viewModel.setDeliveryZone(
+          couponDeliveryZone(context.read<DeliveryViewModel?>()));
       viewModel.loadCoupons(); // Kuponları yükle
     });
   }
@@ -418,6 +423,25 @@ ${referral.link}
                           isExpiringSoon ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
+                  if (coupon.isZoneRestricted) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.place_outlined,
+                            size: 14, color: MarketPalette.greenDark),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            Coupon.zoneRestrictedLabel,
+                            overflow: TextOverflow.ellipsis,
+                            style: MarketText.caption(
+                                color: MarketPalette.greenDark,
+                                weight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

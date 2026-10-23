@@ -11,12 +11,15 @@ import '../models/product.dart';
 import '../services/api_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/cart_viewmodel.dart';
+import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/abandon_reason_sheet.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/custom_dialog.dart';
+import 'widgets/delivery_fee_summary.dart';
+import 'widgets/delivery_ui.dart';
 import 'widgets/market_product_card.dart';
 import 'widgets/market_mascot.dart';
 import 'widgets/market_ui.dart';
@@ -45,6 +48,31 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   /// "Bunu da ekle" rafı: en az tutarın altındayken alttaki düğme buraya kaydırır.
   final _suggestionsKey = GlobalKey();
+
+  /// Adrese teslimatta sepet ve seçili adres değişince teslimat ücreti
+  /// istenir; yurt akışında istek gitmez.
+  DeliveryCheckoutSync? _deliverySync;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final delivery = context.read<DeliveryViewModel?>();
+      if (delivery == null) return;
+      _deliverySync = DeliveryCheckoutSync(
+        cart: context.read<CartViewModel>(),
+        delivery: delivery,
+        referral: context.read<ReferralViewModel>(),
+      )..start();
+    });
+  }
+
+  @override
+  void dispose() {
+    _deliverySync?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +146,10 @@ class _CartPageState extends State<CartPage> {
                           const SizedBox(height: MarketSpace.md),
                           const _CouponSection(),
                           const SizedBox(height: MarketSpace.lg),
-                          _PriceSummary(cart: cart),
+                          _PriceSummary(
+                            cart: cart,
+                            onRetryQuote: () => _deliverySync?.refreshQuote(),
+                          ),
                           // İkincil tanıtım: fiyat özetinin altında durur.
                           const _CouponRequestCampaignCard(),
                         ],
@@ -268,7 +299,7 @@ class _MinimumOrderProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartViewModel>();
-    final minimum = context.watch<SettingsViewModel>().minimumOrderAmount;
+    final minimum = _effectiveMinimum(context);
     final total = cart.totalPrice;
     // Tutar dolunca şerit kalkar; alttaki buton zaten etkinleşir.
     if (minimum <= 0 || total >= minimum) return const SizedBox.shrink();
@@ -342,7 +373,7 @@ class _MinimumOrderSuggestions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartViewModel>();
-    final minimum = context.watch<SettingsViewModel>().minimumOrderAmount;
+    final minimum = _effectiveMinimum(context);
     final gap = minimum - cart.totalPrice;
     if (gap <= 0) return const SizedBox.shrink();
 
@@ -669,13 +700,104 @@ class _CartItemCard extends StatelessWidget {
   }
 }
 
+/// Adrese teslimat açıkken sepet özetinin teslimat satırı ve toplamı: seçili
+/// (açık bölgedeki) adres ya da yurt için teklif; adres yoksa bölge listesinin
+/// en düşük ücreti. Yurt akışında null (bugünkü "Teslimat: Ücretsiz").
+DeliveryViewModel? _addressDelivery(BuildContext context) {
+  final delivery = context.watch<DeliveryViewModel?>();
+  return delivery != null && delivery.canOrderToAddress ? delivery : null;
+}
+
+/// Sepette uygulanacak minimum tutar. Yurt akışında genel ayar; adres
+/// akışında seçili bölgenin minimumu (teklif varsa teklifteki değer), adres
+/// yoksa bölgelerin en düşük minimumu. Siparişte asıl kontrolü sunucu ve
+/// ödeme ekranındaki teklif yapar.
+double _effectiveMinimum(BuildContext context) {
+  final settingsMinimum =
+      context.watch<SettingsViewModel>().minimumOrderAmount;
+  final delivery = _addressDelivery(context);
+  if (delivery == null) return settingsMinimum;
+  if (_hasUsableSelection(delivery)) {
+    final quote = delivery.quote;
+    if (quote != null) return quote.minimumOrderAmount;
+    final zone = delivery.selectedZone;
+    if (zone != null) return zone.minimumOrderAmount;
+  }
+  final minimums = [for (final zone in delivery.zones) zone.minimumOrderAmount];
+  if (minimums.isEmpty) return settingsMinimum;
+  return minimums.reduce((a, b) => a < b ? a : b);
+}
+
+bool _hasUsableSelection(DeliveryViewModel delivery) =>
+    delivery.selectedZoneId != null && delivery.selectionUsable;
+
+/// Sepetin ödenecek tutarı: adres akışında teklif varsa teslimat dahil.
+double _cartPayable(CartViewModel cart, DeliveryViewModel? delivery) =>
+    delivery == null || !_hasUsableSelection(delivery)
+        ? cart.finalPrice
+        : checkoutPayable(
+            productsTotal: cart.totalPrice,
+            couponDiscount: cart.discountAmount,
+            quote: delivery.quote,
+          );
+
 class _PriceSummary extends StatelessWidget {
   final CartViewModel cart;
+  final VoidCallback onRetryQuote;
 
-  const _PriceSummary({required this.cart});
+  const _PriceSummary({required this.cart, required this.onRetryQuote});
+
+  Widget _deliveryLine(BuildContext context, DeliveryViewModel? delivery) {
+    if (delivery == null) {
+      return const _SummaryRow(
+          label: 'Teslimat', value: 'Ücretsiz', accent: true);
+    }
+    if (_hasUsableSelection(delivery)) {
+      final quote = delivery.quote;
+      final line = DeliveryFeeLine(
+        quote: quote,
+        loading: delivery.quoteLoading,
+        error: delivery.quoteError,
+        onRetry: onRetryQuote,
+        size: 14,
+      );
+      if (quote == null || quote.meetsMinimum) return line;
+      // Bölgenin en az sipariş tutarı: ödeme adımında sipariş engellenir.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          line,
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              minimumOrderMessage(quote),
+              style: MarketText.caption(
+                  color: MarketPalette.orangeInk, weight: FontWeight.w700),
+            ),
+          ),
+        ],
+      );
+    }
+    if (!delivery.zonesLoaded && !delivery.zonesLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!delivery.zonesLoaded && !delivery.zonesLoading) {
+          delivery.loadZones();
+        }
+      });
+    }
+    final fees = delivery.zones.map((z) => z.isFree ? 0.0 : z.deliveryFee);
+    return DeliveryFeeEstimateLine(
+      cheapestFee: delivery.cheapestFee,
+      loading: delivery.zonesLoading || !delivery.zonesLoaded,
+      freeEverywhere: delivery.freeDeliveryEverywhere ||
+          (fees.isNotEmpty && fees.every((fee) => fee <= 0)),
+      size: 14,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final delivery = _addressDelivery(context);
     final productSavings = _productSavings(cart);
     return MarketCard(
       shadow: false,
@@ -697,7 +819,7 @@ class _PriceSummary extends StatelessWidget {
               value: '-${formatTl(cart.discountAmount)}',
               accent: true,
             ),
-          const _SummaryRow(label: 'Teslimat', value: 'Ücretsiz', accent: true),
+          _deliveryLine(context, delivery),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 10),
             child: Divider(),
@@ -705,7 +827,8 @@ class _PriceSummary extends StatelessWidget {
           Row(
             children: [
               Expanded(child: Text('Toplam', style: MarketText.heading(size: 16))),
-              Text(formatTl(cart.finalPrice), style: MarketText.price(size: 22)),
+              Text(formatTl(_cartPayable(cart, delivery)),
+                  style: MarketText.price(size: 22)),
             ],
           ),
         ],
@@ -763,9 +886,10 @@ class _CheckoutBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final minimum = context.watch<SettingsViewModel>().minimumOrderAmount;
+    final minimum = _effectiveMinimum(context);
     final allowed = cart.totalPrice >= minimum;
     final savings = _productSavings(cart) + cart.discountAmount;
+    final amount = _cartPayable(cart, _addressDelivery(context));
 
     // Kısa ekranda (ör. 320x568) çubuk alttaki menüyle birlikte daha az yer
     // kaplasın diye iç boşluk azalır.
@@ -777,13 +901,13 @@ class _CheckoutBar extends StatelessWidget {
       child: allowed
           ? MarketTotalAction(
               label: 'Toplam',
-              amount: cart.finalPrice,
+              amount: amount,
               savings: savings,
               actionLabel: 'Siparişi tamamla',
               onPressed: () => _checkout(context),
             )
           : _BelowMinimumAction(
-              amount: cart.finalPrice,
+              amount: amount,
               savings: savings,
               gap: minimum - cart.totalPrice,
               onPressed: onAddMore,
@@ -1469,6 +1593,7 @@ class _CouponCard extends StatelessWidget {
       if (coupon.maximumDiscount > 0)
         'En fazla ${formatTlShort(coupon.maximumDiscount)} indirim',
       if (coupon.deliveryPoints.isNotEmpty) 'Teslimat noktasına özel',
+      if (coupon.isZoneRestricted) Coupon.zoneRestrictedLabel,
       if (coupon.firstOrderOnly) 'İlk siparişe özel',
       if (coupon.newUsersOnly) 'Yeni kullanıcılara özel',
     ];
@@ -1567,7 +1692,12 @@ class _CouponCard extends StatelessWidget {
               info(Icons.event_outlined, 'Son gün $expiry'),
               info(Icons.people_outline, globalUse),
               info(Icons.person_outline, 'Kişisel ${coupon.remainingUses} hak'),
-              for (final text in conditions) info(Icons.check_circle_outline, text),
+              for (final text in conditions)
+                info(
+                    text == Coupon.zoneRestrictedLabel
+                        ? Icons.place_outlined
+                        : Icons.check_circle_outline,
+                    text),
             ],
           ),
           const SizedBox(height: 14),

@@ -9,6 +9,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/coupon.dart';
+import '../models/delivery.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
@@ -17,11 +19,15 @@ import '../services/notification_service.dart';
 import '../services/review_service.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/cart_viewmodel.dart';
+import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/custom_dialog.dart';
+import 'widgets/delivery_address_selector.dart';
+import 'widgets/delivery_fee_summary.dart';
+import 'widgets/delivery_ui.dart';
 import 'widgets/first_order_rating.dart';
 import 'widgets/market_ui.dart';
 import '../services/image_url.dart';
@@ -34,7 +40,13 @@ class OrderPage extends StatefulWidget {
 }
 
 /// Kullanılmamış kupon önerisi. [best]: sunucunun sepete özel önerisi.
-typedef _CouponSuggestion = ({String code, String detail, bool best});
+/// [zones]: kupon yalnızca belirli teslimat bölgelerinde geçerli.
+typedef _CouponSuggestion = ({
+  String code,
+  String detail,
+  bool best,
+  bool zones,
+});
 
 enum _CouponChoice { apply, skip }
 
@@ -62,6 +74,15 @@ class _OrderPageState extends State<OrderPage> {
   bool _joiningCampaign = false;
   Map<String, dynamic>? _campaign;
   String _appVersion = '';
+
+  // Adrese teslimat (DeliveryViewModel.canOrderToAddress açıkken). Yurt
+  // akışının yukarıdaki durumu ayrıca korunur: anahtar kapanınca kaldığı
+  // yerden devam eder.
+  DeliveryCheckoutSync? _deliverySync;
+
+  /// Kullanıcının ilk siparişi mi (teyit araması notu için). Bilinmiyorsa null.
+  bool? _isFirstOrder;
+  bool _firstOrderRequested = false;
 
   /// Kullanıcı daha önce geri bildirim verdi mi? Sayfa açılırken (beklemeden)
   /// sorulur; sipariş hiçbir zaman bu yanıtı ya da bir puan penceresini
@@ -95,7 +116,9 @@ class _OrderPageState extends State<OrderPage> {
         items: List.of(cart.items),
         amount: cart.finalPrice,
       ));
-      context.read<ReferralViewModel>().loadCoupons();
+      final referral = context.read<ReferralViewModel>();
+      _startDeliverySync(cart, referral);
+      referral.loadCoupons();
       // Bildirim izni (yalnızca bir kez sorulur): sipariş durumu bildirimleri
       // için en anlamlı yer burası.
       unawaited(NotificationService.instance.requestPermissionIfNeeded());
@@ -251,8 +274,126 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Adrese teslimat
+  // -------------------------------------------------------------------------
+
+  /// Sepet ve teslimat seçimi değiştikçe teslimat ücreti istenir ve kupon
+  /// istekleri seçili bölgeyle yapılır. Yurt akışında istek gitmez.
+  void _startDeliverySync(CartViewModel cart, ReferralViewModel referral) {
+    final delivery = context.read<DeliveryViewModel?>();
+    if (delivery == null) return;
+    _deliverySync = DeliveryCheckoutSync(
+      cart: cart,
+      delivery: delivery,
+      referral: referral,
+      onZoneChanged: (_) => _onDeliveryZoneChanged(),
+    )..start();
+    if (delivery.canOrderToAddress) {
+      unawaited(delivery.loadZones());
+      unawaited(delivery.loadAddresses());
+    }
+  }
+
+  /// Bölge değişti: yurt seçildiyse noktaya özel kupon o noktaya göre
+  /// doğrulanır; yurt akışına dönüldüyse seçili yurda göre.
+  void _onDeliveryZoneChanged() {
+    if (!mounted) return;
+    final delivery = context.read<DeliveryViewModel?>();
+    if (delivery != null && delivery.canOrderToAddress) {
+      final dorm = delivery.selectedDormZoneId;
+      if (dorm != null) _revalidateCouponFor(dorm);
+    } else if (_selectedDeliveryPoint.isNotEmpty) {
+      _revalidateCouponFor(_selectedDeliveryPoint);
+    }
+  }
+
+  /// İlk sipariş mi? (teyit araması notu). Hata olursa not gösterilmez.
+  void _ensureFirstOrderStatus() {
+    if (_firstOrderRequested) return;
+    _firstOrderRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final orders = await ApiService().getUserOrders();
+        if (mounted) setState(() => _isFirstOrder = orders.isEmpty);
+      } catch (e) {
+        AppLogger.debug('Sipariş geçmişi alınamadı: $e');
+      }
+    });
+  }
+
+  Future<void> _changeDestination() async {
+    final delivery = context.read<DeliveryViewModel?>();
+    if (delivery == null) return;
+    final choice = await showDeliveryDestinationSheet(context, delivery);
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case PickSavedAddress(:final addressId):
+        delivery.selectAddress(addressId);
+      case PickDormZone(:final zoneId):
+        delivery.selectDorm(zoneId);
+      case AddNewAddress():
+        await _addAddress();
+      case ManageAddresses():
+        await context.push('/addresses');
+    }
+    if (mounted) setState(() => _deliveryError = false);
+  }
+
+  /// Adres formunu açar; kaydedilen adres teslimat adresi olarak seçilir.
+  Future<void> _addAddress() async {
+    final delivery = context.read<DeliveryViewModel?>();
+    if (delivery == null) return;
+    final created = await context.push<DeliveryAddress>('/addresses/new');
+    if (!mounted || created == null) return;
+    if (delivery.addressById(created.id) == null) {
+      await delivery.loadAddresses();
+      if (!mounted) return;
+    }
+    delivery.selectAddress(created.id);
+    setState(() => _deliveryError = false);
+  }
+
+  void _retryDeliveryLoad() {
+    final delivery = context.read<DeliveryViewModel?>();
+    if (delivery == null) return;
+    unawaited(delivery.loadZones(force: true));
+    unawaited(delivery.loadAddresses());
+  }
+
+  /// Seçim sipariş verilebilir bir bölgedeyse teklifi; değilse null (kapalı
+  /// bölgenin ücreti toplama eklenmez).
+  static DeliveryQuote? _usableQuote(DeliveryViewModel delivery) =>
+      delivery.selectedZoneId != null && delivery.selectionUsable
+          ? delivery.quote
+          : null;
+
+  /// Adres akışında siparişi engelleyen durum (yoksa null)
+  static AddressOrderBlock? _addressBlock(DeliveryViewModel delivery) =>
+      addressOrderBlock(
+        hasSelection: delivery.selectedZoneId != null,
+        selectionUsable: delivery.selectionUsable,
+        quote: delivery.quote,
+        quoteLoading: delivery.quoteLoading,
+        quoteError: delivery.quoteError,
+      );
+
+  void _scrollToTop() {
+    if (!_scrollController.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _scrollController.jumpTo(0);
+    } else {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   @override
   void dispose() {
+    _deliverySync?.dispose();
     _phoneController.removeListener(_onPhoneChanged);
     _phoneController.dispose();
     _notesController.dispose();
@@ -299,11 +440,17 @@ class _OrderPageState extends State<OrderPage> {
             ? '${formatTl(discount)} indirim'
             : 'Sepetine uygun kupon',
         best: true,
+        zones: Coupon.parseDeliveryZones(recommended).isNotEmpty,
       );
     }
     for (final coupon in referral.validCoupons) {
       if (coupon.minimumOrderAmount <= cart.totalPrice) {
-        return (code: coupon.code, detail: coupon.discountText, best: false);
+        return (
+          code: coupon.code,
+          detail: coupon.discountText,
+          best: false,
+          zones: coupon.isZoneRestricted,
+        );
       }
     }
     return null;
@@ -328,9 +475,19 @@ class _OrderPageState extends State<OrderPage> {
           ),
           const SizedBox(width: 8),
           Flexible(
-            child: Text(coupon.detail,
-                textAlign: TextAlign.right,
-                style: MarketText.label(color: MarketPalette.greenDark, size: 13)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(coupon.detail,
+                    textAlign: TextAlign.right,
+                    style: MarketText.label(
+                        color: MarketPalette.greenDark, size: 13)),
+                if (coupon.zones)
+                  Text(Coupon.zoneRestrictedLabel,
+                      textAlign: TextAlign.right,
+                      style: MarketText.caption(color: MarketPalette.inkSoft)),
+              ],
+            ),
           ),
         ],
       ),
@@ -359,7 +516,11 @@ class _OrderPageState extends State<OrderPage> {
       showMarketSnack(
           context, 'Kupon uygulandı. Yeni tutarı kontrol edip siparişini ver.');
       // Teslimat noktasına özel kuponun indirimi seçili noktaya göre hesaplanır.
-      if (_selectedDeliveryPoint.isNotEmpty) {
+      final delivery = context.read<DeliveryViewModel?>();
+      if (delivery != null && delivery.canOrderToAddress) {
+        final dorm = delivery.selectedDormZoneId;
+        if (dorm != null) _revalidateCouponFor(dorm);
+      } else if (_selectedDeliveryPoint.isNotEmpty) {
         _revalidateCouponFor(_selectedDeliveryPoint);
       }
     } else {
@@ -431,7 +592,22 @@ class _OrderPageState extends State<OrderPage> {
 
     if (!mounted) return;
 
-    if (_selectedDeliveryPoint.isEmpty) {
+    // Adrese teslimat açıksa yurt seçimi yerine teslimat adresi/teklif
+    // kontrol edilir; kapalıysa akış bugünküyle aynıdır.
+    final delivery = context.read<DeliveryViewModel?>();
+    final addressMode = delivery?.canOrderToAddress ?? false;
+
+    if (addressMode) {
+      final block = _addressBlock(delivery!);
+      if (block != null) {
+        if (!block.pending) {
+          setState(() => _deliveryError = true);
+          _scrollToTop();
+        }
+        showMarketSnack(context, block.message, error: !block.pending);
+        return;
+      }
+    } else if (_selectedDeliveryPoint.isEmpty) {
       setState(() => _deliveryError = true);
       if (MediaQuery.disableAnimationsOf(context)) {
         _scrollController.jumpTo(0);
@@ -478,8 +654,9 @@ class _OrderPageState extends State<OrderPage> {
         return;
       }
 
-      // Tüm teslimat noktaları kapalı mı kontrolü
-      if (!settingsViewModel.girlsDormEnabled &&
+      // Tüm teslimat noktaları kapalı mı kontrolü (yurt akışı)
+      if (!addressMode &&
+          !settingsViewModel.girlsDormEnabled &&
           !settingsViewModel.boysDormEnabled) {
         await _showInfoDialog(
           icon: Icons.store_mall_directory_outlined,
@@ -504,9 +681,24 @@ class _OrderPageState extends State<OrderPage> {
         return;
       }
 
+      // Adres akışında minimum tutar bölgenin teklifinden gelir
+      if (addressMode) {
+        final quote = delivery!.quote;
+        if (quote == null || !quote.meetsMinimum) {
+          showMarketSnack(
+            context,
+            quote == null
+                ? 'Teslimat ücreti hesaplanıyor, birazdan tekrar dene.'
+                : minimumOrderMessage(quote),
+            error: quote != null,
+          );
+          return;
+        }
+      }
+
       // Minimum sipariş tutarı kontrolü (API'den gelen değer)
       final minimumOrderAmount = settingsViewModel.minimumOrderAmount;
-      if (cartViewModel.totalPrice < minimumOrderAmount) {
+      if (!addressMode && cartViewModel.totalPrice < minimumOrderAmount) {
         final eksikTutar = minimumOrderAmount - cartViewModel.totalPrice;
         showMarketSnack(
           context,
@@ -555,18 +747,58 @@ class _OrderPageState extends State<OrderPage> {
         setState(() => _isLoading = true);
       }
 
-      final couponIsValid = await cartViewModel
-          .validateCouponForDeliveryPoint(_selectedDeliveryPoint);
+      // Adres akışında seçim: kayıtlı adres ya da (bölge olarak) yurt
+      final dormZoneId = addressMode ? delivery!.selectedDormZoneId : null;
+      final DeliveryAddress? address =
+          addressMode && dormZoneId == null ? delivery!.selectedAddress : null;
+      if (addressMode && dormZoneId == null && address == null) {
+        showMarketSnack(context, 'Lütfen bir teslimat adresi seç',
+            error: true);
+        return;
+      }
+      if (addressMode) {
+        // Kupon bölgesi güncel olsun (sepet dinleyicisi zaten günceller)
+        cartViewModel.setDeliveryZone(delivery!.selectedZoneId);
+      }
+
+      final couponIsValid = await cartViewModel.validateCouponForDeliveryPoint(
+          addressMode ? dormZoneId : _selectedDeliveryPoint);
       if (!couponIsValid) {
         if (mounted) {
           showMarketSnack(
             context,
             cartViewModel.couponError ??
-                'Kupon seçilen teslimat noktasında kullanılamıyor.',
+                (addressMode
+                    ? 'Kupon seçilen teslimat adresinde kullanılamıyor.'
+                    : 'Kupon seçilen teslimat noktasında kullanılamıyor.'),
             error: true,
           );
         }
         return;
+      }
+
+      // Teslimat alanları: yurt akışında bugünkü gövde; adres akışında
+      // kayıtlı adresin kimliği ya da yurdun bölge kimliği.
+      final String deliveryPoint;
+      final String deliveryPointName;
+      if (!addressMode) {
+        deliveryPoint = _selectedDeliveryPoint; // 'girlsDorm' veya 'boysDorm'
+        deliveryPointName = _selectedDeliveryPoint == 'girlsDorm'
+            ? settingsViewModel.girlsDormName
+            : settingsViewModel.boysDormName;
+      } else if (dormZoneId != null) {
+        deliveryPoint = dormZoneId;
+        final zoneName = delivery!.zoneById(dormZoneId)?.name ?? '';
+        deliveryPointName = zoneName.isNotEmpty
+            ? zoneName
+            : switch (dormZoneId) {
+                'girlsDorm' => settingsViewModel.girlsDormName,
+                'boysDorm' => settingsViewModel.boysDormName,
+                _ => dormZoneId,
+              };
+      } else {
+        deliveryPoint = '';
+        deliveryPointName = address!.summary;
       }
 
       // Sipariş oluştur - Web projesindeki API formatına uygun
@@ -584,10 +816,10 @@ class _OrderPageState extends State<OrderPage> {
         totalAmount: cartViewModel.finalPrice, // İndirimli fiyatı kullan
         city: 'Zonguldak', // Web projesinde zorunlu
         phone: _phoneController.text,
-        deliveryPoint: _selectedDeliveryPoint, // 'girlsDorm' veya 'boysDorm'
-        deliveryPointName: _selectedDeliveryPoint == 'girlsDorm'
-            ? settingsViewModel.girlsDormName
-            : settingsViewModel.boysDormName,
+        deliveryPoint: deliveryPoint,
+        deliveryPointName: deliveryPointName,
+        addressId: address?.id,
+        zoneId: dormZoneId,
         note: _notesController.text,
         paymentMethod: _selectedPaymentMethod!,
         couponCode: cartViewModel.appliedCouponCode, // Kupon kodu
@@ -618,8 +850,16 @@ class _OrderPageState extends State<OrderPage> {
       // Sepet aşağıda temizlenince "Sepetin boş" yerine kısa bir geçiş
       // ekranı görünür (onay ekranına geçene kadar).
       _orderPlaced = true;
-      final orderTotal =
-          order.totalAmount > 0 ? order.totalAmount : orderRequest.totalAmount;
+      // Sunucunun tutarı esastır (adres akışında teslimat ücreti dahil).
+      final orderTotal = order.totalAmount > 0
+          ? order.totalAmount
+          : addressMode
+              ? checkoutPayable(
+                  productsTotal: cartViewModel.totalPrice,
+                  couponDiscount: cartViewModel.discountAmount,
+                  quote: _usableQuote(delivery!),
+                )
+              : orderRequest.totalAmount;
 
       // Meta Purchase: yalnızca sunucu siparişi kaydettikten sonra, sepet
       // temizlenmeden önceki ürünlerle ve sipariş numarası başına bir kez.
@@ -661,7 +901,11 @@ class _OrderPageState extends State<OrderPage> {
         // Ödeme yöntemi, tutar ve teslimat noktası onay ekranında gösterilir.
         final payment =
             (order.paymentMethod ?? orderRequest.paymentMethod).key;
-        final point = Uri.encodeQueryComponent(orderRequest.deliveryPointName);
+        final pointName = addressMode &&
+                order.deliveryPointName.trim().isNotEmpty
+            ? order.deliveryPointName.trim()
+            : orderRequest.deliveryPointName;
+        final point = Uri.encodeQueryComponent(pointName);
         context.go(
           '/order-confirmation/${order.id}?payment=$payment'
           '&total=${orderTotal.toStringAsFixed(2)}&point=$point',
@@ -671,10 +915,49 @@ class _OrderPageState extends State<OrderPage> {
       // Geçiş ekranında takılı kalınmaz (önceki davranış korunur).
       _orderPlaced = false;
       String detailedError = '';
+      var title = 'Sipariş oluşturulamadı';
+      var icon = Icons.error_outline_rounded;
+      var tone = MarketTone.danger;
 
       if (e is ApiException) {
         // Sunucunun anlaşılır mesajı (sipariş saatleri, minimum tutar, kupon)
         detailedError = e.message;
+        switch (e.code) {
+          case 'ADDRESS_ORDERING_DISABLED':
+            // Anahtar kapandı: ekran yurt teslimatına döner.
+            if (delivery != null) {
+              await delivery.handleAddressOrderingDisabled();
+            }
+            title = 'Adrese teslimat kapalı';
+            detailedError = addressOrderingDisabledMessage;
+            icon = Icons.info_outline_rounded;
+            tone = MarketTone.brand;
+          case 'ZONE_CLOSED' || 'ZONE_NOT_FOUND':
+            title = 'Bu adrese teslimat yok';
+            detailedError = '${e.message} Lütfen başka bir adres seç.';
+            if (delivery != null) {
+              unawaited(delivery.loadZones(force: true));
+              unawaited(delivery.loadAddresses());
+            }
+            _deliverySync?.refreshQuote();
+          case 'BELOW_MINIMUM':
+            final minimum = e.data?['minimumOrderAmount'];
+            title = 'Sipariş tutarı yetersiz';
+            if (minimum is num && minimum > 0) {
+              detailedError = 'Bu bölge için en az ${formatTlShort(minimum)} '
+                  'tutarında sipariş gerekiyor. Sepetine biraz daha ürün ekle.';
+            }
+            _deliverySync?.refreshQuote();
+          default:
+            if (e.statusCode == 429) {
+              title = 'Biraz bekle';
+              icon = Icons.hourglass_top_rounded;
+              if (detailedError.trim().isEmpty) {
+                detailedError =
+                    'Çok fazla deneme yapıldı. Biraz bekleyip tekrar dene.';
+              }
+            }
+        }
       } else if (e is DioException) {
         if (e.response != null) {
           // Backend'den gelen hata mesajını almaya çalış
@@ -691,12 +974,12 @@ class _OrderPageState extends State<OrderPage> {
 
       if (mounted) {
         await _showInfoDialog(
-          icon: Icons.error_outline_rounded,
-          title: 'Sipariş oluşturulamadı',
+          icon: icon,
+          title: title,
           message: detailedError.isNotEmpty
               ? detailedError
               : 'Bir sorun oluştu. Lütfen bağlantını kontrol edip tekrar dene.',
-          tone: MarketTone.danger,
+          tone: tone,
         );
       }
     } finally {
@@ -715,11 +998,19 @@ class _OrderPageState extends State<OrderPage> {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsViewModel>();
+    // Adrese teslimat anahtarı çalışırken değişebilir: ekran o an ilgili
+    // akışa geçer (yurt seçimi korunur).
+    final deliveryModel = context.watch<DeliveryViewModel?>();
+    final delivery =
+        deliveryModel != null && deliveryModel.canOrderToAddress
+            ? deliveryModel
+            : null;
+    if (delivery != null) _ensureFirstOrderStatus();
     return Consumer<CartViewModel>(
       builder: (context, cart, child) {
         if (_orderPlaced) return _buildPlacingPage();
         if (cart.items.isEmpty) return _buildEmptyOrderPage();
-        _applyDefaultDelivery(settings);
+        if (delivery == null) _applyDefaultDelivery(settings);
         final gutter = MarketSpace.gutterOf(context);
 
         return Scaffold(
@@ -743,17 +1034,20 @@ class _OrderPageState extends State<OrderPage> {
                   padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 32),
                   sliver: SliverList.list(
                     children: [
-                      ..._buildAvailabilityNotices(settings),
-                      _buildDeliverySection(settings),
+                      ..._buildAvailabilityNotices(settings, delivery),
+                      if (delivery != null)
+                        _buildAddressSection(delivery)
+                      else
+                        _buildDeliverySection(settings),
                       const SizedBox(height: 14),
                       _buildContactSection(),
                       const SizedBox(height: 14),
                       _buildPaymentSection(),
                       const SizedBox(height: 14),
-                      _buildNotesSection(),
+                      _buildNotesSection(addressMode: delivery != null),
                       const SizedBox(height: 14),
-                      _buildCouponSection(cart),
-                      _buildSummarySection(cart),
+                      _buildCouponSection(cart, delivery),
+                      _buildSummarySection(cart, delivery),
                       _buildCampaignCard(),
                       const SizedBox(height: 14),
                       const MarketNotice(
@@ -767,7 +1061,7 @@ class _OrderPageState extends State<OrderPage> {
               ],
             ),
           ),
-          bottomNavigationBar: _buildCheckoutBar(cart),
+          bottomNavigationBar: _buildCheckoutBar(cart, delivery),
         );
       },
     );
@@ -828,7 +1122,8 @@ class _OrderPageState extends State<OrderPage> {
   /// Mağaza kapalıyken ya da hiç teslimat noktası açık değilken kullanıcı bunu
   /// formu doldurmadan, sayfanın en üstünde görür. Sipariş anındaki
   /// kontroller yine yapılır.
-  List<Widget> _buildAvailabilityNotices(SettingsViewModel settings) {
+  List<Widget> _buildAvailabilityNotices(
+      SettingsViewModel settings, DeliveryViewModel? delivery) {
     return [
       if (!settings.isWithinOrderHours)
         Padding(
@@ -838,7 +1133,22 @@ class _OrderPageState extends State<OrderPage> {
             text: 'Şu an sipariş alamıyoruz. ${settings.orderHoursMessage}.',
           ),
         ),
-      if (!settings.girlsDormEnabled && !settings.boysDormEnabled)
+      if (delivery != null &&
+          delivery.zonesLoaded &&
+          delivery.zones.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 14),
+          child: MarketNotice(
+            icon: Icons.info_outline_rounded,
+            text:
+                'Şu anda teslimat yapılan bölge bulunmuyor. Lütfen daha sonra tekrar dene.',
+            background: MarketPalette.redSoft,
+            foreground: MarketPalette.red,
+          ),
+        ),
+      if (delivery == null &&
+          !settings.girlsDormEnabled &&
+          !settings.boysDormEnabled)
         const Padding(
           padding: EdgeInsets.only(bottom: 14),
           child: MarketNotice(
@@ -889,19 +1199,43 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
+  /// Adres akışı: "Teslimat adresi" (seçili adres ya da yurt, değiştir,
+  /// yeni adres). Yurt akışında [_buildDeliverySection] gösterilir.
+  Widget _buildAddressSection(DeliveryViewModel delivery) {
+    final zone = delivery.selectedZone;
+    final usable = delivery.selectedZoneId != null && delivery.selectionUsable;
+    return _section(
+      step: '1',
+      done: usable,
+      title: 'Teslimat adresi',
+      trailing: 'Zorunlu',
+      error: _deliveryError && !usable,
+      child: DeliveryAddressPanel(
+        delivery: delivery,
+        onChange: _changeDestination,
+        onAddAddress: _addAddress,
+        onRetry: _retryDeliveryLoad,
+        showFirstOrderCallback: usable &&
+            zone != null &&
+            zone.requiresFirstOrderCallback &&
+            _isFirstOrder == true,
+      ),
+    );
+  }
+
   Widget _buildDeliverySection(SettingsViewModel settings) {
     final options = <Widget>[
       if (settings.girlsDormEnabled)
         _buildDeliveryOption(
           id: 'girlsDorm',
           title: settings.girlsDormName,
-          subtitle: 'Kız öğrenci yurdu teslimat noktası',
+          subtitle: 'Girişte teslim',
         ),
       if (settings.boysDormEnabled)
         _buildDeliveryOption(
           id: 'boysDorm',
           title: settings.boysDormName,
-          subtitle: 'Erkek öğrenci yurdu teslimat noktası',
+          subtitle: 'Girişte teslim',
         ),
     ];
     return _section(
@@ -1155,7 +1489,7 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  Widget _buildNotesSection() {
+  Widget _buildNotesSection({bool addressMode = false}) {
     return _section(
       step: '4',
       title: 'Sipariş notu',
@@ -1188,12 +1522,28 @@ class _OrderPageState extends State<OrderPage> {
               fillColor: MarketPalette.canvas,
             ),
           ),
+          if (addressMode) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.info_outline_rounded,
+                    size: 15, color: MarketPalette.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    addressNoteHint,
+                    style: MarketText.caption(),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildCouponSection(CartViewModel cart) {
+  Widget _buildCouponSection(CartViewModel cart, DeliveryViewModel? delivery) {
     final referral = context.watch<ReferralViewModel>();
     final applied = cart.appliedCouponCode;
     final suggestion = _unusedCoupon(cart, referral);
@@ -1210,8 +1560,13 @@ class _OrderPageState extends State<OrderPage> {
         status = 'İndirim hesaplanıyor…';
       } else if (invalid) {
         status = 'İndirim uygulanmadı';
-      } else if (needsPoint && _selectedDeliveryPoint.isEmpty) {
-        status = 'Teslimat noktasını seçince indirim hesaplanacak';
+      } else if (needsPoint &&
+          (delivery != null
+              ? delivery.selectedDormZoneId == null
+              : _selectedDeliveryPoint.isEmpty)) {
+        status = delivery != null
+            ? 'İndirim teslimat noktasında geçerli'
+            : 'Teslimat noktasını seçince indirim hesaplanacak';
       } else {
         status = '${formatTl(cart.discountAmount)} indirim uygulandı';
       }
@@ -1332,6 +1687,13 @@ class _OrderPageState extends State<OrderPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: MarketText.caption(color: MarketPalette.inkSoft)),
+                  if (coupon.zones)
+                    Text(Coupon.zoneRestrictedLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MarketText.caption(
+                            color: MarketPalette.greenDark,
+                            weight: FontWeight.w700)),
                 ],
               ),
             ),
@@ -1465,7 +1827,7 @@ class _OrderPageState extends State<OrderPage> {
     });
   }
 
-  Widget _buildSummarySection(CartViewModel cart) {
+  Widget _buildSummarySection(CartViewModel cart, DeliveryViewModel? delivery) {
     final productSavings = cart.items.fold<double>(0, (sum, item) {
       final diff = item.product.price - item.product.actualPrice;
       return diff > 0 ? sum + diff * item.quantity : sum;
@@ -1543,14 +1905,33 @@ class _OrderPageState extends State<OrderPage> {
             _priceLine(
                 'Kupon (${cart.appliedCouponCode ?? ''})', -cart.discountAmount,
                 highlight: true),
-          _priceLine('Teslimat', null, text: 'Ücretsiz', highlight: true),
+          if (delivery == null)
+            _priceLine('Teslimat', null, text: 'Ücretsiz', highlight: true)
+          else if (delivery.selectedZoneId == null ||
+              !delivery.selectionUsable)
+            _priceLine('Teslimat ücreti', null,
+                text: 'Adres seçince hesaplanır')
+          else
+            DeliveryFeeLine(
+              quote: delivery.quote,
+              loading: delivery.quoteLoading,
+              error: delivery.quoteError,
+              onRetry: _deliverySync?.refreshQuote,
+            ),
           const Divider(height: 22),
           Row(
             children: [
               Expanded(
                   child: Text('Ödenecek tutar',
                       style: MarketText.heading(size: 16))),
-              Text(formatTl(cart.finalPrice),
+              Text(
+                  formatTl(delivery == null
+                      ? cart.finalPrice
+                      : checkoutPayable(
+                          productsTotal: cart.totalPrice,
+                          couponDiscount: cart.discountAmount,
+                          quote: _usableQuote(delivery),
+                        )),
                   style: MarketText.price(
                       color: MarketPalette.greenDark, size: 22)),
             ],
@@ -1560,12 +1941,51 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 
-  Widget _buildCheckoutBar(CartViewModel cart) {
+  Widget _buildCheckoutBar(CartViewModel cart, DeliveryViewModel? delivery) {
     final savings = cart.items.fold<double>(0, (sum, item) {
           final diff = item.product.price - item.product.actualPrice;
           return diff > 0 ? sum + diff * item.quantity : sum;
         }) +
         cart.discountAmount;
+
+    if (delivery != null) {
+      // Adres akışı: ödenecek tutara teslimat ücreti eklenir; adres/teklif
+      // uygun değilse düğme pasif ve nedeni hemen üstünde.
+      final block = _addressBlock(delivery);
+      return MarketBottomBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              alignment: Alignment.topCenter,
+              child: block == null
+                  ? const SizedBox(width: double.infinity)
+                  : _OrderBlockReason(
+                      block: block,
+                      onChange: _changeDestination,
+                      onRetry: _deliverySync?.refreshQuote,
+                    ),
+            ),
+            MarketTotalAction(
+              label: 'Ödenecek',
+              amount: checkoutPayable(
+                productsTotal: cart.totalPrice,
+                couponDiscount: cart.discountAmount,
+                quote: _usableQuote(delivery),
+              ),
+              savings: savings,
+              actionLabel: 'Siparişi ver',
+              onPressed: block == null ? _createOrder : null,
+              loading: _isLoading,
+            ),
+          ],
+        ),
+      );
+    }
 
     return MarketBottomBar(
       child: MarketTotalAction(
@@ -1596,6 +2016,77 @@ class _OrderPageState extends State<OrderPage> {
                 color: highlight ? color : MarketPalette.ink, size: 13),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Adres akışında sipariş düğmesinin üstünde: siparişin neden verilemediği
+/// (adres yok, bölge kapalı, minimum tutar, ücret hesaplanıyor).
+class _OrderBlockReason extends StatelessWidget {
+  final AddressOrderBlock block;
+  final VoidCallback onChange;
+  final VoidCallback? onRetry;
+
+  const _OrderBlockReason({
+    required this.block,
+    required this.onChange,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        block.pending ? MarketPalette.muted : MarketPalette.orangeInk;
+    final String? actionLabel;
+    final VoidCallback? action;
+    if (block.pickAnother) {
+      actionLabel = 'Değiştir';
+      action = onChange;
+    } else if (block.retry && onRetry != null) {
+      actionLabel = 'Tekrar dene';
+      action = onRetry;
+    } else {
+      actionLabel = null;
+      action = null;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Semantics(
+        liveRegion: true,
+        child: Row(
+          children: [
+            if (block.pending)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: MarketPalette.green),
+              )
+            else
+              Icon(Icons.info_outline_rounded, size: 18, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                block.message,
+                style: MarketText.caption(color: color, weight: FontWeight.w700),
+              ),
+            ),
+            if (actionLabel != null) ...[
+              const SizedBox(width: 6),
+              TextButton(
+                onPressed: action,
+                style: TextButton.styleFrom(
+                  foregroundColor: MarketPalette.greenDark,
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(actionLabel),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -119,7 +119,7 @@ class AuthBrandHeader extends StatelessWidget {
         MarketBrandMark(
           mascotSize: compact ? 38 : 44,
           wordmarkHeight: compact ? 26 : 30,
-          tagline: 'Devrek • Yurda teslimat',
+          tagline: 'Devrek • Kapına teslimat',
         ),
         SizedBox(height: compact ? 18 : 28),
         Semantics(

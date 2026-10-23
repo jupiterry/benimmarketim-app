@@ -12,6 +12,7 @@ import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/bill_split_sheet.dart';
 import 'widgets/feedback_parts.dart';
 import 'widgets/market_ui.dart';
+import 'widgets/order_delivery_parts.dart';
 import '../services/image_url.dart';
 
 class OrdersPage extends StatefulWidget {
@@ -379,12 +380,19 @@ class _OrdersPageState extends State<OrdersPage> {
       background: style.background,
       foreground: style.color,
     );
+    final place = OrderPlace.of(order);
     final details = <(String, String)>[
-      if (order.deliveryPointName.isNotEmpty) ('Teslimat', order.deliveryPointName),
+      // Adresli siparişte bölge, adres ve tarif ayrı satırlarda; yurtta adı
+      if (place != null) ...[
+        ('Teslimat', place.title),
+        if (place.detail != null) ('Adres', place.detail!),
+        if (place.directions != null) ('Tarif', place.directions!),
+      ],
       if (order.paymentMethod != null) ('Ödeme', order.paymentMethod!.label),
       if (order.note.trim().isNotEmpty) ('Not', order.note.trim()),
     ];
     final canToggle = order.products.length > 3 || details.isNotEmpty;
+    final showFee = orderShowsDeliveryFee(order);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     void toggle() => setState(() {
@@ -437,6 +445,12 @@ class _OrdersPageState extends State<OrdersPage> {
           Padding(
             padding: EdgeInsets.fromLTRB(pad, 0, pad, 16),
             child: _StatusSteps(status: order.status),
+          ),
+        // Teslim edilemedi / iptal nedeni / teyit araması notları
+        if (OrderDeliveryNotes.hasAny(order))
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, 0, pad, 14),
+            child: OrderDeliveryNotes(order: order),
           ),
         const Divider(height: 1),
         AnimatedSize(
@@ -545,19 +559,36 @@ class _OrdersPageState extends State<OrdersPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (order.hasDiscount) ...[
-                _sumRow('Ara toplam', formatTl(order.subtotalOrDerived)),
-                _sumRow(
-                  order.couponCode == null ? 'Kupon indirimi' : 'Kupon ${order.couponCode}',
-                  '−${formatTl(order.couponDiscount)}',
-                  valueColor: MarketPalette.green,
-                ),
+              // Ürünler − kupon + teslimat = toplam. Teslimat ücreti olmayan
+              // eski yurt siparişlerinde yalnızca kupon dökümü kalır.
+              if (order.hasDiscount || showFee) ...[
+                _sumRow(showFee ? 'Ürünler' : 'Ara toplam',
+                    formatTl(orderProductsBeforeCoupon(order))),
+                if (order.hasDiscount)
+                  _sumRow(
+                    order.couponCode == null ? 'Kupon indirimi' : 'Kupon ${order.couponCode}',
+                    '−${formatTl(order.couponDiscount)}',
+                    valueColor: MarketPalette.green,
+                  ),
+                if (showFee)
+                  _sumRow(
+                    'Teslimat',
+                    orderDeliveryFeeText(order),
+                    valueColor: order.deliveryFee <= 0
+                        ? MarketPalette.green
+                        : MarketPalette.inkSoft,
+                  ),
                 const SizedBox(height: 2),
               ],
               Row(
                 children: [
-                  Text('Toplam', style: MarketText.label(size: 13, color: MarketPalette.muted)),
-                  const Spacer(),
+                  Expanded(
+                    child: Text('Toplam',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MarketText.label(size: 13, color: MarketPalette.muted)),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     formatTl(order.totalAmount),
                     style: MarketText.price(color: MarketPalette.greenDark, size: 18),
@@ -613,19 +644,30 @@ class _OrdersPageState extends State<OrdersPage> {
   Widget _sumRow(String label, String value, {Color valueColor = MarketPalette.inkSoft}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: MarketText.caption(),
+      // Değer sağa yaslı; çok uzunsa ("Ücretsiz teslimat", büyük yazı) satırın
+      // %60'ında kırılır
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: MarketText.caption(),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(value, style: MarketText.caption(color: valueColor, weight: FontWeight.w700)),
-        ],
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth * .6),
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: MarketText.caption(color: valueColor, weight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -882,6 +924,19 @@ class _StatusSteps extends StatelessWidget {
   }
 }
 
+/// Sipariş iptal nedenleri. Sunucudaki CANCEL_REASONS ile aynı kimlikler
+/// (backend/lib/feedbackOptions.js); "Diğer" her zaman en sonda.
+const orderCancelReasons = <FeedbackOption>[
+  FeedbackOption('gec', 'Teslimat çok uzun sürecek'),
+  FeedbackOption('fikir', 'Fikrimi değiştirdim'),
+  FeedbackOption('yanlis_siparis', 'Yanlış/eksik sipariş verdim'),
+  FeedbackOption('fiyat', 'Fiyat yüksek geldi'),
+  FeedbackOption('baska_yer', 'Başka yerden aldım'),
+  FeedbackOption('bolge_disi', 'Adresime teslimat yok'),
+  FeedbackOption('ucret_yuksek', 'Teslimat ücreti yüksek'),
+  FeedbackOption('diger', 'Diğer'),
+];
+
 class _CancelReasonSheet extends StatefulWidget {
   const _CancelReasonSheet();
 
@@ -890,15 +945,7 @@ class _CancelReasonSheet extends StatefulWidget {
 }
 
 class _CancelReasonSheetState extends State<_CancelReasonSheet> {
-  // Sunucudaki CANCEL_REASONS ile aynı kimlikler (backend/lib/feedbackOptions.js)
-  static const _reasons = [
-    FeedbackOption('gec', 'Teslimat çok uzun sürecek'),
-    FeedbackOption('fikir', 'Fikrimi değiştirdim'),
-    FeedbackOption('yanlis_siparis', 'Yanlış/eksik sipariş verdim'),
-    FeedbackOption('fiyat', 'Fiyat yüksek geldi'),
-    FeedbackOption('baska_yer', 'Başka yerden aldım'),
-    FeedbackOption('diger', 'Diğer'),
-  ];
+  static const _reasons = orderCancelReasons;
 
   final TextEditingController _note = TextEditingController();
   String? _reason;

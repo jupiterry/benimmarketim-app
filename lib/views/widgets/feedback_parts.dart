@@ -1405,7 +1405,7 @@ class _StoreCard extends StatelessWidget {
                           Text(service.storeAsk, style: MarketText.label(size: 14)),
                           const SizedBox(height: 2),
                           Text(
-                            "Yorumun, Devrek'teki öğrencilerin bizi bulmasına yardım ediyor.",
+                            "Yorumun, Devrek'te bizi henüz tanımayanların bizi bulmasına yardım ediyor.",
                             style: MarketText.caption(color: MarketPalette.inkSoft),
                           ),
                         ],
