@@ -1,3 +1,7 @@
+# Google Maps anahtarı repoda tutulmaz. Codemagic > Environment variables'a
+# MAPS_API_KEY adıyla (Secure) ekle ve aşağıdaki gruplardan birine koy
+# (app_store_credentials, android_keystore_credentials). Tanımlı değilse
+# derleme kırılmaz; uygulama haritada OpenStreetMap'e düşer.
 workflows:
   # Test için imzasız build (mevcut)
   ios-test-build:
@@ -20,7 +24,8 @@ workflows:
       - name: Flutter build ipa (Unsigned)
         script: |
           # Hesap onayi gelene kadar imzasiz build aliyoruz
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign \
+            --dart-define=MAPS_API_KEY=$MAPS_API_KEY
     artifacts:
       - "build/ios/iphoneos/*.app"
       - "/tmp/xcodebuild_logs/*.log"
@@ -71,6 +76,7 @@ workflows:
       - name: Flutter build ipa (Signed)
         script: |
           flutter build ipa --release \
+            --dart-define=MAPS_API_KEY=$MAPS_API_KEY \
             --export-options-plist=$HOME/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
@@ -127,7 +133,8 @@ workflows:
         script: flutter test
       - name: Flutter build appbundle (Signed)
         script: |
-          flutter build appbundle --release
+          flutter build appbundle --release \
+            --dart-define=MAPS_API_KEY=$MAPS_API_KEY
     artifacts:
       - build/**/outputs/**/*.aab
       - build/**/outputs/**/mapping.txt

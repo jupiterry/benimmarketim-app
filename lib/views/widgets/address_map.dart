@@ -1,15 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
 import 'package:latlong2/latlong.dart';
 
 import '../../models/delivery.dart';
 import '../../services/geocoding_service.dart';
 import '../../services/location_service.dart';
+import 'map_surface.dart';
 import 'market_ui.dart';
 
-/// Adres haritası (OpenStreetMap). Kullanıcı haritayı kaydırıp ortadaki
+/// Adres haritası (Google Maps; anahtar yoksa OpenStreetMap). Kullanıcı haritayı kaydırıp ortadaki
 /// iğneyi kapısının üstüne getirir; seçilen nokta adresle birlikte
 /// `location: {lat, lng}` olarak kaydedilir. Teslimat alanı (Devrek sınırı)
 /// yüklüyse haritada çizilir ve dışındaki nokta seçilemez.
@@ -26,15 +27,8 @@ abstract final class AddressMap {
   static const double townZoom = 13;
   static const double streetZoom = 17;
 
-  /// OSM karo adresi. Trafik büyürse ücretli bir sağlayıcıya (ör. MapTiler)
-  /// geçmek için yalnızca bu satır değişir.
-  static const String tileUrl =
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  static const String userAgentPackage = 'com.jupi.benimapp.benimmarketim_app';
-
-  /// Testlerde ağdan karo indirilmez.
-  @visibleForTesting
-  static bool debugShowTiles = true;
+  /// Testlerde gerçek harita çizilmez (bkz. [MapSurface.debugShowTiles]).
+  static set debugShowTiles(bool value) => MapSurface.debugShowTiles = value;
 
   static LatLng toLatLng(GeoPoint point) => LatLng(point.lat, point.lng);
   static GeoPoint toGeoPoint(LatLng point) =>
@@ -76,59 +70,6 @@ Future<GeoPoint?> showAddressMapPicker(
       ),
     ),
   );
-}
-
-List<Widget> _tileLayers() => [
-      if (AddressMap.debugShowTiles)
-        TileLayer(
-          urlTemplate: AddressMap.tileUrl,
-          userAgentPackageName: AddressMap.userAgentPackage,
-          maxNativeZoom: 19,
-        ),
-    ];
-
-/// Teslimat alanının dışı hafifçe karartılır, sınır yeşil çizilir.
-Widget _areaLayer(DeliveryArea area) {
-  // Alanı çok aşan bir çerçeve; alanın dış sınırları bu çerçevede delik
-  const outer = [
-    LatLng(36, 26),
-    LatLng(36, 38),
-    LatLng(44, 38),
-    LatLng(44, 26),
-  ];
-  return PolygonLayer(
-    polygons: [
-      Polygon(
-        points: outer,
-        holePointsList: [
-          for (final rings in area.polygons)
-            rings.first.map(AddressMap.toLatLng).toList(),
-        ],
-        color: MarketPalette.greenDeep.withValues(alpha: .16),
-        borderColor: MarketPalette.green,
-        borderStrokeWidth: 3,
-      ),
-    ],
-  );
-}
-
-/// OSM lisansının istediği kaynak gösterimi
-class _OsmAttribution extends StatelessWidget {
-  const _OsmAttribution();
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .82),
-          borderRadius: BorderRadius.circular(MarketRadius.xs),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Text('© OpenStreetMap katkıcıları',
-              style:
-                  MarketText.caption(size: 11, color: MarketPalette.inkSoft)),
-        ),
-      );
 }
 
 /// Haritanın ortasındaki iğne (ucu tam merkezi gösterir)
@@ -192,12 +133,11 @@ class AddressMapPickerPage extends StatefulWidget {
 }
 
 class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
-  final MapController _map = MapController();
+  MapSurfaceHandle? _handle;
   late LatLng _center;
   LatLng? _myLocation;
   bool _locating = false;
   bool _dragging = false;
-  bool _mapReady = false;
   _MapNote? _note;
 
   /// Kamera kullanıcıya göre ayarlandı (konumuna gidildi, kaydırdı ya da
@@ -222,6 +162,10 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   List<PlaceSearchResult>? _results;
   bool _searchFailed = false;
   int _searchSeq = 0;
+  Timer? _searchTimer;
+
+  /// Seçilen önerinin konumu soruluyor (Google)
+  bool _resolving = false;
 
   @override
   void initState() {
@@ -249,9 +193,9 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   @override
   void dispose() {
     _placeTimer?.cancel();
+    _searchTimer?.cancel();
     _query.dispose();
     _queryFocus.dispose();
-    _map.dispose();
     super.dispose();
   }
 
@@ -263,12 +207,28 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
       _outside = _isOutside(_center);
     });
     // Konum yoksa harita tüm teslimat alanını gösterecek şekilde açılır
-    if (area != null && !_cameraSettled && _mapReady) {
-      _map.fitCamera(CameraFit.bounds(
-        bounds: AddressMap.boundsOf(area),
-        padding: const EdgeInsets.all(28),
-      ));
-      _center = _map.camera.center;
+    final handle = _handle;
+    if (area != null && !_cameraSettled && handle != null) {
+      handle.fit(AddressMap.boundsOf(area));
+      _center = handle.center;
+    }
+  }
+
+  void _onMapReady(MapSurfaceHandle handle) {
+    _handle = handle;
+    // Konum ya da alan harita hazır olmadan geldiyse şimdi uygulanır
+    if (_cameraSettled && _center != handle.center) {
+      handle.move(_center, AddressMap.streetZoom);
+    } else if (!_cameraSettled && _area != null) {
+      _onArea(_area);
+    }
+  }
+
+  void _onMapMove(LatLng center, bool gesture) {
+    _center = center;
+    if (gesture) {
+      _cameraSettled = true;
+      if (!_dragging) setState(() => _dragging = true);
     }
   }
 
@@ -290,7 +250,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   void _moveTo(LatLng point, double zoom) {
     _center = point;
     _cameraSettled = true;
-    if (_mapReady) _map.move(point, zoom);
+    _handle?.move(point, zoom);
     _afterMove();
   }
 
@@ -382,7 +342,28 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     });
   }
 
+  /// Google'da yazarken öneri gelir (en az 3 harf, 350 ms bekleyerek).
+  void _onQueryChanged(String value) {
+    setState(() {});
+    final geocoding = widget.geocoding;
+    if (geocoding == null || !geocoding.autocomplete) return;
+    _searchTimer?.cancel();
+    if (value.trim().length < 3) {
+      _searchSeq++;
+      if (_results != null || _searching || _searchFailed) {
+        setState(() {
+          _results = null;
+          _searching = false;
+          _searchFailed = false;
+        });
+      }
+      return;
+    }
+    _searchTimer = Timer(const Duration(milliseconds: 350), _search);
+  }
+
   void _clearSearch() {
+    _searchTimer?.cancel();
     _searchSeq++;
     _query.clear();
     setState(() {
@@ -392,10 +373,24 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     });
   }
 
-  void _pickResult(PlaceSearchResult result) {
+  Future<void> _pickResult(PlaceSearchResult result) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    _searchTimer?.cancel();
+    var point = result.point;
+    if (point == null) {
+      final geocoding = widget.geocoding;
+      if (geocoding == null || _resolving) return;
+      setState(() => _resolving = true);
+      point = await geocoding.resolve(result);
+      if (!mounted) return;
+      setState(() => _resolving = false);
+      if (point == null) {
+        setState(() => _searchFailed = true);
+        return;
+      }
+    }
     setState(() => _results = null);
-    _moveTo(AddressMap.toLatLng(result.point), AddressMap.streetZoom);
+    _moveTo(AddressMap.toLatLng(point), AddressMap.streetZoom);
   }
 
   void _closeResults() {
@@ -428,60 +423,20 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
             child: Semantics(
               label: 'Teslimat konumu haritası. İğneyi kapına getirmek için '
                   'haritayı kaydır.',
-              child: FlutterMap(
-                mapController: _map,
-                options: MapOptions(
-                  initialCenter: _center,
-                  initialZoom: initialZoom,
-                  minZoom: 11,
-                  maxZoom: 19,
-                  backgroundColor: MarketPalette.surfaceMuted,
-                  cameraConstraint: CameraConstraint.containCenter(
-                    bounds: AddressMap.devrekBounds,
-                  ),
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                  ),
-                  onTap: (_, __) => _closeResults(),
-                  onMapReady: () {
-                    _mapReady = true;
-                    // Konum ya da alan harita hazır olmadan geldiyse şimdi
-                    if (_cameraSettled && _center != _map.camera.center) {
-                      _map.move(_center, AddressMap.streetZoom);
-                    } else if (!_cameraSettled && _area != null) {
-                      _onArea(_area);
-                    }
-                  },
-                  onPositionChanged: (camera, hasGesture) {
-                    _center = camera.center;
-                    if (hasGesture) {
-                      _cameraSettled = true;
-                      if (!_dragging) setState(() => _dragging = true);
-                    }
-                  },
-                  onMapEvent: (event) {
-                    if (event is MapEventMoveEnd ||
-                        event is MapEventFlingAnimationEnd ||
-                        event is MapEventDoubleTapZoomEnd ||
-                        event is MapEventScrollWheelZoom) {
-                      _afterMove();
-                    }
-                  },
-                ),
-                children: [
-                  ..._tileLayers(),
-                  if (area != null) _areaLayer(area),
-                  if (_myLocation != null)
-                    CircleLayer(circles: [
-                      CircleMarker(
-                        point: _myLocation!,
-                        radius: 9,
-                        color: MarketPalette.blue,
-                        borderColor: Colors.white,
-                        borderStrokeWidth: 3,
-                      ),
-                    ]),
+              child: MapSurface(
+                initialCenter: _center,
+                initialZoom: initialZoom,
+                centerBounds: AddressMap.devrekBounds,
+                areaRings: [
+                  if (area != null)
+                    for (final rings in area.polygons)
+                      rings.first.map(AddressMap.toLatLng).toList(),
                 ],
+                myLocation: _myLocation,
+                onReady: _onMapReady,
+                onMove: _onMapMove,
+                onIdle: _afterMove,
+                onTap: _closeResults,
               ),
             ),
           ),
@@ -532,11 +487,6 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
                 ),
               ),
             ),
-          ),
-          const Positioned(
-            left: 12,
-            bottom: 12,
-            child: SafeArea(top: false, child: _OsmAttribution()),
           ),
         ],
       ),
@@ -628,7 +578,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
         textInputAction: TextInputAction.search,
         textCapitalization: TextCapitalization.words,
         onSubmitted: (_) => _search(),
-        onChanged: (_) => setState(() {}),
+        onChanged: _onQueryChanged,
         style: MarketText.body(size: 15),
         decoration: InputDecoration(
           hintText: 'Sokak, cadde ya da yer ara',
@@ -652,7 +602,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
           ),
           prefixIcon:
               const Icon(Icons.search_rounded, color: MarketPalette.muted),
-          suffixIcon: _searching
+          suffixIcon: _searching || _resolving
               ? const Padding(
                   padding: EdgeInsets.all(14),
                   child: SizedBox(
@@ -900,22 +850,20 @@ class AddressMapPreview extends StatelessWidget {
           children: [
             Positioned.fill(
               child: ExcludeSemantics(
-                child: FlutterMap(
-                  // Nokta değişince önizleme yeniden kurulur
-                  key: ValueKey('${point.lat},${point.lng}'),
-                  options: MapOptions(
+                // Dokunulmaz; sayfa kaydırması haritaya takılmaz
+                child: IgnorePointer(
+                  child: MapSurface(
+                    // Nokta değişince önizleme yeniden kurulur
+                    key: ValueKey('${point.lat},${point.lng}'),
                     initialCenter: AddressMap.toLatLng(point),
                     initialZoom: AddressMap.streetZoom - 1,
-                    backgroundColor: MarketPalette.surfaceMuted,
-                    interactionOptions:
-                        const InteractionOptions(flags: InteractiveFlag.none),
+                    interactive: false,
+                    attributionPadding: const EdgeInsets.all(6),
                   ),
-                  children: _tileLayers(),
                 ),
               ),
             ),
             const _CenterPin(),
-            const Positioned(left: 6, bottom: 6, child: _OsmAttribution()),
           ],
         ),
       ),

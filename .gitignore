@@ -51,3 +51,6 @@ app.*.map.json
 *.ipa
 *.aab
 *.apk
+
+# Google Maps anahtarı vb. (--dart-define-from-file=secrets.json)
+secrets.json

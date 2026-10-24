@@ -7,6 +7,22 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// --dart-define değerleri (Flutter, Gradle'a base64 ve virgülle ayrılmış
+// olarak "dart-defines" özelliğinde verir). Google Maps anahtarı
+// (MAPS_API_KEY) repoya yazılmaz, buradan manifest'e geçer.
+val dartDefines: Map<String, String> =
+    (project.findProperty("dart-defines") as String?)
+        ?.split(",")
+        ?.mapNotNull { encoded ->
+            runCatching { String(java.util.Base64.getDecoder().decode(encoded)) }.getOrNull()
+        }
+        ?.mapNotNull { entry ->
+            val parts = entry.split("=", limit = 2)
+            if (parts.size == 2) parts[0] to parts[1] else null
+        }
+        ?.toMap()
+        ?: emptyMap()
+
 val signingProperties = Properties().apply {
     val propertiesFile = rootProject.file("key.properties")
     if (propertiesFile.exists()) propertiesFile.inputStream().use { load(it) }
@@ -36,6 +52,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Boşsa uygulama Google haritasını hiç açmaz (OpenStreetMap'e düşer)
+        manifestPlaceholders["MAPS_API_KEY"] = dartDefines["MAPS_API_KEY"] ?: ""
     }
 
     // key.properties (storeFile, storePassword, keyAlias, keyPassword) varsa
