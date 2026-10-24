@@ -15,14 +15,18 @@ import 'widgets/delivery_ui.dart';
 import 'widgets/market_ui.dart';
 import 'widgets/zone_picker.dart';
 
-/// Adres ekleme / düzenleme formu. Yeni adreste önce harita açılır: kullanıcı
-/// kendi konumunu görür ve iğneyi kapısına getirir; ardından mahalle/köyü ve
-/// adres bilgilerini girer. Zorunlu alanlar bölge tipine göre değişir:
+/// Adres ekleme / düzenleme formu. Adres, Devrek bölgesine (ilçe merkezi)
+/// eklenir; yeni adreste önce harita açılır: kullanıcı kendi konumunu ya da
+/// aradığı sokağı görür, iğneyi Devrek sınırı içinde kapısına getirir.
+/// Ardından mahalle, sokak ve bina no (haritadan otomatik dolar) ile
+/// isteğe bağlı bilgileri girer.
 ///
-/// * mahalle: haritada konum, sokak/cadde ve bina no zorunlu,
-/// * köy: haritada konum ve adres tarifi (en az 10 karakter) zorunlu,
-/// * yurt: yurtlar adres değildir (ödemede teslimat noktası olarak seçilir);
-///   eski bir yurt adresi düzenlenirse yalnızca "Blok / oda" tarifi kalır.
+/// * Devrek (ilce): haritada konum, mahalle, sokak/cadde ve bina no zorunlu;
+///   konum teslimat alanının dışındaysa kaydedilmez (OUT_OF_AREA).
+/// * Yurtlar adres değildir (ödemede teslimat noktası olarak seçilir); eski
+///   bir yurt adresi düzenlenirse yalnızca "Blok / oda" tarifi kalır.
+/// * Eski mahalle/köy bölgeleri kapalıdır; o adresler düzenlenirken açık bir
+///   bölge seçilir.
 ///
 /// Kaydedilince sayfa kaydedilen [DeliveryAddress] ile kapanır
 /// (`context.pop(saved)`); ödeme ekranı yeni adresi buradan alır.
@@ -36,8 +40,8 @@ class AddressFormPage extends StatefulWidget {
   /// Haritada konum göstermek için (testte sahte konum).
   final LocationService locationService;
 
-  /// Haritadaki konumdan mahalle ve sokağı bulur; null ise uygulamanın
-  /// servisi kullanılır.
+  /// Haritadaki konumdan mahalle ve sokağı bulur, haritada adres arar; null
+  /// ise uygulamanın servisi kullanılır.
   final GeocodingService? geocoding;
 
   const AddressFormPage({
@@ -56,6 +60,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
   static const _labelPresets = ['Ev', 'İş'];
 
   late final TextEditingController _label;
+  late final TextEditingController _neighborhood;
   late final TextEditingController _street;
   late final TextEditingController _buildingNo;
   late final TextEditingController _buildingName;
@@ -65,28 +70,27 @@ class _AddressFormPageState extends State<AddressFormPage> {
   final FocusNode _labelFocus = FocusNode();
 
   // Hata olunca ilk hatalı alana kaydırmak için
+  static const _errorOrder = [
+    'zone',
+    'location',
+    'neighborhood',
+    'street',
+    'buildingNo',
+  ];
   final Map<String, GlobalKey> _fieldKeys = {
-    for (final key in const [
-      'location',
-      'zone',
-      'street',
-      'buildingNo',
-      'directions',
-    ])
-      key: GlobalKey(),
+    for (final key in _errorOrder) key: GlobalKey(),
   };
 
   String? _zoneId;
   GeoPoint? _location;
 
-  /// Haritadan bulunan yer; bölge otomatik seçilir, sokak/bina no dolar
+  /// Haritadan bulunan yer; boş (ya da önceki konumdan doldurulmuş) mahalle,
+  /// sokak ve bina no alanları buradan dolar.
   late final GeocodingService _geocoding;
-  PlaceInfo? _place;
   bool _placeLoading = false;
   int _placeSeq = 0;
+  final Map<TextEditingController, String> _autoFilled = {};
 
-  /// Bölgeyi harita seçti (kullanıcı elle değiştirince false olur)
-  bool _zoneFromMap = false;
   late bool _makeDefault;
 
   /// "Diğer" etiketi seçildi (alan serbest yazılır)
@@ -98,6 +102,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
   bool _saved = false;
   String? _serverError;
 
+  /// Yeni adreste harita adımı açıldı (bir kez)
+  bool _mapStepShown = false;
+
   bool get _isEdit => widget.initial != null;
 
   @override
@@ -106,6 +113,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
     final initial = widget.initial;
     final fields = initial?.fields ?? const AddressFields();
     _label = TextEditingController(text: initial?.label ?? '');
+    _neighborhood = TextEditingController(text: fields.neighborhood);
     _street = TextEditingController(text: fields.street);
     _buildingNo = TextEditingController(text: fields.buildingNo);
     _buildingName = TextEditingController(text: fields.buildingName);
@@ -126,16 +134,30 @@ class _AddressFormPageState extends State<AddressFormPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final delivery = context.read<DeliveryViewModel>();
-      unawaited(delivery.loadZones());
       // İlk adres otomatik varsayılan olur; bunu bilmek için liste gerekir.
       if (!delivery.addressesLoaded) unawaited(delivery.loadAddresses());
-      // Yeni adreste ilk adım harita: konum seçilmeden forma geçilmez.
-      if (!_isEdit) unawaited(_pickLocation(firstStep: true));
+      unawaited(_start(delivery));
     });
+  }
+
+  /// Bölgeler yüklenince yeni adreste bölge seçilir (tek adres bölgesi
+  /// varsa o) ve harita adımı açılır.
+  Future<void> _start(DeliveryViewModel delivery, {bool force = false}) async {
+    await delivery.loadZones(force: force);
+    if (!mounted || _isEdit) return;
+    final zones = delivery.addressZones;
+    if (_zoneId == null || delivery.zoneById(_zoneId) == null) {
+      setState(() => _zoneId = zones.length == 1 ? zones.single.id : null);
+    }
+    final zone = delivery.zoneById(_zoneId);
+    if (zone != null && _needsLocation(zone.type)) {
+      await _pickLocation(firstStep: true);
+    }
   }
 
   List<TextEditingController> get _controllers => [
         _label,
+        _neighborhood,
         _street,
         _buildingNo,
         _buildingName,
@@ -192,6 +214,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
     return initial != null && _zoneId == initial.zoneId && !initial.zoneEnabled;
   }
 
+  /// Haritada konum zorunlu mu? Devrek (ilçe) bölgesinde evet.
+  static bool _needsLocation(DeliveryZoneType? type) =>
+      type == DeliveryZoneType.ilce;
+
   Future<void> _pickZone() async {
     FocusManager.instance.primaryFocus?.unfocus();
     // Yurtlar adres değildir; ödemede teslimat noktası olarak seçilir.
@@ -203,13 +229,50 @@ class _AddressFormPageState extends State<AddressFormPage> {
     if (zone == null || !mounted) return;
     setState(() {
       _zoneId = zone.id;
-      _zoneFromMap = false;
       _serverError = null;
     });
+    if (_needsLocation(zone.type) && _location == null) {
+      await _pickLocation();
+    }
   }
 
-  /// Haritadaki konumdan mahalle/sokak bulur. Bölge listedeyse ve kullanıcı
-  /// elle seçmediyse otomatik seçilir; boş sokak ve bina no alanları dolar.
+  // -------------------------------------------------------------------------
+  // Konum
+  // -------------------------------------------------------------------------
+
+  /// Haritayı açar; seçilen noktayı konum yapar. [firstStep]: yeni adreste
+  /// form açılınca ilk adım. Haritadan konum seçmeden çıkılırsa form da
+  /// kapanır (adres eklemekten vazgeçildi).
+  Future<void> _pickLocation({bool firstStep = false}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (firstStep) {
+      if (_mapStepShown) return;
+      _mapStepShown = true;
+    }
+    final delivery = context.read<DeliveryViewModel>();
+    final zoneId = _zoneId;
+    final point = await showAddressMapPicker(
+      context,
+      initial: _location,
+      locationService: widget.locationService,
+      geocoding: _geocoding,
+      area: zoneId == null ? null : delivery.loadArea(zoneId),
+    );
+    if (!mounted) return;
+    if (point == null) {
+      if (firstStep && _location == null) context.pop();
+      return;
+    }
+    setState(() {
+      _location = point;
+      _serverError = null;
+    });
+    unawaited(_lookupPlace());
+  }
+
+  /// Haritadaki konumdan mahalle/sokak/bina no bulur. Boş alanlar ya da
+  /// önceki konumdan otomatik dolmuş (kullanıcının değiştirmediği) alanlar
+  /// yenilenir.
   Future<void> _lookupPlace() async {
     final point = _location;
     if (point == null) return;
@@ -217,25 +280,21 @@ class _AddressFormPageState extends State<AddressFormPage> {
     setState(() => _placeLoading = true);
     final place = await _geocoding.reverse(point);
     if (!mounted || seq != _placeSeq) return;
-    final delivery = context.read<DeliveryViewModel>();
-    if (!delivery.zonesLoaded) await delivery.loadZones();
-    if (!mounted || seq != _placeSeq) return;
     setState(() {
       _placeLoading = false;
-      _place = place;
       if (place == null) return;
-      final match = place.matchZone(delivery.zones);
-      if (match != null && (_zoneId == null || _zoneFromMap)) {
-        _zoneId = match.id;
-        _zoneFromMap = true;
-      }
-      if (_street.text.trim().isEmpty && place.road.isNotEmpty) {
-        _street.text = place.road;
-      }
-      if (_buildingNo.text.trim().isEmpty && place.houseNumber.isNotEmpty) {
-        _buildingNo.text = place.houseNumber;
-      }
+      _autofill(_neighborhood, place.area);
+      _autofill(_street, place.road);
+      _autofill(_buildingNo, place.houseNumber);
     });
+  }
+
+  void _autofill(TextEditingController controller, String value) {
+    final current = controller.text.trim();
+    final replaceable = current.isEmpty || current == _autoFilled[controller];
+    if (!replaceable) return;
+    controller.text = value;
+    _autoFilled[controller] = value;
   }
 
   // -------------------------------------------------------------------------
@@ -249,6 +308,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       return AddressFields(directions: _directions.text.trim());
     }
     return AddressFields(
+      neighborhood: _neighborhood.text.trim(),
       street: _street.text.trim(),
       buildingNo: _buildingNo.text.trim(),
       buildingName: _buildingName.text.trim(),
@@ -262,20 +322,15 @@ class _AddressFormPageState extends State<AddressFormPage> {
   Map<String, String> _errors(DeliveryViewModel delivery) {
     final type = _zoneType(delivery);
     if (_zoneId == null || type == null) {
-      return {
-        if (!_isEdit && _location == null)
-          'location': 'Haritada teslimat konumunu işaretle',
-        'zone': 'Mahalleni ya da köyünü seç',
-      };
+      return {'zone': 'Teslimat bölgeni seç'};
     }
     final errors = _fields(type).validate(type);
-    // Yeni mahalle/köy adresinde haritada konum zorunlu
-    if (!_isEdit && type != DeliveryZoneType.yurt && _location == null) {
+    if (_needsLocation(type) && _location == null) {
       errors['location'] = 'Haritada teslimat konumunu işaretle';
     }
     // Yeni adres yalnızca açık bölgeye eklenebilir.
     if (!_isEdit && _zoneClosed(delivery)) {
-      errors['zone'] = '$zoneClosedNote Başka bir bölge seç.';
+      errors['zone'] = zoneClosedNote;
     }
     return errors;
   }
@@ -321,36 +376,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
       return _changes(delivery).isNotEmpty ||
           (_makeDefault && !initial.isDefault);
     }
-    return _zoneId != widget.initialZoneId ||
-        _location != null ||
+    return _location != null ||
         _controllers.any((c) => c.text.trim().isNotEmpty);
-  }
-
-  // -------------------------------------------------------------------------
-  // Konum
-  // -------------------------------------------------------------------------
-
-  /// Haritayı açar; seçilen noktayı konum yapar. [firstStep]: yeni adreste
-  /// form açılınca ilk adım. Haritadan konum seçmeden çıkılırsa form da
-  /// kapanır (adres eklemekten vazgeçildi).
-  Future<void> _pickLocation({bool firstStep = false}) async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    final point = await showAddressMapPicker(
-      context,
-      initial: _location,
-      locationService: widget.locationService,
-      geocoding: _geocoding,
-    );
-    if (!mounted) return;
-    if (point == null) {
-      if (firstStep && _location == null) context.pop();
-      return;
-    }
-    setState(() {
-      _location = point;
-      _serverError = null;
-    });
-    unawaited(_lookupPlace());
   }
 
   // -------------------------------------------------------------------------
@@ -409,6 +436,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
         _serverError = e.message;
       });
       switch (e.code) {
+        case 'OUT_OF_AREA':
+        case 'LOCATION_REQUIRED':
+          // İğneyi teslimat alanı içine yeniden koydur
+          unawaited(_pickLocation());
         case 'ZONE_CLOSED':
         case 'ZONE_NOT_FOUND':
           // Bölge kapanmış olabilir: listeyi yenile, seçici güncel olsun.
@@ -422,23 +453,17 @@ class _AddressFormPageState extends State<AddressFormPage> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _serverError = 'Adresin kaydedilemedi. Bağlantını kontrol edip tekrar dene.';
+        _serverError =
+            'Adresin kaydedilemedi. Bağlantını kontrol edip tekrar dene.';
       });
     }
   }
 
   void _scrollToFirstError(Map<String, String> errors) {
-    for (final key in const [
-      'location',
-      'zone',
-      'directions',
-      'street',
-      'buildingNo',
-    ]) {
+    for (final key in _errorOrder) {
       if (!errors.containsKey(key)) continue;
       final target = _fieldKeys[key]?.currentContext;
       if (target == null) continue;
-      // Köyde tarif ilk alandır; mahallede sokak. Görünür ilk hatalıya git.
       unawaited(Scrollable.ensureVisible(
         target,
         alignment: .2,
@@ -491,6 +516,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
     final gutter = MarketSpace.gutterOf(context);
     final dirty = _dirty(delivery);
 
+    // Yeni adres: bölgeler yükleniyor / alınamadı / adrese teslimat kapalı
+    final Widget? blocker = _isEdit ? null : _buildBlocker(delivery);
+
     return PopScope(
       canPop: !_saving && !dirty,
       onPopInvokedWithResult: (didPop, _) {
@@ -512,47 +540,69 @@ class _AddressFormPageState extends State<AddressFormPage> {
                 onBack: _back,
               ),
             ),
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 32),
-              sliver: SliverList.list(
-                children: [
-                  if (limitReached) ...[
-                    MarketNotice.warning(
-                      icon: Icons.info_outline_rounded,
-                      text:
-                          'En fazla ${delivery.maxAddresses} adres kaydedebilirsin; yenisini eklemek için birini sil.',
-                    ),
-                    const SizedBox(height: 14),
+            if (blocker != null)
+              SliverFillRemaining(hasScrollBody: false, child: blocker)
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 32),
+                sliver: SliverList.list(
+                  children: [
+                    if (limitReached) ...[
+                      MarketNotice.warning(
+                        icon: Icons.info_outline_rounded,
+                        text:
+                            'En fazla ${delivery.maxAddresses} adres kaydedebilirsin; yenisini eklemek için birini sil.',
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    _buildZoneSection(delivery, errors['zone']),
+                    if (type != null) ...[
+                      if (type != DeliveryZoneType.yurt) ...[
+                        const SizedBox(height: 14),
+                        _buildLocationSection(type, errors['location']),
+                      ],
+                      const SizedBox(height: 14),
+                      _buildFieldsSection(type, errors),
+                      const SizedBox(height: 14),
+                      _buildLabelSection(delivery),
+                    ],
                   ],
-                  // Eski bir yurt adresi dışında önce haritadaki konum
-                  if (type != DeliveryZoneType.yurt) ...[
-                    _buildLocationSection(errors['location']),
-                    const SizedBox(height: 14),
-                  ],
-                  _buildZoneSection(delivery, errors['zone']),
-                  if (type != null) ...[
-                    const SizedBox(height: 14),
-                    _buildFieldsSection(type, errors),
-                    const SizedBox(height: 14),
-                    _buildLabelSection(delivery),
-                  ] else ...[
-                    const SizedBox(height: 14),
-                    const MarketNotice.info(
-                      icon: Icons.touch_app_outlined,
-                      text:
-                          'Mahalleni ya da köyünü seç; adres bilgileri bölgeye göre değişir.',
-                    ),
-                  ],
-                ],
+                ),
               ),
-            ),
           ],
         ),
-        bottomNavigationBar: _buildSaveBar(
-          enabled: !limitReached && (!_isEdit || dirty),
-        ),
+        bottomNavigationBar: blocker != null
+            ? null
+            : _buildSaveBar(
+                enabled: !limitReached && (!_isEdit || dirty),
+              ),
       ),
     );
+  }
+
+  Widget? _buildBlocker(DeliveryViewModel delivery) {
+    if (!delivery.zonesLoaded) {
+      if (delivery.zonesError != null && !delivery.zonesLoading) {
+        return MarketEmptyState.error(
+          title: 'Teslimat bölgeleri yüklenemedi',
+          message: delivery.zonesError!,
+          onRetry: () => _start(delivery, force: true),
+        );
+      }
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (delivery.addressZones.isEmpty) {
+      return MarketEmptyState(
+        icon: Icons.location_off_outlined,
+        title: 'Şu an adrese teslimat yapılmıyor',
+        message: 'Adrese teslimat açıldığında buradan adresini '
+            'ekleyebileceksin. Şimdilik siparişini yurt teslimat noktasına '
+            'verebilirsin.',
+        secondaryLabel: 'Yenile',
+        onSecondary: () => _start(delivery, force: true),
+      );
+    }
+    return null;
   }
 
   Widget _buildZoneSection(DeliveryViewModel delivery, String? error) {
@@ -561,32 +611,84 @@ class _AddressFormPageState extends State<AddressFormPage> {
     final closed = _zoneClosed(delivery);
     final loadingZone =
         name == null && _zoneId != null && !delivery.zonesLoaded;
+    // Tek adres bölgesi (Devrek) seçiliyse değiştirilecek bir şey yok
+    final fixed = zone != null &&
+        !closed &&
+        delivery.addressZones.length == 1 &&
+        delivery.addressZones.single.id == zone.id;
 
     final String subtitle;
     if (loadingZone) {
       subtitle = 'Bölge bilgisi yükleniyor…';
     } else if (zone != null) {
-      subtitle = _zoneFromMap
-          ? 'Haritadaki konumuna göre seçildi · ${zoneSubtitle(zone)}'
-          : zoneSubtitle(zone);
+      subtitle = zoneSubtitle(zone);
     } else if (name != null && closed) {
       // Uzun açıklama altta uyarı olarak çıkar (düzenlemede)
       subtitle = _isEdit ? 'Teslimat şu an kapalı' : zoneClosedNote;
-    } else if (_placeLoading) {
-      subtitle = 'Haritadaki konumundan mahallen bulunuyor…';
-    } else if (_place != null && _place!.area.isNotEmpty) {
-      // Konum bir mahallede görünüyor ama listemizde yok
-      subtitle =
-          "Konumun ${_place!.area} içinde görünüyor; bu bölge listede yok. En yakın mahalleyi seç.";
     } else {
-      subtitle = 'Mahalleni ya da köyünü listeden seç';
+      subtitle = 'Adresinin bölgesini seç';
     }
+
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      child: Row(
+        children: [
+          MarketIconTile(
+            icon: switch (_zoneType(delivery)) {
+              DeliveryZoneType.koy => Icons.cottage_rounded,
+              DeliveryZoneType.yurt => Icons.apartment_rounded,
+              _ => Icons.location_city_rounded,
+            },
+            size: 40,
+            background:
+                closed ? MarketPalette.orangeSoft : MarketPalette.greenSoft,
+            foreground:
+                closed ? MarketPalette.orangeInk : MarketPalette.greenDark,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name ?? (loadingZone ? 'Bölge' : 'Bölgeni seç'),
+                  style: MarketText.label(size: 15),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: MarketText.caption(
+                    color: closed
+                        ? MarketPalette.orangeInk
+                        : zone != null && (zone.isFree || zone.deliveryFee <= 0)
+                            ? MarketPalette.greenDark
+                            : MarketPalette.muted,
+                    weight: closed || zone != null
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!fixed) ...[
+            const SizedBox(width: 8),
+            Text(
+              name == null ? 'Seç' : 'Değiştir',
+              style: MarketText.label(color: MarketPalette.greenDark),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: MarketPalette.greenDark),
+          ],
+        ],
+      ),
+    );
 
     return KeyedSubtree(
       key: _fieldKeys['zone'],
       child: _FormSection(
         title: 'Teslimat bölgesi',
-        trailing: 'Zorunlu',
+        trailing: fixed ? null : 'Zorunlu',
         error: error != null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -601,71 +703,15 @@ class _AddressFormPageState extends State<AddressFormPage> {
                       : closed
                           ? MarketPalette.orange
                           : name == null
-                          ? MarketPalette.lineStrong
-                          : MarketPalette.green,
+                              ? MarketPalette.lineStrong
+                              : MarketPalette.green,
                   width: name == null && error == null ? 1 : 1.5,
                 ),
               ),
               clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: _saving ? null : _pickZone,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                  child: Row(
-                    children: [
-                      MarketIconTile(
-                        icon: switch (_zoneType(delivery)) {
-                          DeliveryZoneType.koy => Icons.cottage_rounded,
-                          DeliveryZoneType.yurt => Icons.apartment_rounded,
-                          _ => Icons.location_city_rounded,
-                        },
-                        size: 40,
-                        background: closed
-                            ? MarketPalette.orangeSoft
-                            : MarketPalette.greenSoft,
-                        foreground: closed
-                            ? MarketPalette.orangeInk
-                            : MarketPalette.greenDark,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name ?? (loadingZone ? 'Bölge' : 'Bölgeni seç'),
-                              style: MarketText.label(size: 15),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              subtitle,
-                              style: MarketText.caption(
-                                color: closed
-                                    ? MarketPalette.orangeInk
-                                    : zone != null &&
-                                            (zone.isFree ||
-                                                zone.deliveryFee <= 0)
-                                        ? MarketPalette.greenDark
-                                        : MarketPalette.muted,
-                                weight: closed || zone != null
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        name == null ? 'Seç' : 'Değiştir',
-                        style: MarketText.label(color: MarketPalette.greenDark),
-                      ),
-                      const Icon(Icons.chevron_right_rounded,
-                          color: MarketPalette.greenDark),
-                    ],
-                  ),
-                ),
-              ),
+              child: fixed
+                  ? row
+                  : InkWell(onTap: _saving ? null : _pickZone, child: row),
             ),
             if (error != null) _ErrorLine(error),
             if (_isEdit && closed && error == null)
@@ -685,35 +731,20 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
   Widget _buildFieldsSection(
       DeliveryZoneType type, Map<String, String> errors) {
-    final isVillage = type == DeliveryZoneType.koy;
-    final isDorm = type == DeliveryZoneType.yurt;
-
-    final directions = KeyedSubtree(
-      key: _fieldKeys['directions'],
-      child: _AddressTextField(
-        controller: _directions,
-        label: switch (type) {
-          DeliveryZoneType.yurt => 'Blok / oda (isteğe bağlı)',
-          DeliveryZoneType.koy => 'Adres tarifi',
-          DeliveryZoneType.mahalle => 'Adres tarifi (isteğe bağlı)',
-        },
-        hint: switch (type) {
-          DeliveryZoneType.yurt => 'Örn. B Blok, oda 214',
-          DeliveryZoneType.koy =>
-            'Örn. Cami yanındaki yeşil kapılı ev, bahçede ceviz ağacı var',
-          DeliveryZoneType.mahalle => 'Örn. Eczanenin karşısı, zil çalışmıyor',
-        },
-        helper: isVillage
-            ? 'Kuryenin evini bulabilmesi için en az ${AddressFields.villageDirectionsMin} karakter'
-            : null,
-        maxLength: AddressFields.directionsMax,
-        showCounter: true,
-        multiline: true,
-        error: errors['directions'],
-      ),
+    final directions = _AddressTextField(
+      controller: _directions,
+      label: type == DeliveryZoneType.yurt
+          ? 'Blok / oda (isteğe bağlı)'
+          : 'Adres tarifi (isteğe bağlı)',
+      hint: type == DeliveryZoneType.yurt
+          ? 'Örn. B Blok, oda 214'
+          : 'Örn. Eczanenin karşısı, zil çalışmıyor',
+      maxLength: AddressFields.directionsMax,
+      showCounter: true,
+      multiline: true,
     );
 
-    if (isDorm) {
+    if (type == DeliveryZoneType.yurt) {
       return _FormSection(
         title: 'Yurt bilgisi',
         trailing: 'İsteğe bağlı',
@@ -731,27 +762,56 @@ class _AddressFormPageState extends State<AddressFormPage> {
       );
     }
 
-    final street = KeyedSubtree(
-      key: _fieldKeys['street'],
-      child: _AddressTextField(
-        controller: _street,
-        label: isVillage ? 'Sokak / cadde (isteğe bağlı)' : 'Sokak / cadde',
-        hint: 'Örn. Atatürk Caddesi',
-        maxLength: AddressFields.streetMax,
-        error: errors['street'],
-        capitalize: true,
-      ),
-    );
-
+    final withNeighborhood = type == DeliveryZoneType.ilce;
     return _FormSection(
       title: 'Adres bilgileri',
-      trailing: isVillage ? 'Tarif zorunlu' : 'Sokak ve bina no zorunlu',
+      trailing: withNeighborhood
+          ? 'Mahalle, sokak, bina no zorunlu'
+          : 'Sokak zorunlu',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Köyde ev çoğu zaman tarifle bulunur: tarif en üstte.
-          if (isVillage) ...[directions, const SizedBox(height: 12)],
-          street,
+          if (_placeLoading) ...[
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: MarketPalette.green),
+                ),
+                const SizedBox(width: 8),
+                Text('Haritadaki konumundan adres bilgileri dolduruluyor…',
+                    style: MarketText.caption()),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (withNeighborhood) ...[
+            KeyedSubtree(
+              key: _fieldKeys['neighborhood'],
+              child: _AddressTextField(
+                controller: _neighborhood,
+                label: 'Mahalle',
+                hint: 'Örn. Cumhuriyet Mahallesi',
+                maxLength: AddressFields.neighborhoodMax,
+                error: errors['neighborhood'],
+                capitalize: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          KeyedSubtree(
+            key: _fieldKeys['street'],
+            child: _AddressTextField(
+              controller: _street,
+              label: 'Sokak / cadde',
+              hint: 'Örn. Atatürk Caddesi',
+              maxLength: AddressFields.streetMax,
+              error: errors['street'],
+              capitalize: true,
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -762,7 +822,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
                   key: _fieldKeys['buildingNo'],
                   child: _AddressTextField(
                     controller: _buildingNo,
-                    label: 'Bina no',
+                    label:
+                        withNeighborhood ? 'Bina no' : 'Bina no (isteğe bağlı)',
                     hint: 'Örn. 5',
                     maxLength: AddressFields.buildingNoMax,
                     error: errors['buildingNo'],
@@ -805,14 +866,16 @@ class _AddressFormPageState extends State<AddressFormPage> {
               ),
             ],
           ),
-          if (!isVillage) ...[const SizedBox(height: 12), directions],
+          const SizedBox(height: 12),
+          directions,
         ],
       ),
     );
   }
 
-  Widget _buildLocationSection(String? error) {
+  Widget _buildLocationSection(DeliveryZoneType type, String? error) {
     final location = _location;
+    final required = _needsLocation(type);
     final Widget body;
     if (location != null) {
       body = Column(
@@ -846,7 +909,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
       key: _fieldKeys['location'],
       child: _FormSection(
         title: 'Teslimat konumu',
-        trailing: _isEdit ? 'Önerilir' : 'Zorunlu',
+        trailing: required ? 'Zorunlu' : 'Önerilir',
+        error: error != null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -891,7 +955,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
               for (final preset in _labelPresets)
                 MarketChip(
                   label: preset,
-                  icon: preset == 'Ev' ? Icons.home_rounded : Icons.work_rounded,
+                  icon:
+                      preset == 'Ev' ? Icons.home_rounded : Icons.work_rounded,
                   selected: !_customLabel && label == preset,
                   onTap: _saving
                       ? null
@@ -1033,7 +1098,14 @@ class _FormSection extends StatelessWidget {
               ),
               if (trailing != null) ...[
                 const SizedBox(width: 8),
-                Text(trailing!, style: MarketText.caption()),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Text(
+                    trailing!,
+                    textAlign: TextAlign.end,
+                    style: MarketText.caption(),
+                  ),
+                ),
               ],
             ],
           ),
@@ -1051,7 +1123,6 @@ class _AddressTextField extends StatelessWidget {
   final FocusNode? focusNode;
   final String label;
   final String? hint;
-  final String? helper;
   final String? error;
   final int maxLength;
   final bool showCounter;
@@ -1063,7 +1134,6 @@ class _AddressTextField extends StatelessWidget {
     this.focusNode,
     required this.label,
     this.hint,
-    this.helper,
     this.error,
     required this.maxLength,
     this.showCounter = false,
@@ -1091,8 +1161,6 @@ class _AddressTextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        helperText: helper,
-        helperMaxLines: 2,
         errorText: error,
         errorMaxLines: 3,
         fillColor: MarketPalette.canvas,

@@ -7,8 +7,8 @@ import '../../viewmodels/delivery_viewmodel.dart';
 import 'delivery_ui.dart';
 import 'market_ui.dart';
 
-/// Teslimat bölgesi seçici: arama kutulu, "Mahalleler", "Köyler" (ve
-/// [includeDorms] ise "Yurtlar") gruplu alt sayfa. Seçilen bölgeyi döndürür;
+/// Teslimat bölgesi seçici: arama kutulu, bölge tipine göre gruplu alt
+/// sayfa ([includeDorms] ise yurtlar da listelenir). Seçilen bölgeyi döndürür;
 /// kapatılırsa null.
 ///
 /// Bölgeler [DeliveryViewModel]'den gelir; yüklenmediyse burada yüklenir.
@@ -56,8 +56,10 @@ class _DeliveryZonePickerSheetState extends State<DeliveryZonePickerSheet> {
   final TextEditingController _search = TextEditingController();
   String _query = '';
 
-  // Grupların sırası: önce mahalleler, sonra köyler, en son yurtlar.
+  // Grupların sırası: önce ilçe merkezi, sonra eski mahalle/köy bölgeleri,
+  // en son yurtlar.
   static const _groupOrder = [
+    DeliveryZoneType.ilce,
     DeliveryZoneType.mahalle,
     DeliveryZoneType.koy,
     DeliveryZoneType.yurt,
@@ -108,11 +110,11 @@ class _DeliveryZonePickerSheetState extends State<DeliveryZonePickerSheet> {
         icon: Icons.location_off_outlined,
         title: widget.includeDorms
             ? 'Şu an teslimat bölgesi yok'
-            : 'Henüz adrese teslimat yapılan mahalle yok',
+            : 'Şu an adrese teslimat yapılmıyor',
         message: widget.includeDorms
             ? 'Teslimat bölgelerimiz açıldığında burada görünecek.'
-            : 'Mahalle ve köyler açıldıkça burada listelenir. Şimdilik '
-                'siparişini yurt teslimat noktasına verebilirsin.',
+            : 'Adrese teslimat açıldığında bölge burada görünecek. '
+                'Şimdilik siparişini yurt teslimat noktasına verebilirsin.',
         secondaryLabel: 'Yenile',
         onSecondary: () => delivery.loadZones(force: true),
       );
@@ -121,7 +123,7 @@ class _DeliveryZonePickerSheetState extends State<DeliveryZonePickerSheet> {
         icon: Icons.search_off_rounded,
         title: 'Aramana uyan bölge yok',
         message:
-            'Mahalle ya da köy adını farklı yazmayı dene. Listede yoksa oraya henüz teslimat yapmıyoruz.',
+            'Bölge adını farklı yazmayı dene. Listede yoksa oraya henüz teslimat yapmıyoruz.',
         secondaryLabel: 'Aramayı temizle',
         onSecondary: _clearQuery,
       );
@@ -142,8 +144,8 @@ class _DeliveryZonePickerSheetState extends State<DeliveryZonePickerSheet> {
                 MarketSheetHeader(
                   title: 'Teslimat bölgeni seç',
                   subtitle: widget.includeDorms
-                      ? 'Mahalle, köy ya da yurdunu seç. Ücret ve süre bölgeye göre değişir.'
-                      : 'Mahalle ya da köyünü seç. Ücret ve süre bölgeye göre değişir.',
+                      ? 'Adresinin ya da yurdunun bölgesini seç. Ücret ve süre bölgeye göre değişir.'
+                      : 'Adresinin bölgesini seç. Ücret ve süre bölgeye göre değişir.',
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
@@ -153,7 +155,7 @@ class _DeliveryZonePickerSheetState extends State<DeliveryZonePickerSheet> {
                     textInputAction: TextInputAction.search,
                     style: MarketText.body(size: 15),
                     decoration: InputDecoration(
-                      hintText: 'Mahalle ya da köy ara',
+                      hintText: 'Bölge ara',
                       prefixIcon: const Icon(Icons.search_rounded),
                       fillColor: MarketPalette.canvas,
                       contentPadding: const EdgeInsets.symmetric(
@@ -239,6 +241,7 @@ class _ZoneRow extends StatelessWidget {
     final struckFee = campaign && zone.deliveryFee > 0;
     final eta = zone.etaText.trim();
     final icon = switch (zone.type) {
+      DeliveryZoneType.ilce => Icons.location_city_rounded,
       DeliveryZoneType.mahalle => Icons.location_city_rounded,
       DeliveryZoneType.koy => Icons.cottage_rounded,
       DeliveryZoneType.yurt => Icons.apartment_rounded,

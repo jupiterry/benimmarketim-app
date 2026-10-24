@@ -36,7 +36,36 @@ const testZoneYurt = DeliveryZone(
   isFree: true,
   etaText: '20-30 dk',
 );
+/// Devrek (ilçe merkezi): haritada konum ve mahalle zorunlu, sınır yüklü.
+const testZoneDevrek = DeliveryZone(
+  id: 'devrek',
+  name: 'Devrek',
+  type: DeliveryZoneType.ilce,
+  deliveryFee: 40,
+  freeDeliveryThreshold: 500,
+  minimumOrderAmount: 300,
+  etaText: '45-60 dk',
+  requiresLocation: true,
+  hasArea: true,
+);
 const testZones = [testZoneMahalle, testZoneFree, testZoneKoy, testZoneYurt];
+
+/// Sunucudaki gerçek düzen: iki yurt değil bir yurt + Devrek yeterli.
+const devrekZones = [testZoneYurt, testZoneDevrek];
+
+/// Devrek merkezini kapsayan kare teslimat alanı (41.20–41.24, 31.93–31.98).
+final testDevrekArea = DeliveryArea.fromGeoJson({
+  'type': 'Polygon',
+  'coordinates': [
+    [
+      [31.93, 41.20],
+      [31.98, 41.20],
+      [31.98, 41.24],
+      [31.93, 41.24],
+      [31.93, 41.20],
+    ],
+  ],
+})!;
 
 /// Kayıtlı adres örneği.
 DeliveryAddress testAddress({
@@ -75,6 +104,7 @@ class FakeDeliveryApi extends ApiService {
     List<DeliveryAddress> addresses = const [],
     this.freeDeliveryEverywhere = false,
     this.maxAddresses = 5,
+    this.area,
   })  : zones = List.of(zones),
         addresses = List.of(addresses);
 
@@ -83,6 +113,9 @@ class FakeDeliveryApi extends ApiService {
   List<DeliveryAddress> addresses;
   bool freeDeliveryEverywhere;
   int maxAddresses;
+
+  /// GET /delivery/zones/:id/area yanıtı
+  DeliveryArea? area;
 
   /// Verilirse ilgili çağrı bu hatayı fırlatır.
   Object? zonesError;
@@ -112,6 +145,12 @@ class FakeDeliveryApi extends ApiService {
       zones: List.of(zones),
       freeDeliveryEverywhere: freeDeliveryEverywhere,
     );
+  }
+
+  @override
+  Future<DeliveryArea?> getDeliveryZoneArea(String zoneId) async {
+    calls.add('GET /delivery/zones/$zoneId/area');
+    return area;
   }
 
   @override

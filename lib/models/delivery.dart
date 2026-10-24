@@ -1,5 +1,6 @@
 /// Adrese teslimat modelleri. Sunucu sözleşmesi: GET /delivery/me,
-/// GET /delivery/zones, /addresses, POST /delivery/quote.
+/// GET /delivery/zones, GET /delivery/zones/:id/area, /addresses,
+/// POST /delivery/quote.
 library;
 
 double _toDouble(Object? value, [double fallback = 0]) =>
@@ -7,9 +8,12 @@ double _toDouble(Object? value, [double fallback = 0]) =>
 
 String _toStr(Object? value) => value == null ? '' : value.toString();
 
-/// Bölge tipi: yurt, mahalle ya da köy.
+/// Bölge tipi. Sunucuda üç sabit bölge vardır: iki yurt ve Devrek (ilçe
+/// merkezi, haritadaki sınırıyla). Mahalle ve köy eski sürümden kalan
+/// (kapatılmış) bölgelerdir; kayıtlı eski adreslerde görünebilir.
 enum DeliveryZoneType {
   yurt,
+  ilce,
   mahalle,
   koy;
 
@@ -17,6 +21,8 @@ enum DeliveryZoneType {
     switch (value) {
       case 'yurt':
         return DeliveryZoneType.yurt;
+      case 'ilce':
+        return DeliveryZoneType.ilce;
       case 'koy':
         return DeliveryZoneType.koy;
       default:
@@ -29,6 +35,7 @@ enum DeliveryZoneType {
   /// Bölge seçicideki grup başlığı
   String get groupLabel => switch (this) {
         DeliveryZoneType.yurt => 'Yurtlar',
+        DeliveryZoneType.ilce => 'İlçe merkezi',
         DeliveryZoneType.mahalle => 'Mahalleler',
         DeliveryZoneType.koy => 'Köyler',
       };
@@ -83,6 +90,13 @@ class DeliveryZone {
   final String etaText;
   final bool requiresFirstOrderCallback;
 
+  /// Adres eklerken haritada konum (ve mahalle) zorunlu (Devrek)
+  final bool requiresLocation;
+
+  /// Bölgenin haritada çizilecek sınırı yüklü
+  /// (`GET /delivery/zones/:id/area`)
+  final bool hasArea;
+
   const DeliveryZone({
     required this.id,
     required this.name,
@@ -93,6 +107,8 @@ class DeliveryZone {
     this.minimumOrderAmount = 0,
     this.etaText = '',
     this.requiresFirstOrderCallback = false,
+    this.requiresLocation = false,
+    this.hasArea = false,
   });
 
   bool get isDorm => type == DeliveryZoneType.yurt;
@@ -110,6 +126,9 @@ class DeliveryZone {
       minimumOrderAmount: _toDouble(json['minimumOrderAmount']),
       etaText: _toStr(json['etaText']),
       requiresFirstOrderCallback: json['requiresFirstOrderCallback'] == true,
+      requiresLocation:
+          json['requiresLocation'] == true || json['type'] == 'ilce',
+      hasArea: json['hasArea'] == true,
     );
   }
 }
@@ -141,7 +160,7 @@ class DeliveryZonesResult {
   }
 }
 
-/// Adres konumu (isteğe bağlı).
+/// Adres konumu (Devrek adresinde zorunlu).
 class GeoPoint {
   final double lat;
   final double lng;
@@ -157,12 +176,110 @@ class GeoPoint {
   }
 
   Map<String, dynamic> toJson() => {'lat': lat, 'lng': lng};
+
+  @override
+  bool operator ==(Object other) =>
+      other is GeoPoint && other.lat == lat && other.lng == lng;
+
+  @override
+  int get hashCode => Object.hash(lat, lng);
+}
+
+/// Teslimat alanı (GeoJSON Polygon / MultiPolygon). Her çokgen halkalardan
+/// oluşur: ilki dış sınır, kalanlar delik. Sunucu kesin denetimi yapar;
+/// uygulama haritada sınırı çizer ve iğneyi önceden denetler.
+class DeliveryArea {
+  /// polygons[çokgen][halka][nokta]
+  final List<List<List<GeoPoint>>> polygons;
+
+  const DeliveryArea(this.polygons);
+
+  /// `{ type, coordinates }` ([boylam, enlem]). Geçersizse null.
+  static DeliveryArea? fromGeoJson(Object? json) {
+    if (json is! Map) return null;
+    final type = json['type'];
+    final coordinates = json['coordinates'];
+    if (coordinates is! List) return null;
+
+    List<GeoPoint>? ring(Object? raw) {
+      if (raw is! List) return null;
+      final points = <GeoPoint>[];
+      for (final p in raw) {
+        if (p is! List || p.length < 2 || p[0] is! num || p[1] is! num) {
+          return null;
+        }
+        points
+            .add(GeoPoint((p[1] as num).toDouble(), (p[0] as num).toDouble()));
+      }
+      return points.length >= 4 ? points : null;
+    }
+
+    List<List<GeoPoint>>? polygon(Object? raw) {
+      if (raw is! List || raw.isEmpty) return null;
+      final rings = raw.map(ring).toList();
+      if (rings.any((r) => r == null)) return null;
+      return rings.cast<List<GeoPoint>>();
+    }
+
+    final List<List<List<GeoPoint>>> polygons;
+    if (type == 'Polygon') {
+      final single = polygon(coordinates);
+      if (single == null) return null;
+      polygons = [single];
+    } else if (type == 'MultiPolygon') {
+      final all = coordinates.map(polygon).toList();
+      if (all.isEmpty || all.any((p) => p == null)) return null;
+      polygons = all.cast<List<List<GeoPoint>>>();
+    } else {
+      return null;
+    }
+    return DeliveryArea(polygons);
+  }
+
+  /// Nokta alanın içinde mi? Delikler dışarı sayılır (ışın atma).
+  bool contains(GeoPoint point) {
+    for (final rings in polygons) {
+      if (rings.isEmpty || !_inRing(point, rings.first)) continue;
+      if (rings.skip(1).any((hole) => _inRing(point, hole))) continue;
+      return true;
+    }
+    return false;
+  }
+
+  static bool _inRing(GeoPoint point, List<GeoPoint> ring) {
+    final x = point.lng;
+    final y = point.lat;
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      final xi = ring[i].lng, yi = ring[i].lat;
+      final xj = ring[j].lng, yj = ring[j].lat;
+      if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /// Dış sınırların kapsadığı dikdörtgen: (güneybatı, kuzeydoğu)
+  (GeoPoint, GeoPoint) get bounds {
+    var minLat = 90.0, maxLat = -90.0, minLng = 180.0, maxLng = -180.0;
+    for (final rings in polygons) {
+      for (final p in rings.first) {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lng < minLng) minLng = p.lng;
+        if (p.lng > maxLng) maxLng = p.lng;
+      }
+    }
+    return (GeoPoint(minLat, minLng), GeoPoint(maxLat, maxLng));
+  }
 }
 
 /// Adresin yazılı alanları. Kayıtlı adres, sipariş içi adres ve form ortak
 /// kullanır. Uzunluk sınırları sunucuyla aynıdır.
 class AddressFields {
   static const int labelMax = 30;
+  static const int neighborhoodMax = 60;
   static const int streetMax = 120;
   static const int buildingNoMax = 20;
   static const int buildingNameMax = 60;
@@ -170,9 +287,8 @@ class AddressFields {
   static const int apartmentMax = 10;
   static const int directionsMax = 300;
 
-  /// Köyde adres tarifi zorunlu; en az bu kadar karakter
-  static const int villageDirectionsMin = 10;
-
+  /// Mahalle (Devrek adresinde zorunlu)
+  final String neighborhood;
   final String street;
   final String buildingNo;
   final String buildingName;
@@ -182,6 +298,7 @@ class AddressFields {
   final GeoPoint? location;
 
   const AddressFields({
+    this.neighborhood = '',
     this.street = '',
     this.buildingNo = '',
     this.buildingName = '',
@@ -192,6 +309,7 @@ class AddressFields {
   });
 
   factory AddressFields.fromJson(Map<String, dynamic> json) => AddressFields(
+        neighborhood: _toStr(json['neighborhood']),
         street: _toStr(json['street']),
         buildingNo: _toStr(json['buildingNo']),
         buildingName: _toStr(json['buildingName']),
@@ -202,6 +320,7 @@ class AddressFields {
       );
 
   Map<String, dynamic> toJson() => {
+        'neighborhood': neighborhood.trim(),
         'street': street.trim(),
         'buildingNo': buildingNo.trim(),
         'buildingName': buildingName.trim(),
@@ -211,13 +330,23 @@ class AddressFields {
         'location': location?.toJson(),
       };
 
-  /// "Atatürk Cd. No:5 · Gül Apt. · Kat 2 · Daire 4"
+  static final _neighborhoodSuffix =
+      RegExp(r'\s+(mahallesi|mahalle|mah\.?)$', caseSensitive: false);
+
+  /// "Cumhuriyet" / "Cumhuriyet Mahallesi" → "Cumhuriyet Mah." (sunucuyla aynı)
+  static String neighborhoodLabel(String value) {
+    final name = value.trim().replaceAll(_neighborhoodSuffix, '').trim();
+    return name.isEmpty ? '' : '$name Mah.';
+  }
+
+  /// "Cumhuriyet Mah. · Atatürk Cd. No:5 · Gül Apt. · Kat 2 · Daire 4"
   String get summary {
     final first = [
       street.trim(),
       if (buildingNo.trim().isNotEmpty) 'No:${buildingNo.trim()}',
     ].where((s) => s.isNotEmpty).join(' ');
     return [
+      neighborhoodLabel(neighborhood),
       first,
       buildingName.trim(),
       if (floor.trim().isNotEmpty) 'Kat ${floor.trim()}',
@@ -225,18 +354,21 @@ class AddressFields {
     ].where((s) => s.isNotEmpty).join(' · ');
   }
 
-  /// Bölge tipine göre doğrulama. Hata yoksa null; varsa alan → mesaj.
+  /// Bölge tipine göre zorunlu alanlar (sunucunun kurallarıyla aynı). Hata
+  /// yoksa boş; varsa alan → mesaj. Devrek'teki konum zorunluluğunu ve sınır
+  /// denetimini form ayrıca yapar.
   Map<String, String> validate(DeliveryZoneType type) {
     final errors = <String, String>{};
     switch (type) {
-      case DeliveryZoneType.mahalle:
+      case DeliveryZoneType.ilce:
+        if (neighborhood.trim().isEmpty) {
+          errors['neighborhood'] = 'Mahalleni yaz';
+        }
         if (street.trim().isEmpty) errors['street'] = 'Sokak / cadde yaz';
         if (buildingNo.trim().isEmpty) errors['buildingNo'] = 'Bina no yaz';
+      case DeliveryZoneType.mahalle:
       case DeliveryZoneType.koy:
-        if (directions.trim().length < villageDirectionsMin) {
-          errors['directions'] =
-              'Evini bulabilmemiz için kısa bir tarif yaz (en az $villageDirectionsMin karakter)';
-        }
+        if (street.trim().isEmpty) errors['street'] = 'Sokak / cadde yaz';
       case DeliveryZoneType.yurt:
         break;
     }
@@ -289,9 +421,12 @@ class DeliveryAddress {
   /// Liste başlığı: etiket yoksa bölge adı
   String get title => label.trim().isNotEmpty ? label.trim() : zoneName;
 
-  /// "Cumhuriyet Mahallesi · Atatürk Cd. No:5"
-  String get summary =>
-      [zoneName, fields.summary].where((s) => s.isNotEmpty).join(' · ');
+  /// Devrek: "Cumhuriyet Mah. · Atatürk Cd. No:5"; mahallesiz (eski ya da
+  /// yurt) adreste başta bölge adı.
+  String get summary => [
+        if (fields.neighborhood.trim().isEmpty) zoneName,
+        fields.summary,
+      ].where((s) => s.isNotEmpty).join(' · ');
 
   static List<DeliveryAddress> listFromJson(Object? raw) => raw is List
       ? raw
@@ -340,8 +475,9 @@ class DeliveryQuote {
   double get payableFee => isFree ? 0 : deliveryFee;
 
   /// Minimuma kalan tutar
-  double get missingForMinimum =>
-      meetsMinimum ? 0 : (minimumOrderAmount - subtotal).clamp(0, double.infinity);
+  double get missingForMinimum => meetsMinimum
+      ? 0
+      : (minimumOrderAmount - subtotal).clamp(0, double.infinity);
 
   factory DeliveryQuote.fromJson(Map<String, dynamic> json) {
     final remaining = json['remainingForFree'];

@@ -32,16 +32,32 @@ class _FakeLocation extends LocationService {
   }
 }
 
-/// Ağ yerine sabit yer bilgisi döner (null: bulunamadı).
+/// Ağ yerine sabit yer bilgisi ve arama sonucu döner (null: bulunamadı).
 class _FakeGeocoding extends GeocodingService {
-  final PlaceInfo? place;
+  PlaceInfo? place;
+  List<PlaceSearchResult> results;
+  bool searchFails = false;
   int calls = 0;
-  _FakeGeocoding([this.place]);
+  final List<String> queries = [];
+
+  _FakeGeocoding([this.place, this.results = const []]);
 
   @override
   Future<PlaceInfo?> reverse(GeoPoint point) async {
     calls++;
     return place;
+  }
+
+  @override
+  Future<List<PlaceSearchResult>> search(
+    String query, {
+    required GeoPoint southWest,
+    required GeoPoint northEast,
+    int limit = 8,
+  }) async {
+    queries.add(query);
+    if (searchFails) throw const GeocodingException();
+    return results;
   }
 }
 
@@ -103,7 +119,7 @@ class _FormHarness {
     await tester.tap(find.text('Formu aç'));
     await settle(tester);
     if (initial == null && confirmMap) {
-      expect(find.text('Teslimat konumunu seç'), findsOneWidget);
+      expect(find.text('İğneyi kapına getir'), findsOneWidget);
       await tester.tap(find.text('Bu konumu kullan'));
       await settle(tester);
     }
@@ -126,50 +142,129 @@ Future<void> _tapSave(WidgetTester tester, [String text = 'Adresi kaydet']) asyn
   await settle(tester);
 }
 
+FakeDeliveryApi _devrekApi({
+  List<DeliveryZone> zones = devrekZones,
+  List<DeliveryAddress> addresses = const [],
+  bool withArea = true,
+}) =>
+    FakeDeliveryApi(
+      zones: zones,
+      addresses: addresses,
+      area: withArea ? testDevrekArea : null,
+    );
+
+/// Devrek'te kayıtlı adres
+DeliveryAddress _devrekAddress({
+  String id = 'a1',
+  String label = 'Ev',
+  bool isDefault = false,
+}) =>
+    testAddress(
+      id: id,
+      label: label,
+      zone: testZoneDevrek,
+      isDefault: isDefault,
+      fields: const AddressFields(
+        neighborhood: 'Cumhuriyet Mahallesi',
+        street: 'Atatürk Cd.',
+        buildingNo: '5',
+        buildingName: 'Gül Apt.',
+        directions: 'Eczanenin karşısı',
+        location: GeoPoint(41.22, 31.95),
+      ),
+    );
+
+Future<void> _fillRequired(WidgetTester tester) async {
+  await tester.enterText(_field('Mahalle'), 'Cumhuriyet');
+  await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
+  await tester.enterText(_field('Bina no'), '5');
+  await tester.pump();
+}
+
+String _text(WidgetTester tester, String label) =>
+    tester.widget<TextField>(_field(label)).controller!.text;
+
 void main() {
   configureMarketTests();
   // Testte harita karoları ağdan indirilmez
   setUpAll(() => AddressMap.debugShowTiles = false);
 
-  group('Mahalle', () {
-    testWidgets('sokak ve bina no zorunlu; dolunca kaydedip adresle kapanır',
+  group('Devrek adresi', () {
+    testWidgets('bölge kendiliğinden Devrek; mahalle, sokak, bina no zorunlu',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneMahalle.id);
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester);
 
-        expect(find.text('Cumhuriyet Mahallesi'), findsOneWidget);
-        expect(find.text('Teslimat ₺40 · 30-45 dk'), findsOneWidget);
+        // Tek adres bölgesi: seçici yok, bilgi olarak görünür
+        expect(find.text('Devrek'), findsOneWidget);
+        expect(find.text('Teslimat ₺40 · 45-60 dk'), findsOneWidget);
+        expect(find.text('Değiştir'), findsNothing);
+        expect(h.api.calls, contains('GET /delivery/zones/devrek/area'));
 
         await _tapSave(tester);
+        expect(find.text('Mahalleni yaz'), findsOneWidget);
         expect(find.text('Sokak / cadde yaz'), findsOneWidget);
         expect(find.text('Bina no yaz'), findsOneWidget);
         expect(h.api.calls, isNot(contains('POST /addresses')));
 
-        await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
-        await tester.enterText(_field('Bina no'), '5');
-        await tester.pump();
-        expect(find.text('Sokak / cadde yaz'), findsNothing);
-        expect(find.text('Bina no yaz'), findsNothing);
+        await _fillRequired(tester);
+        expect(find.text('Mahalleni yaz'), findsNothing);
 
         await _tapSave(tester);
-        expect(h.api.lastCreateBody, isNotNull);
-        expect(h.api.lastCreateBody!['zoneId'], 'cumhuriyet');
-        expect(h.api.lastCreateBody!['street'], 'Atatürk Cd.');
-        expect(h.api.lastCreateBody!['buildingNo'], '5');
-        expect(h.api.lastCreateBody!['location'], _foundLocation);
+        final body = h.api.lastCreateBody!;
+        expect(body['zoneId'], 'devrek');
+        expect(body['neighborhood'], 'Cumhuriyet');
+        expect(body['street'], 'Atatürk Cd.');
+        expect(body['buildingNo'], '5');
+        expect(body['location'], _foundLocation);
         // İlk adres: varsayılan olarak gönderilir
-        expect(h.api.lastCreateBody!['isDefault'], isTrue);
+        expect(body['isDefault'], isTrue);
         expect(h.popped, isTrue);
         expect(h.result?.id, 'new1');
-        expect(h.delivery.addresses, hasLength(1));
+        expect(h.result?.summary, 'Cumhuriyet Mah. · Atatürk Cd. No:5');
+      });
+    });
+
+    testWidgets('haritadaki konumdan mahalle, sokak ve bina no dolar',
+        (tester) async {
+      await withoutFontErrors(() async {
+        final geocoding = _FakeGeocoding(const PlaceInfo(
+          area: 'Cumhuriyet Mahallesi',
+          road: 'Atatürk Caddesi',
+          houseNumber: '5',
+        ));
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester, geocoding: geocoding, confirmMap: false);
+        await settle(tester);
+        // Haritada yer adı canlı görünür
+        expect(find.text('Cumhuriyet Mahallesi · Atatürk Caddesi No:5'),
+            findsOneWidget);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+
+        expect(_text(tester, 'Mahalle'), 'Cumhuriyet Mahallesi');
+        expect(_text(tester, 'Sokak / cadde'), 'Atatürk Caddesi');
+        expect(_text(tester, 'Bina no'), '5');
+
+        // Kullanıcının yazdığı alan korunur; otomatik dolanlar yeni konuma
+        // göre yenilenir.
+        await tester.enterText(_field('Sokak / cadde'), 'Kendi Sokağım');
+        geocoding.place = const PlaceInfo(area: 'Özbağ Mahallesi', road: 'Gül Sk.');
+        await tester.tap(find.text('Konumu değiştir'));
+        await settle(tester);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+        expect(_text(tester, 'Mahalle'), 'Özbağ Mahallesi');
+        expect(_text(tester, 'Sokak / cadde'), 'Kendi Sokağım');
+        expect(_text(tester, 'Bina no'), '');
       });
     });
 
     testWidgets('ilk adreste "Varsayılan yap" açık ve kilitli', (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneMahalle.id);
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester);
         final toggle = tester.widget<Switch>(find.byType(Switch));
         expect(toggle.value, isTrue);
         expect(toggle.onChanged, isNull);
@@ -180,9 +275,10 @@ void main() {
 
     testWidgets('uzunluk sınırları alanlara uygulanır', (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneMahalle.id);
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester);
         final limits = {
+          'Mahalle': AddressFields.neighborhoodMax,
           'Sokak / cadde': AddressFields.streetMax,
           'Bina no': AddressFields.buildingNoMax,
           'Bina / site adı': AddressFields.buildingNameMax,
@@ -196,42 +292,165 @@ void main() {
         }
         await tester.enterText(_field('Kat'), '12345678901234');
         await tester.pump();
-        expect(
-          tester.widget<TextField>(_field('Kat')).controller!.text.length,
-          AddressFields.floorMax,
-        );
+        expect(_text(tester, 'Kat').length, AddressFields.floorMax);
+      });
+    });
+
+    testWidgets('adrese teslimat kapalıysa açıklama, harita açılmaz',
+        (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(_devrekApi(zones: const [testZoneYurt]));
+        await h.open(tester, confirmMap: false);
+        expect(find.text('İğneyi kapına getir'), findsNothing);
+        expect(find.text('Şu an adrese teslimat yapılmıyor'), findsOneWidget);
+        expect(find.text('Adresi kaydet'), findsNothing);
+
+        // Panelde Devrek açılınca "Yenile" ile harita adımı gelir
+        h.api.zones = List.of(devrekZones);
+        await tester.tap(find.text('Yenile'));
+        await settle(tester);
+        expect(find.text('İğneyi kapına getir'), findsOneWidget);
+      });
+    });
+
+    testWidgets('bölgeler alınamazsa hata ve yeniden dene', (tester) async {
+      await withoutFontErrors(() async {
+        final api = _devrekApi()
+          ..zonesError = const ApiException('Bağlantı yok');
+        final h = _FormHarness(api);
+        await h.open(tester, confirmMap: false);
+        expect(find.text('Teslimat bölgeleri yüklenemedi'), findsOneWidget);
+
+        api.zonesError = null;
+        await tester.tap(find.text('Tekrar dene'));
+        await settle(tester);
+        // Bölge gelince harita adımı açılır
+        expect(find.text('İğneyi kapına getir'), findsOneWidget);
       });
     });
   });
 
-  group('Köy', () {
-    testWidgets('sokak isteğe bağlı, tarif en az 10 karakter zorunlu',
+  group('Teslimat alanı', () {
+    testWidgets('sınır dışındaki nokta seçilemez', (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(_devrekApi());
+        // Devrek kutusunda ama teslimat alanının dışında
+        await h.open(tester,
+            location: _PointLocation(const GeoPoint(41.30, 32.10)),
+            confirmMap: false);
+        expect(find.textContaining('teslimat alanımızın dışında'),
+            findsOneWidget);
+        final confirm = find.widgetWithText(FilledButton, 'Bu konumu kullan');
+        expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      });
+    });
+
+    testWidgets('sınır içindeki nokta seçilir', (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester, confirmMap: false);
+        expect(find.textContaining('teslimat alanımızın dışında'), findsNothing);
+        final confirm = find.widgetWithText(FilledButton, 'Bu konumu kullan');
+        expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+      });
+    });
+
+    testWidgets('sınır yüklü değilse denetim yapılmaz', (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(_devrekApi(withArea: false));
+        await h.open(tester,
+            location: _PointLocation(const GeoPoint(41.30, 32.10)),
+            confirmMap: false);
+        expect(find.textContaining('teslimat alanımızın dışında'), findsNothing);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+        expect(find.text('Teslimat konumu'), findsOneWidget);
+      });
+    });
+
+    testWidgets('sunucu OUT_OF_AREA derse harita yeniden açılır',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneKoy.id);
-
-        expect(_field('Sokak / cadde (isteğe bağlı)'), findsOneWidget);
+        final api = _devrekApi()
+          ..saveError = const ApiException(
+            'Bu adres teslimat alanımızın dışında. Haritada Devrek sınırı içinde bir nokta seç.',
+            statusCode: 400,
+            code: 'OUT_OF_AREA',
+          );
+        final h = _FormHarness(api);
+        await h.open(tester);
+        await _fillRequired(tester);
         await _tapSave(tester);
-        expect(find.text('Sokak / cadde yaz'), findsNothing);
-        expect(find.text('Bina no yaz'), findsNothing);
-        expect(find.textContaining('kısa bir tarif yaz'), findsOneWidget);
+        expect(find.text('İğneyi kapına getir'), findsOneWidget);
+        expect(h.popped, isFalse);
+      });
+    });
+  });
 
-        await tester.enterText(_field('Adres tarifi'), 'Cami yanı');
-        await tester.pump();
-        expect(find.textContaining('kısa bir tarif yaz'), findsOneWidget);
-        expect(h.api.calls, isNot(contains('POST /addresses')));
+  group('Haritada arama', () {
+    const results = [
+      PlaceSearchResult(
+        point: GeoPoint(41.2301, 31.9512),
+        title: 'Atatürk Caddesi',
+        subtitle: 'Cumhuriyet Mahallesi · Devrek',
+      ),
+      PlaceSearchResult(
+        point: GeoPoint(41.21, 31.96),
+        title: 'Devrek Devlet Hastanesi',
+      ),
+    ];
 
-        await tester.enterText(
-            _field('Adres tarifi'), 'Cami yanındaki yeşil kapılı ev');
-        await settle(tester); // hata → yardım metni geçişi
-        expect(find.textContaining('kısa bir tarif yaz'), findsNothing);
+    Future<void> search(WidgetTester tester, String query) async {
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Sokak, cadde ya da yer ara'), query);
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await settle(tester);
+    }
+
+    testWidgets('sonuç seçilince iğne oraya gider', (tester) async {
+      await withoutFontErrors(() async {
+        final geocoding = _FakeGeocoding(null, results);
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester, geocoding: geocoding, confirmMap: false);
+
+        await search(tester, 'atatürk');
+        expect(geocoding.queries, ['atatürk']);
+        expect(find.text('Atatürk Caddesi'), findsOneWidget);
+        expect(find.text('Devrek Devlet Hastanesi'), findsOneWidget);
+
+        await tester.tap(find.text('Atatürk Caddesi'));
+        await settle(tester);
+        expect(find.text('Devrek Devlet Hastanesi'), findsNothing);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+
+        await _fillRequired(tester);
         await _tapSave(tester);
-        expect(h.api.lastCreateBody!['zoneId'], 'bostanlar');
-        expect(h.api.lastCreateBody!['street'], '');
-        expect(h.api.lastCreateBody!['directions'],
-            'Cami yanındaki yeşil kapılı ev');
-        expect(h.result?.zoneType, DeliveryZoneType.koy);
+        final sent = h.api.lastCreateBody!['location'] as Map;
+        expect(sent['lat'], closeTo(41.2301, 1e-6));
+        expect(sent['lng'], closeTo(31.9512, 1e-6));
+      });
+    });
+
+    testWidgets('sonuç yoksa ve hata olursa açıklama', (tester) async {
+      await withoutFontErrors(() async {
+        final geocoding = _FakeGeocoding();
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester, geocoding: geocoding, confirmMap: false);
+
+        await search(tester, 'xyz');
+        expect(find.textContaining("Devrek'te sonuç bulamadık"), findsOneWidget);
+
+        geocoding.searchFails = true;
+        await search(tester, 'gül');
+        expect(find.textContaining('Arama yapılamadı'), findsOneWidget);
+        geocoding
+          ..searchFails = false
+          ..results = results;
+        await tester.tap(find.text('Tekrar dene'));
+        await settle(tester);
+        expect(find.text('Atatürk Caddesi'), findsOneWidget);
+        expect(geocoding.queries, ['xyz', 'gül', 'gül']);
       });
     });
   });
@@ -240,62 +459,57 @@ void main() {
     testWidgets('eski yurt adresinde yalnızca blok/oda alanı, harita yok',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi(addresses: [
+        final h = _FormHarness(_devrekApi(addresses: [
           testAddress(
             zone: testZoneYurt,
             isDefault: true,
             fields: const AddressFields(),
           ),
         ]));
-        await h.open(
-          tester,
-          initial: h.api.addresses.single,
-        );
+        await h.open(tester, initial: h.api.addresses.single);
 
         expect(_field('Blok / oda (isteğe bağlı)'), findsOneWidget);
         expect(find.textContaining('Sokak / cadde'), findsNothing);
-        expect(_field('Bina no'), findsNothing);
+        expect(_field('Mahalle'), findsNothing);
         expect(find.text('Teslimat konumu'), findsNothing);
       });
     });
   });
 
   group('Bölge seçimi', () {
-    testWidgets('bölge seçilmeden alanlar gösterilmez; seçiciden seçilir',
+    testWidgets('birden çok adres bölgesinde seçiciden seçilir',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester);
-
+        final h = _FormHarness(_devrekApi(
+          zones: const [testZoneMahalle, testZoneDevrek, testZoneYurt],
+        ));
+        await h.open(tester, confirmMap: false);
+        // Bölge belli değil: harita bölge seçilince açılır
+        expect(find.text('İğneyi kapına getir'), findsNothing);
         expect(find.text('Bölgeni seç'), findsOneWidget);
         expect(_field('Sokak / cadde'), findsNothing);
         await _tapSave(tester);
-        expect(find.text('Mahalleni ya da köyünü seç'), findsOneWidget);
+        expect(find.text('Teslimat bölgeni seç'), findsWidgets);
 
         await tester.tap(find.text('Bölgeni seç'));
         await settle(tester);
+        expect(find.text('İLÇE MERKEZİ'), findsOneWidget);
         expect(find.text('MAHALLELER'), findsOneWidget);
-        expect(find.text('KÖYLER'), findsOneWidget);
         // Yurtlar adres değil; ödemede teslimat noktası olarak seçilir
         expect(find.text('YURTLAR'), findsNothing);
-        expect(find.text('Kız KYK Yurdu'), findsNothing);
-
-        // Türkçe duyarsız arama: "ozbag" → "Özbağ Mahallesi"
-        await tester.enterText(find.byType(TextField).last, 'ozbag');
-        await tester.pump();
-        expect(find.text('Cumhuriyet Mahallesi'), findsNothing);
-        expect(find.text('Özbağ Mahallesi'), findsOneWidget);
 
         await tester.enterText(find.byType(TextField).last, 'xyz');
         await tester.pump();
         expect(find.text('Aramana uyan bölge yok'), findsOneWidget);
-
-        await tester.enterText(find.byType(TextField).last, 'bostan');
+        await tester.enterText(find.byType(TextField).last, 'devr');
         await tester.pump();
-        await tester.tap(find.text('Bostanlar Köyü'));
+        await tester.tap(find.text('Devrek'));
         await settle(tester);
-        expect(find.text('Bostanlar Köyü'), findsOneWidget);
-        expect(_field('Adres tarifi'), findsOneWidget);
+        // Devrek konum ister: harita açılır
+        expect(find.text('İğneyi kapına getir'), findsOneWidget);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+        expect(_field('Mahalle'), findsOneWidget);
       });
     });
 
@@ -306,16 +520,23 @@ void main() {
           freeDeliveryEverywhere: true,
           zones: const [
             DeliveryZone(
+              id: 'devrek',
+              name: 'Devrek',
+              type: DeliveryZoneType.ilce,
+              deliveryFee: 40,
+              isFree: true,
+            ),
+            DeliveryZone(
               id: 'cumhuriyet',
               name: 'Cumhuriyet Mahallesi',
               type: DeliveryZoneType.mahalle,
-              deliveryFee: 40,
+              deliveryFee: 30,
               isFree: true,
             ),
           ],
         );
         final h = _FormHarness(api);
-        await h.open(tester);
+        await h.open(tester, confirmMap: false);
         await tester.tap(find.text('Bölgeni seç'));
         await settle(tester);
         expect(find.text('Kampanya: tüm bölgelerde teslimat ücretsiz'),
@@ -329,16 +550,8 @@ void main() {
   group('Düzenleme', () {
     testWidgets('yalnızca değişen alanlar gönderilir', (tester) async {
       await withoutFontErrors(() async {
-        final address = testAddress(
-          fields: const AddressFields(
-            street: 'Atatürk Cd.',
-            buildingNo: '5',
-            buildingName: 'Gül Apt.',
-            directions: 'Eczanenin karşısı',
-            location: GeoPoint(41.2, 31.9),
-          ),
-        );
-        final h = _FormHarness(FakeDeliveryApi(addresses: [address]));
+        final address = _devrekAddress();
+        final h = _FormHarness(_devrekApi(addresses: [address]));
         await h.open(tester, initial: address);
 
         // Değişiklik yokken kaydet pasif
@@ -366,27 +579,44 @@ void main() {
       });
     });
 
-    testWidgets('bölge değişince zoneId de gönderilir', (tester) async {
+    testWidgets('kapanmış eski mahalle adresi Devrek\'e taşınır',
+        (tester) async {
       await withoutFontErrors(() async {
-        final address = testAddress();
-        final h = _FormHarness(FakeDeliveryApi(addresses: [address]));
+        final address = testAddress(
+          zoneEnabled: false,
+          fields: const AddressFields(
+            street: 'Atatürk Cd.',
+            buildingNo: '5',
+            location: GeoPoint(41.22, 31.95),
+          ),
+        );
+        final h = _FormHarness(_devrekApi(addresses: [address]));
         await h.open(tester, initial: address);
+        expect(find.textContaining('Bu bölgeye şu an teslimat yok'),
+            findsOneWidget);
 
         await tester.tap(find.text('Değiştir'));
         await settle(tester);
-        await tester.tap(find.text('Özbağ Mahallesi'));
+        await tester.tap(find.text('Devrek'));
         await settle(tester);
+        // Konum zaten var: harita açılmaz, mahalle istenir
+        expect(find.text('İğneyi kapına getir'), findsNothing);
         await _tapSave(tester, 'Değişiklikleri kaydet');
-        expect(h.api.lastUpdateChanges, {'zoneId': 'ozbag'});
-        expect(h.result?.zoneName, 'Özbağ Mahallesi');
+        expect(find.text('Mahalleni yaz'), findsOneWidget);
+
+        await tester.enterText(_field('Mahalle'), 'Cumhuriyet');
+        await _tapSave(tester, 'Değişiklikleri kaydet');
+        expect(h.api.lastUpdateChanges,
+            {'zoneId': 'devrek', 'neighborhood': 'Cumhuriyet'});
+        expect(h.result?.zoneName, 'Devrek');
       });
     });
 
     testWidgets('varsayılan yapma PATCH ile ayrıca gönderilir', (tester) async {
       await withoutFontErrors(() async {
-        final first = testAddress(id: 'a1', isDefault: true);
-        final second = testAddress(id: 'a2', label: 'İş');
-        final h = _FormHarness(FakeDeliveryApi(addresses: [first, second]));
+        final first = _devrekAddress(id: 'a1', isDefault: true);
+        final second = _devrekAddress(id: 'a2', label: 'İş');
+        final h = _FormHarness(_devrekApi(addresses: [first, second]));
         await h.open(tester, initial: second);
 
         await tester.tap(find.byType(Switch));
@@ -402,8 +632,8 @@ void main() {
   group('Geri', () {
     testWidgets('kaydedilmemiş değişiklikte onay ister', (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, initialZoneId: testZoneMahalle.id);
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester);
 
         await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
         await tester.tap(find.byTooltip('Geri'));
@@ -425,8 +655,8 @@ void main() {
 
     testWidgets('değişiklik yoksa onaysız kapanır', (tester) async {
       await withoutFontErrors(() async {
-        final address = testAddress(isDefault: true);
-        final h = _FormHarness(FakeDeliveryApi(addresses: [address]));
+        final address = _devrekAddress(isDefault: true);
+        final h = _FormHarness(_devrekApi(addresses: [address]));
         await h.open(tester, initial: address);
         await tester.tap(find.byTooltip('Geri'));
         await settle(tester);
@@ -440,16 +670,15 @@ void main() {
     testWidgets('ADDRESS_LIMIT mesajı kaydet butonunun yanında gösterilir',
         (tester) async {
       await withoutFontErrors(() async {
-        final api = FakeDeliveryApi()
+        final api = _devrekApi()
           ..saveError = const ApiException(
             'En fazla 5 adres kaydedebilirsin.',
             statusCode: 400,
             code: 'ADDRESS_LIMIT',
           );
         final h = _FormHarness(api);
-        await h.open(tester, initialZoneId: testZoneKoy.id);
-        await tester.enterText(
-            _field('Adres tarifi'), 'Cami yanındaki yeşil kapılı ev');
+        await h.open(tester);
+        await _fillRequired(tester);
         await _tapSave(tester);
         expect(find.text('En fazla 5 adres kaydedebilirsin.'), findsOneWidget);
         expect(h.popped, isFalse);
@@ -458,11 +687,11 @@ void main() {
 
     testWidgets('5 adres doluyken yeni adres kaydedilemez', (tester) async {
       await withoutFontErrors(() async {
-        final api = FakeDeliveryApi(addresses: [
-          for (var i = 0; i < 5; i++) testAddress(id: 'a$i'),
+        final api = _devrekApi(addresses: [
+          for (var i = 0; i < 5; i++) _devrekAddress(id: 'a$i'),
         ]);
         final h = _FormHarness(api);
-        await h.open(tester, initialZoneId: testZoneKoy.id);
+        await h.open(tester);
         expect(find.textContaining('En fazla 5 adres kaydedebilirsin'),
             findsOneWidget);
         final save = find.widgetWithText(FilledButton, 'Adresi kaydet');
@@ -476,13 +705,11 @@ void main() {
         (tester) async {
       await withoutFontErrors(() async {
         final location = _FakeLocation(LocationOutcome.found);
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester,
-            initialZoneId: testZoneMahalle.id,
-            location: location,
-            confirmMap: false);
-        expect(find.text('Teslimat konumunu seç'), findsOneWidget);
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester, location: location, confirmMap: false);
         expect(find.text('İğneyi kapına getir'), findsOneWidget);
+        expect(find.textContaining('Yeşil çizgi teslimat alanımız'),
+            findsOneWidget);
         expect(location.calls, 1); // açılır açılmaz konum istenir
 
         await tester.tap(find.text('Bu konumu kullan'));
@@ -495,7 +722,7 @@ void main() {
 
     testWidgets('haritadan seçmeden çıkılırsa form da kapanır', (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
+        final h = _FormHarness(_devrekApi());
         await h.open(tester, confirmMap: false);
         await tester.tap(find.byTooltip('Geri'));
         await settle(tester);
@@ -508,17 +735,15 @@ void main() {
     testWidgets('izin verilmezse harita Devrek merkezinde açılır',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
+        final h = _FormHarness(_devrekApi(withArea: false));
         await h.open(tester,
-            initialZoneId: testZoneMahalle.id,
             location: _FakeLocation(LocationOutcome.denied),
             confirmMap: false);
         expect(find.textContaining('Konum izni verilmedi'), findsOneWidget);
         await tester.tap(find.text('Bu konumu kullan'));
         await settle(tester);
 
-        await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
-        await tester.enterText(_field('Bina no'), '5');
+        await _fillRequired(tester);
         await _tapSave(tester);
         final sent = h.api.lastCreateBody!['location'] as Map;
         expect(sent['lat'], closeTo(AddressMap.devrekCenter.latitude, 1e-6));
@@ -528,7 +753,7 @@ void main() {
 
     testWidgets('kalıcı redde "Ayarları aç" gösterilir', (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
+        final h = _FormHarness(_devrekApi());
         await h.open(tester,
             location: _FakeLocation(LocationOutcome.deniedForever),
             confirmMap: false);
@@ -539,7 +764,7 @@ void main() {
     testWidgets('konum servisi kapalıysa "Konum ayarlarını aç" gösterilir',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
+        final h = _FormHarness(_devrekApi());
         await h.open(tester,
             location: _FakeLocation(LocationOutcome.serviceOff),
             confirmMap: false);
@@ -551,75 +776,24 @@ void main() {
     testWidgets('Devrek dışındaysa uyarı gösterilir, harita Devrek\'te kalır',
         (tester) async {
       await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
+        final h = _FormHarness(_devrekApi());
+        // Ankara
         await h.open(tester,
-            location: _OutsideLocation(), confirmMap: false);
+            location: _PointLocation(const GeoPoint(39.92, 32.85)),
+            confirmMap: false);
         expect(find.textContaining('Devrek dışında görünüyorsun'),
             findsOneWidget);
       });
     });
   });
-
-  group('Haritadan bölge', () {
-    const place = PlaceInfo(
-        area: 'Cumhuriyet Mahallesi', road: 'Atatürk Caddesi', houseNumber: '5');
-
-    testWidgets('konumdan mahalle seçilir, sokak ve bina no dolar',
-        (tester) async {
-      await withoutFontErrors(() async {
-        final geocoding = _FakeGeocoding(place);
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester, geocoding: geocoding, confirmMap: false);
-        // Haritada yer adı canlı görünür
-        await settle(tester);
-        expect(find.text(place.summary), findsOneWidget);
-        await tester.tap(find.text('Bu konumu kullan'));
-        await settle(tester);
-
-        expect(find.text('Cumhuriyet Mahallesi'), findsOneWidget);
-        expect(find.textContaining('Haritadaki konumuna göre seçildi'),
-            findsOneWidget);
-        expect(tester.widget<TextField>(_field('Sokak / cadde')).controller!.text,
-            'Atatürk Caddesi');
-        expect(tester.widget<TextField>(_field('Bina no')).controller!.text, '5');
-        await _tapSave(tester);
-        expect(h.api.lastCreateBody!['zoneId'], 'cumhuriyet');
-      });
-    });
-
-    testWidgets('listede olmayan mahallede uyarı, elle seçim korunur',
-        (tester) async {
-      await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester,
-            geocoding: _FakeGeocoding(const PlaceInfo(area: 'Yeşilyurt')));
-        expect(find.textContaining('Yeşilyurt içinde görünüyor'), findsOneWidget);
-        expect(_field('Sokak / cadde'), findsNothing);
-
-        await tester.tap(find.text('Bölgeni seç'));
-        await settle(tester);
-        await tester.tap(find.text('Bostanlar Köyü'));
-        await settle(tester);
-        expect(find.text('Bostanlar Köyü'), findsOneWidget);
-        expect(find.textContaining('Haritadaki konumuna göre'), findsNothing);
-      });
-    });
-
-    testWidgets('kullanıcının seçtiği bölge haritayla ezilmez', (tester) async {
-      await withoutFontErrors(() async {
-        final h = _FormHarness(FakeDeliveryApi());
-        await h.open(tester,
-            initialZoneId: testZoneKoy.id, geocoding: _FakeGeocoding(place));
-        expect(find.text('Bostanlar Köyü'), findsOneWidget);
-        expect(find.text('Cumhuriyet Mahallesi'), findsNothing);
-      });
-    });
-  });
 }
 
-/// Devrek dışında (Ankara) bir konum
-class _OutsideLocation extends LocationService {
+/// Sabit bir noktayı konum olarak döner
+class _PointLocation extends LocationService {
+  final GeoPoint point;
+  _PointLocation(this.point);
+
   @override
   Future<({LocationOutcome outcome, GeoPoint? point})> currentPoint() async =>
-      (outcome: LocationOutcome.found, point: const GeoPoint(39.92, 32.85));
+      (outcome: LocationOutcome.found, point: point);
 }

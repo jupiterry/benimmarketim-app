@@ -134,12 +134,12 @@ void main() {
   testWidgets('adres yoksa boş durum ve "Adres ekle" formu açar',
       (tester) async {
     await withoutFontErrors(() async {
-      await _open(tester, FakeDeliveryApi());
+      await _open(tester, FakeDeliveryApi(zones: devrekZones));
       expect(find.text('Henüz kayıtlı adresin yok'), findsOneWidget);
       await tester.tap(find.text('Adres ekle'));
       await settle(tester);
       // Yeni adres haritayla başlar
-      expect(find.text('Teslimat konumunu seç'), findsOneWidget);
+      expect(find.text('İğneyi kapına getir'), findsOneWidget);
     });
   });
 

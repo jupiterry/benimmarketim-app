@@ -322,6 +322,7 @@ class _AddressCard extends StatelessWidget {
       DeliveryZoneType.yurt => Icons.apartment_rounded,
       DeliveryZoneType.koy => Icons.cottage_rounded,
       DeliveryZoneType.mahalle => Icons.location_on_rounded,
+      DeliveryZoneType.ilce => Icons.location_on_rounded,
     };
   }
 

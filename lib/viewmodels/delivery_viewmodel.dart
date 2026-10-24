@@ -140,7 +140,8 @@ class DeliveryViewModel extends ChangeNotifier {
   List<DeliveryZone> get dormZones =>
       zones.where((z) => z.type == DeliveryZoneType.yurt).toList();
 
-  /// Adres girilebilen bölgeler (mahalle ve köyler)
+  /// Adres girilebilen bölgeler (Devrek). Boşsa adrese teslimat yapılan
+  /// açık bölge yok (panelde kapalı).
   List<DeliveryZone> get addressZones =>
       zones.where((z) => z.type != DeliveryZoneType.yurt).toList();
 
@@ -173,6 +174,38 @@ class DeliveryViewModel extends ChangeNotifier {
     } finally {
       _zonesLoading = false;
       _notify();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Teslimat alanı (haritadaki sınır)
+  // -------------------------------------------------------------------------
+
+  static const _areaMaxAge = Duration(minutes: 5);
+  final Map<String, ({DeliveryArea? area, DateTime at})> _areas = {};
+  final Map<String, Future<DeliveryArea?>> _areasInFlight = {};
+
+  /// Bölgenin sınırı (5 dk önbellekli). Sınır yüklü değilse ya da
+  /// alınamazsa null: iğne yine zorunlu ama uygulama sınırı denetlemez,
+  /// kesin denetimi sunucu yapar.
+  Future<DeliveryArea?> loadArea(String zoneId) {
+    final cached = _areas[zoneId];
+    if (cached != null && DateTime.now().difference(cached.at) < _areaMaxAge) {
+      return Future.value(cached.area);
+    }
+    return _areasInFlight[zoneId] ??= _loadArea(zoneId).whenComplete(() {
+      _areasInFlight.remove(zoneId);
+    });
+  }
+
+  Future<DeliveryArea?> _loadArea(String zoneId) async {
+    try {
+      final area = await _api.getDeliveryZoneArea(zoneId);
+      _areas[zoneId] = (area: area, at: DateTime.now());
+      return area;
+    } catch (e) {
+      AppLogger.debug('Teslimat alanı alınamadı: $e');
+      return _areas[zoneId]?.area;
     }
   }
 

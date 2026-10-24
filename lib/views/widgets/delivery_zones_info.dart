@@ -13,7 +13,7 @@ import 'market_ui.dart';
 /// "Tüm teslimat bölgeleri" alt sayfasında gösterilir.
 const int deliveryZonesInlineLimit = 4;
 
-/// Bölgeleri tipe göre gruplar (Yurtlar, Mahalleler, Köyler). Sunucunun
+/// Bölgeleri tipe göre gruplar (Yurtlar, İlçe merkezi, ...). Sunucunun
 /// sıralaması grup içinde korunur; boş grup yer almaz.
 List<(DeliveryZoneType, List<DeliveryZone>)> groupZonesByType(
     List<DeliveryZone> zones) {
@@ -24,16 +24,20 @@ List<(DeliveryZoneType, List<DeliveryZone>)> groupZonesByType(
   ];
 }
 
-/// "2 yurt · 12 mahalle · 5 köy"
+/// "2 yurt · Devrek" (ilçe merkezi adıyla, diğerleri sayıyla)
 String zoneCountsSummary(List<DeliveryZone> zones) {
   String unit(DeliveryZoneType type) => switch (type) {
         DeliveryZoneType.yurt => 'yurt',
+        DeliveryZoneType.ilce => 'ilçe',
         DeliveryZoneType.mahalle => 'mahalle',
         DeliveryZoneType.koy => 'köy',
       };
   return [
     for (final (type, list) in groupZonesByType(zones))
-      '${list.length} ${unit(type)}',
+      if (type == DeliveryZoneType.ilce)
+        ...list.map((z) => z.name)
+      else
+        '${list.length} ${unit(type)}',
   ].join(' · ');
 }
 
@@ -56,6 +60,7 @@ const String freeDeliveryCampaignNote =
 
 IconData zoneTypeIcon(DeliveryZoneType type) => switch (type) {
       DeliveryZoneType.yurt => Icons.apartment_rounded,
+      DeliveryZoneType.ilce => Icons.location_city_rounded,
       DeliveryZoneType.mahalle => Icons.home_work_outlined,
       DeliveryZoneType.koy => Icons.cottage_outlined,
     };

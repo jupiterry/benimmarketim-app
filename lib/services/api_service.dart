@@ -1332,6 +1332,20 @@ class ApiService {
     }
   }
 
+  /// Bölgenin haritadaki teslimat alanı (Devrek sınırı). Sınır henüz
+  /// yüklenmediyse null döner.
+  Future<DeliveryArea?> getDeliveryZoneArea(String zoneId) async {
+    try {
+      final response = await _dio
+          .get('/delivery/zones/${Uri.encodeComponent(zoneId)}/area');
+      final data = response.data;
+      if (data is Map) return DeliveryArea.fromGeoJson(data['area']);
+      throw const ApiException('Teslimat alanı alınamadı.');
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e, 'Teslimat alanı alınamadı.');
+    }
+  }
+
   /// Kayıtlı adresler ve en fazla adres sayısı.
   Future<({List<DeliveryAddress> addresses, int max})> getAddresses() async {
     try {

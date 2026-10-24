@@ -45,6 +45,7 @@ bool isAddressZoneClosed(DeliveryViewModel delivery, DeliveryAddress address) =>
 IconData deliveryZoneIcon(DeliveryZoneType type) => switch (type) {
       DeliveryZoneType.yurt => Icons.apartment_rounded,
       DeliveryZoneType.mahalle => Icons.home_rounded,
+      DeliveryZoneType.ilce => Icons.home_rounded,
       DeliveryZoneType.koy => Icons.cottage_rounded,
     };
 
@@ -309,7 +310,7 @@ class _AddAddressPrompt extends StatelessWidget {
                             color: MarketPalette.greenDeep, size: 15)),
                     const SizedBox(height: 2),
                     Text(
-                      'Mahalleni ya da köyünü seç, adresini bir kez yaz; '
+                      'Kapını haritada işaretle, adresini bir kez yaz; '
                       'sonraki siparişlerde hazır gelir.',
                       style: MarketText.caption(color: MarketPalette.inkSoft),
                     ),

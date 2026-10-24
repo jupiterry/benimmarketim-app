@@ -940,6 +940,17 @@ class _OrderPageState extends State<OrderPage> {
               unawaited(delivery.loadAddresses());
             }
             _deliverySync?.refreshQuote();
+          case 'OUT_OF_AREA' ||
+                'LOCATION_REQUIRED' ||
+                'NEIGHBORHOOD_REQUIRED' ||
+                'STREET_REQUIRED' ||
+                'BUILDING_NO_REQUIRED':
+            // Eski ya da eksik kayıtlı adres: düzenleyip tekrar denesin
+            title = 'Adresini güncellemen gerekiyor';
+            detailedError = '${e.message} "Adres değiştir" › "Adreslerimi '
+                'düzenle" ile adresini güncelleyip tekrar dene.';
+            icon = Icons.edit_location_alt_outlined;
+            tone = MarketTone.brand;
           case 'BELOW_MINIMUM':
             final minimum = e.data?['minimumOrderAmount'];
             title = 'Sipariş tutarı yetersiz';

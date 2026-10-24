@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 
 import '../models/delivery.dart';
 import 'app_logger.dart';
-import 'turkish_text.dart';
 
 /// Haritadaki bir noktanın adres bilgisi (OpenStreetMap / Nominatim).
 class PlaceInfo {
@@ -50,48 +49,75 @@ class PlaceInfo {
       town: pick(['town', 'city', 'county']),
     );
   }
+}
 
-  /// Mahalle/köy adını listedeki bölgelerle eşler. "Cumhuriyet Mahallesi",
-  /// "Cumhuriyet Mah." ve "Cumhuriyet" aynı bölgeyi bulur; Türkçe karakter
-  /// ve büyük/küçük harf farkı önemsenmez.
-  DeliveryZone? matchZone(Iterable<DeliveryZone> zones) {
-    final key = _zoneKey(area);
-    if (key.isEmpty) return null;
-    for (final zone in zones) {
-      if (zone.isDorm) continue;
-      if (_zoneKey(zone.name) == key) return zone;
-    }
-    return null;
-  }
+/// Haritada adres aramasının bir sonucu.
+class PlaceSearchResult {
+  final GeoPoint point;
 
-  static final _suffix = RegExp(
-    r'\s+(mahallesi|mahalle|mah\.?|koyu|koy|köyü|köy)\.?$',
-  );
+  /// "Atatürk Caddesi" ya da yer adı ("Devrek Devlet Hastanesi")
+  final String title;
 
-  static String _zoneKey(String name) {
-    var key = TurkishText.normalize(name.trim());
-    key = key.replaceAll(_suffix, '');
-    return key.replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  /// "Cumhuriyet Mahallesi · Devrek"
+  final String subtitle;
+
+  const PlaceSearchResult({
+    required this.point,
+    required this.title,
+    this.subtitle = '',
+  });
+
+  static PlaceSearchResult? fromNominatim(Map<String, dynamic> json) {
+    final lat = double.tryParse('${json['lat']}');
+    final lng = double.tryParse('${json['lon']}');
+    if (lat == null || lng == null) return null;
+    final place = PlaceInfo.fromNominatim(json);
+    final name = '${json['name'] ?? ''}'.trim();
+    final road = [
+      place.road,
+      if (place.houseNumber.isNotEmpty) 'No:${place.houseNumber}',
+    ].where((s) => s.isNotEmpty).join(' ');
+    final title =
+        name.isNotEmpty ? name : (road.isNotEmpty ? road : place.area);
+    if (title.isEmpty) return null;
+    final subtitle = [
+      if (road.isNotEmpty && road != title) road,
+      if (place.area != title) place.area,
+      place.town,
+    ].where((s) => s.isNotEmpty).join(' · ');
+    return PlaceSearchResult(
+      point: GeoPoint(lat, lng),
+      title: title,
+      subtitle: subtitle,
+    );
   }
 }
 
-/// Konumdan adres bulma (ters geocoding). OSM Nominatim kullanılır; kural
-/// gereği istekler saniyede en fazla bir tanedir ve uygulama kendini
-/// User-Agent ile tanıtır. Hata olursa null döner; adres akışı konumsuz
-/// bilgiyle devam eder.
+/// Konumdan adres bulma (ters geocoding) ve adres arama. OSM Nominatim
+/// kullanılır; kural gereği istekler saniyede en fazla bir tanedir, arama
+/// yazarken değil yalnızca "Ara"ya basınca yapılır ve uygulama kendini
+/// User-Agent ile tanıtır. Hata olursa ters geocoding null döner; adres
+/// akışı elle girilen bilgiyle devam eder.
 class GeocodingService {
-  GeocodingService({Dio? dio})
-      : _dio = dio ??
-            Dio(BaseOptions(
-              baseUrl: 'https://nominatim.openstreetmap.org',
-              connectTimeout: const Duration(seconds: 8),
-              receiveTimeout: const Duration(seconds: 8),
-              headers: {
-                'User-Agent':
-                    'BenimMarketim/7.1 (https://devrekbenimmarketim.com)',
-                'Accept-Language': 'tr',
-              },
-            ));
+  GeocodingService({Dio? dio}) : _dio = dio ?? _createDio();
+
+  /// Ekran görüntüsü / test düzeneği: istekler ağa gitmez.
+  static HttpClientAdapter? debugHttpAdapter;
+
+  static Dio _createDio() {
+    final dio = Dio(BaseOptions(
+      baseUrl: 'https://nominatim.openstreetmap.org',
+      connectTimeout: const Duration(seconds: 8),
+      receiveTimeout: const Duration(seconds: 8),
+      headers: {
+        'User-Agent': 'BenimMarketim/7.1 (https://devrekbenimmarketim.com)',
+        'Accept-Language': 'tr',
+      },
+    ));
+    final adapter = debugHttpAdapter;
+    if (adapter != null) dio.httpClientAdapter = adapter;
+    return dio;
+  }
 
   final Dio _dio;
 
@@ -124,4 +150,45 @@ class GeocodingService {
     _cache[key] = result;
     return result;
   }
+
+  /// Devrek içinde adres/yer arar (en fazla [limit] sonuç). Bağlantı hatası
+  /// [GeocodingException] fırlatır; sonuç yoksa boş liste döner.
+  Future<List<PlaceSearchResult>> search(
+    String query, {
+    required GeoPoint southWest,
+    required GeoPoint northEast,
+    int limit = 8,
+  }) async {
+    final text = query.trim();
+    if (text.isEmpty) return const [];
+    try {
+      final response = await _dio.get('/search', queryParameters: {
+        'q': text,
+        'format': 'jsonv2',
+        'addressdetails': 1,
+        'limit': limit,
+        'countrycodes': 'tr',
+        // viewbox: sol,üst,sağ,alt; bounded=1 yalnızca bu kutudaki sonuçlar
+        'viewbox':
+            '${southWest.lng},${northEast.lat},${northEast.lng},${southWest.lat}',
+        'bounded': 1,
+      });
+      final data = response.data;
+      if (data is! List) return const [];
+      return data
+          .whereType<Map>()
+          .map((e) =>
+              PlaceSearchResult.fromNominatim(Map<String, dynamic>.from(e)))
+          .whereType<PlaceSearchResult>()
+          .toList();
+    } catch (e) {
+      AppLogger.debug('Adres araması yapılamadı: $e');
+      throw const GeocodingException();
+    }
+  }
+}
+
+/// Adres araması yapılamadı (bağlantı ya da servis hatası).
+class GeocodingException implements Exception {
+  const GeocodingException();
 }

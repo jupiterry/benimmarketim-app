@@ -165,12 +165,49 @@ void main() {
 
     test('adres doğrulaması bölge tipine göre değişir', () {
       const empty = AddressFields();
-      expect(empty.validate(DeliveryZoneType.mahalle).keys,
-          containsAll(['street', 'buildingNo']));
-      expect(empty.validate(DeliveryZoneType.koy).keys, ['directions']);
+      expect(empty.validate(DeliveryZoneType.ilce).keys,
+          ['neighborhood', 'street', 'buildingNo']);
+      // Eski (kapatılmış) bölgeler: sunucu yalnızca sokak ister
+      expect(empty.validate(DeliveryZoneType.mahalle).keys, ['street']);
+      expect(empty.validate(DeliveryZoneType.koy).keys, ['street']);
       expect(empty.validate(DeliveryZoneType.yurt), isEmpty);
-      const village = AddressFields(directions: 'Caminin karşısı, mavi kapı');
-      expect(village.validate(DeliveryZoneType.koy), isEmpty);
+      const full = AddressFields(
+          neighborhood: 'Cumhuriyet', street: 'Atatürk Cd.', buildingNo: '5');
+      expect(full.validate(DeliveryZoneType.ilce), isEmpty);
+    });
+
+    test('Devrek bölgesi ve mahalle', () {
+      final zone = DeliveryZone.fromJson({
+        'id': 'devrek',
+        'name': 'Devrek',
+        'type': 'ilce',
+        'deliveryFee': 40,
+        'requiresLocation': true,
+        'hasArea': true,
+      });
+      expect(zone.type, DeliveryZoneType.ilce);
+      expect(zone.requiresLocation, isTrue);
+      expect(zone.hasArea, isTrue);
+      expect(zone.isDorm, isFalse);
+
+      expect(AddressFields.neighborhoodLabel('Cumhuriyet'), 'Cumhuriyet Mah.');
+      expect(AddressFields.neighborhoodLabel('Cumhuriyet Mahallesi'),
+          'Cumhuriyet Mah.');
+      expect(AddressFields.neighborhoodLabel(' '), '');
+
+      final address = DeliveryAddress.fromJson({
+        '_id': 'a1',
+        'zoneId': 'devrek',
+        'zoneName': 'Devrek',
+        'zoneType': 'ilce',
+        'neighborhood': 'Cumhuriyet Mahallesi',
+        'street': 'Atatürk Cd.',
+        'buildingNo': '5',
+      });
+      expect(address.fields.neighborhood, 'Cumhuriyet Mahallesi');
+      // Mahalle varken bölge adı tekrar edilmez
+      expect(address.summary, 'Cumhuriyet Mah. · Atatürk Cd. No:5');
+      expect(address.fields.toJson()['neighborhood'], 'Cumhuriyet Mahallesi');
     });
 
     test('adres özeti', () {
