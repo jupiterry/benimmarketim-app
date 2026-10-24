@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/delivery.dart';
 import '../services/api_service.dart';
+import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../viewmodels/delivery_viewmodel.dart';
 import 'widgets/address_map.dart';
@@ -35,11 +36,16 @@ class AddressFormPage extends StatefulWidget {
   /// Haritada konum göstermek için (testte sahte konum).
   final LocationService locationService;
 
+  /// Haritadaki konumdan mahalle ve sokağı bulur; null ise uygulamanın
+  /// servisi kullanılır.
+  final GeocodingService? geocoding;
+
   const AddressFormPage({
     super.key,
     this.initial,
     this.initialZoneId,
     this.locationService = const LocationService(),
+    this.geocoding,
   });
 
   @override
@@ -72,6 +78,15 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
   String? _zoneId;
   GeoPoint? _location;
+
+  /// Haritadan bulunan yer; bölge otomatik seçilir, sokak/bina no dolar
+  late final GeocodingService _geocoding;
+  PlaceInfo? _place;
+  bool _placeLoading = false;
+  int _placeSeq = 0;
+
+  /// Bölgeyi harita seçti (kullanıcı elle değiştirince false olur)
+  bool _zoneFromMap = false;
   late bool _makeDefault;
 
   /// "Diğer" etiketi seçildi (alan serbest yazılır)
@@ -100,6 +115,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
     _location = fields.location;
     _zoneId = initial?.zoneId ?? widget.initialZoneId;
     _makeDefault = initial?.isDefault ?? false;
+    _geocoding = widget.geocoding ?? GeocodingService();
     final label = _label.text.trim();
     _customLabel = label.isNotEmpty && !_labelPresets.contains(label);
 
@@ -187,7 +203,38 @@ class _AddressFormPageState extends State<AddressFormPage> {
     if (zone == null || !mounted) return;
     setState(() {
       _zoneId = zone.id;
+      _zoneFromMap = false;
       _serverError = null;
+    });
+  }
+
+  /// Haritadaki konumdan mahalle/sokak bulur. Bölge listedeyse ve kullanıcı
+  /// elle seçmediyse otomatik seçilir; boş sokak ve bina no alanları dolar.
+  Future<void> _lookupPlace() async {
+    final point = _location;
+    if (point == null) return;
+    final seq = ++_placeSeq;
+    setState(() => _placeLoading = true);
+    final place = await _geocoding.reverse(point);
+    if (!mounted || seq != _placeSeq) return;
+    final delivery = context.read<DeliveryViewModel>();
+    if (!delivery.zonesLoaded) await delivery.loadZones();
+    if (!mounted || seq != _placeSeq) return;
+    setState(() {
+      _placeLoading = false;
+      _place = place;
+      if (place == null) return;
+      final match = place.matchZone(delivery.zones);
+      if (match != null && (_zoneId == null || _zoneFromMap)) {
+        _zoneId = match.id;
+        _zoneFromMap = true;
+      }
+      if (_street.text.trim().isEmpty && place.road.isNotEmpty) {
+        _street.text = place.road;
+      }
+      if (_buildingNo.text.trim().isEmpty && place.houseNumber.isNotEmpty) {
+        _buildingNo.text = place.houseNumber;
+      }
     });
   }
 
@@ -292,6 +339,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       context,
       initial: _location,
       locationService: widget.locationService,
+      geocoding: _geocoding,
     );
     if (!mounted) return;
     if (point == null) {
@@ -302,6 +350,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       _location = point;
       _serverError = null;
     });
+    unawaited(_lookupPlace());
   }
 
   // -------------------------------------------------------------------------
@@ -517,10 +566,18 @@ class _AddressFormPageState extends State<AddressFormPage> {
     if (loadingZone) {
       subtitle = 'Bölge bilgisi yükleniyor…';
     } else if (zone != null) {
-      subtitle = zoneSubtitle(zone);
+      subtitle = _zoneFromMap
+          ? 'Haritadaki konumuna göre seçildi · ${zoneSubtitle(zone)}'
+          : zoneSubtitle(zone);
     } else if (name != null && closed) {
       // Uzun açıklama altta uyarı olarak çıkar (düzenlemede)
       subtitle = _isEdit ? 'Teslimat şu an kapalı' : zoneClosedNote;
+    } else if (_placeLoading) {
+      subtitle = 'Haritadaki konumundan mahallen bulunuyor…';
+    } else if (_place != null && _place!.area.isNotEmpty) {
+      // Konum bir mahallede görünüyor ama listemizde yok
+      subtitle =
+          "Konumun ${_place!.area} içinde görünüyor; bu bölge listede yok. En yakın mahalleyi seç.";
     } else {
       subtitle = 'Mahalleni ya da köyünü listeden seç';
     }

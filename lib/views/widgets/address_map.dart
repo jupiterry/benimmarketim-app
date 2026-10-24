@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../models/delivery.dart';
+import '../../services/geocoding_service.dart';
 import '../../services/location_service.dart';
 import 'market_ui.dart';
 
@@ -47,12 +48,14 @@ Future<GeoPoint?> showAddressMapPicker(
   BuildContext context, {
   GeoPoint? initial,
   LocationService locationService = const LocationService(),
+  GeocodingService? geocoding,
 }) {
   return Navigator.of(context).push<GeoPoint>(
     MaterialPageRoute(
       builder: (_) => AddressMapPickerPage(
         initial: initial,
         locationService: locationService,
+        geocoding: geocoding,
       ),
     ),
   );
@@ -118,10 +121,14 @@ class AddressMapPickerPage extends StatefulWidget {
   final GeoPoint? initial;
   final LocationService locationService;
 
+  /// İğnenin altındaki mahalle/sokak adını bulur (null: gösterilmez)
+  final GeocodingService? geocoding;
+
   const AddressMapPickerPage({
     super.key,
     this.initial,
     this.locationService = const LocationService(),
+    this.geocoding,
   });
 
   @override
@@ -137,6 +144,12 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   bool _mapReady = false;
   _MapNote? _note;
 
+  // İğnenin altındaki yer adı (iğne durunca sorulur)
+  PlaceInfo? _place;
+  bool _placeLoading = false;
+  Timer? _placeTimer;
+  int _placeSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -149,13 +162,34 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_goToMyLocation());
       });
+    } else {
+      _schedulePlaceLookup();
     }
   }
 
   @override
   void dispose() {
+    _placeTimer?.cancel();
     _map.dispose();
     super.dispose();
+  }
+
+  /// İğne durduktan kısa süre sonra yer adını sorar; Nominatim kuralı
+  /// (saniyede en fazla bir istek) için bekleme süresi 800 ms.
+  void _schedulePlaceLookup() {
+    final geocoding = widget.geocoding;
+    if (geocoding == null) return;
+    _placeTimer?.cancel();
+    if (!_placeLoading) setState(() => _placeLoading = true);
+    final seq = ++_placeSeq;
+    _placeTimer = Timer(const Duration(milliseconds: 800), () async {
+      final place = await geocoding.reverse(AddressMap.toGeoPoint(_center));
+      if (!mounted || seq != _placeSeq) return;
+      setState(() {
+        _place = place;
+        _placeLoading = false;
+      });
+    });
   }
 
   Future<void> _goToMyLocation() async {
@@ -175,6 +209,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
           if (AddressMap.isInDevrek(result.point!)) {
             _center = point;
             if (_mapReady) _map.move(point, AddressMap.streetZoom);
+            _schedulePlaceLookup();
           } else {
             _note = null; // Bölge dışındaysa harita Devrek'te kalır
           }
@@ -245,6 +280,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
                         event is MapEventDoubleTapZoomEnd ||
                         event is MapEventScrollWheelZoom) {
                       if (_dragging) setState(() => _dragging = false);
+                      _schedulePlaceLookup();
                     }
                   },
                 ),
@@ -335,9 +371,13 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
           children: [
             Text('İğneyi kapına getir', style: MarketText.heading(size: 16)),
             const SizedBox(height: 4),
+            if (widget.geocoding != null) ...[
+              _PlaceLine(place: _place, loading: _placeLoading),
+              const SizedBox(height: 4),
+            ],
             Text(
-              'Haritayı kaydırarak iğneyi binanın üstüne getir. Adres '
-              'bilgilerini sonraki adımda yazacaksın.',
+              'Haritayı kaydırarak iğneyi binanın üstüne getir. Mahalle ve '
+              'sokak bilgisi sonraki adımda otomatik dolar.',
               style: MarketText.caption(size: 13),
             ),
             if (_note != null || _myLocationOutside) ...[
@@ -404,6 +444,42 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
               minimumSize: const Size(0, MarketSize.control),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// Alt çubukta iğnenin altındaki mahalle · sokak satırı
+class _PlaceLine extends StatelessWidget {
+  final PlaceInfo? place;
+  final bool loading;
+
+  const _PlaceLine({required this.place, required this.loading});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = place == null
+        ? (loading ? 'Adres bulunuyor…' : 'Mahalle bilgisi bulunamadı')
+        : place!.summary;
+    return Row(
+      children: [
+        Icon(
+          place == null ? Icons.place_outlined : Icons.place_rounded,
+          size: 16,
+          color: place == null ? MarketPalette.muted : MarketPalette.greenDark,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: MarketText.label(
+              size: 13,
+              color: place == null ? MarketPalette.muted : MarketPalette.greenDark,
+            ),
+          ),
+        ),
       ],
     );
   }

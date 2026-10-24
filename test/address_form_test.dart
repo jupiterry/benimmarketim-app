@@ -1,5 +1,6 @@
 import 'package:benimmarketim_app/models/delivery.dart';
 import 'package:benimmarketim_app/services/api_service.dart';
+import 'package:benimmarketim_app/services/geocoding_service.dart';
 import 'package:benimmarketim_app/services/location_service.dart';
 import 'package:benimmarketim_app/viewmodels/delivery_viewmodel.dart';
 import 'package:benimmarketim_app/views/address_form_page.dart';
@@ -31,6 +32,19 @@ class _FakeLocation extends LocationService {
   }
 }
 
+/// Ağ yerine sabit yer bilgisi döner (null: bulunamadı).
+class _FakeGeocoding extends GeocodingService {
+  final PlaceInfo? place;
+  int calls = 0;
+  _FakeGeocoding([this.place]);
+
+  @override
+  Future<PlaceInfo?> reverse(GeoPoint point) async {
+    calls++;
+    return place;
+  }
+}
+
 /// Formu '/' üstüne açar; kapanınca dönen sonucu [_FormHarness.result]'a yazar.
 class _FormHarness {
   final FakeDeliveryApi api;
@@ -47,9 +61,11 @@ class _FormHarness {
     DeliveryAddress? initial,
     String? initialZoneId,
     LocationService? location,
+    GeocodingService? geocoding,
     bool confirmMap = true,
   }) async {
     location ??= _FakeLocation(LocationOutcome.found);
+    geocoding ??= _FakeGeocoding();
     await pumpMarket(
       tester,
       Builder(
@@ -72,6 +88,7 @@ class _FormHarness {
             initial: initial,
             initialZoneId: initialZoneId,
             locationService: location!,
+            geocoding: geocoding,
           ),
         ),
       ],
@@ -539,6 +556,62 @@ void main() {
             location: _OutsideLocation(), confirmMap: false);
         expect(find.textContaining('Devrek dışında görünüyorsun'),
             findsOneWidget);
+      });
+    });
+  });
+
+  group('Haritadan bölge', () {
+    const place = PlaceInfo(
+        area: 'Cumhuriyet Mahallesi', road: 'Atatürk Caddesi', houseNumber: '5');
+
+    testWidgets('konumdan mahalle seçilir, sokak ve bina no dolar',
+        (tester) async {
+      await withoutFontErrors(() async {
+        final geocoding = _FakeGeocoding(place);
+        final h = _FormHarness(FakeDeliveryApi());
+        await h.open(tester, geocoding: geocoding, confirmMap: false);
+        // Haritada yer adı canlı görünür
+        await settle(tester);
+        expect(find.text(place.summary), findsOneWidget);
+        await tester.tap(find.text('Bu konumu kullan'));
+        await settle(tester);
+
+        expect(find.text('Cumhuriyet Mahallesi'), findsOneWidget);
+        expect(find.textContaining('Haritadaki konumuna göre seçildi'),
+            findsOneWidget);
+        expect(tester.widget<TextField>(_field('Sokak / cadde')).controller!.text,
+            'Atatürk Caddesi');
+        expect(tester.widget<TextField>(_field('Bina no')).controller!.text, '5');
+        await _tapSave(tester);
+        expect(h.api.lastCreateBody!['zoneId'], 'cumhuriyet');
+      });
+    });
+
+    testWidgets('listede olmayan mahallede uyarı, elle seçim korunur',
+        (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(FakeDeliveryApi());
+        await h.open(tester,
+            geocoding: _FakeGeocoding(const PlaceInfo(area: 'Yeşilyurt')));
+        expect(find.textContaining('Yeşilyurt içinde görünüyor'), findsOneWidget);
+        expect(_field('Sokak / cadde'), findsNothing);
+
+        await tester.tap(find.text('Bölgeni seç'));
+        await settle(tester);
+        await tester.tap(find.text('Bostanlar Köyü'));
+        await settle(tester);
+        expect(find.text('Bostanlar Köyü'), findsOneWidget);
+        expect(find.textContaining('Haritadaki konumuna göre'), findsNothing);
+      });
+    });
+
+    testWidgets('kullanıcının seçtiği bölge haritayla ezilmez', (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(FakeDeliveryApi());
+        await h.open(tester,
+            initialZoneId: testZoneKoy.id, geocoding: _FakeGeocoding(place));
+        expect(find.text('Bostanlar Köyü'), findsOneWidget);
+        expect(find.text('Cumhuriyet Mahallesi'), findsNothing);
       });
     });
   });

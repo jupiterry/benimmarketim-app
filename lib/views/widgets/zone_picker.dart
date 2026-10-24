@@ -104,10 +104,17 @@ class _DeliveryZonePickerSheetState extends State<DeliveryZonePickerSheet> {
         onRetry: () => delivery.loadZones(force: true),
       );
     } else if (available.isEmpty) {
-      content = const MarketEmptyState(
+      content = MarketEmptyState(
         icon: Icons.location_off_outlined,
-        title: 'Şu an teslimat bölgesi yok',
-        message: 'Teslimat bölgelerimiz açıldığında burada görünecek.',
+        title: widget.includeDorms
+            ? 'Şu an teslimat bölgesi yok'
+            : 'Henüz adrese teslimat yapılan mahalle yok',
+        message: widget.includeDorms
+            ? 'Teslimat bölgelerimiz açıldığında burada görünecek.'
+            : 'Mahalle ve köyler açıldıkça burada listelenir. Şimdilik '
+                'siparişini yurt teslimat noktasına verebilirsin.',
+        secondaryLabel: 'Yenile',
+        onSecondary: () => delivery.loadZones(force: true),
       );
     } else if (matches.isEmpty) {
       content = MarketEmptyState(
