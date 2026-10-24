@@ -30,6 +30,10 @@ abstract final class MapsConfig {
   /// iOS'ta Google Maps SDK'ya anahtarı verir (harita açılmadan önce,
   /// açılışta bir kez). Android anahtarı manifest'ten okur.
   static Future<void> initialize() async {
+    AppLogger.debug(useGoogle
+        ? '🗺️ Harita: Google Maps (MAPS_API_KEY verildi)'
+        : '🗺️ Harita: OpenStreetMap (MAPS_API_KEY verilmedi; '
+            'flutter run --dart-define-from-file=secrets.json)');
     if (!useGoogle || kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
       return;
     }
