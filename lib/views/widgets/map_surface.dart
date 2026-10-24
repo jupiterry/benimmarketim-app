@@ -1,11 +1,9 @@
 import 'dart:async';
+import 'dart:math' show Point;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
-import 'package:latlong2/latlong.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 
-import '../../services/maps_config.dart';
 import 'market_ui.dart';
 
 /// Haritayı koddan taşımak için ([MapSurface.onReady] ile gelir).
@@ -16,10 +14,9 @@ abstract class MapSurfaceHandle {
   void fit(LatLngBounds bounds);
 }
 
-/// Adres haritasının çizildiği yüzey. Google Maps anahtarı varsa Google
-/// haritası, yoksa OpenStreetMap (flutter_map) kullanılır; ikisi aynı
-/// geri çağrıları verir. Teslimat alanı ([areaRings]) verilirse alanın dışı
-/// hafifçe karartılır ve sınırı yeşil çizilir.
+/// Adres haritasının çizildiği yüzey: MapLibre (vektör harita, OpenFreeMap
+/// karoları; anahtar gerekmez). Teslimat alanı ([areaRings]) verilirse
+/// alanın dışı hafifçe karartılır ve sınırı yeşil çizilir.
 class MapSurface extends StatefulWidget {
   final LatLng initialCenter;
   final double initialZoom;
@@ -38,7 +35,7 @@ class MapSurface extends StatefulWidget {
   /// false: dokunulmaz önizleme
   final bool interactive;
 
-  /// OSM kaynak gösteriminin kenar boşluğu
+  /// Kaynak gösteriminin kenar boşluğu
   final EdgeInsets attributionPadding;
 
   final ValueChanged<MapSurfaceHandle>? onReady;
@@ -67,15 +64,12 @@ class MapSurface extends StatefulWidget {
     this.onTap,
   });
 
-  /// Testlerde gerçek harita çizilmez: OSM karoları indirilmez, Google
-  /// haritası (platform görünümü) yerine düz bir yüzey gösterilir.
+  /// Testlerde gerçek harita (platform görünümü) yerine düz bir yüzey.
   static bool debugShowTiles = true;
 
-  /// OSM karo adresi. Trafik büyürse ücretli bir sağlayıcıya (ör. MapTiler)
-  /// geçmek için yalnızca bu satır değişir.
-  static const String tileUrl =
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  static const String userAgentPackage = 'com.jupi.benimapp.benimmarketim_app';
+  /// Harita stili. OpenFreeMap ücretsizdir ve anahtar istemez; başka bir
+  /// sağlayıcıya (ör. MapTiler) geçmek için yalnızca bu satır değişir.
+  static const String styleUrl = MapLibreStyles.openfreemapLiberty;
 
   /// Alanın dışını kaplayan çerçeve (alanın dış sınırları bunda delik)
   static const _outer = [
@@ -83,9 +77,8 @@ class MapSurface extends StatefulWidget {
     LatLng(36, 38),
     LatLng(44, 38),
     LatLng(44, 26),
+    LatLng(36, 26),
   ];
-
-  static Color get _maskColor => MarketPalette.greenDeep.withValues(alpha: .16);
 
   @override
   State<MapSurface> createState() => _MapSurfaceState();
@@ -94,141 +87,18 @@ class MapSurface extends StatefulWidget {
 class _MapSurfaceState extends State<MapSurface> {
   @override
   Widget build(BuildContext context) {
-    if (!MapsConfig.useGoogle) return _OsmSurface(widget);
     if (!MapSurface.debugShowTiles) return _PlainSurface(widget);
-    return _GoogleSurface(widget);
+    return _MapLibreSurface(widget);
   }
 }
 
-// ---------------------------------------------------------------------------
-// OpenStreetMap (flutter_map)
-// ---------------------------------------------------------------------------
+/// MapLibre renkleri "#RRGGBB" ister
+String _hex(Color c) =>
+    '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
-class _OsmSurface extends StatefulWidget {
-  final MapSurface config;
-  const _OsmSurface(this.config);
-
-  @override
-  State<_OsmSurface> createState() => _OsmSurfaceState();
-}
-
-class _OsmSurfaceState extends State<_OsmSurface> implements MapSurfaceHandle {
-  final MapController _map = MapController();
-  bool _ready = false;
-  LatLng? _pending;
-
-  MapSurface get c => widget.config;
-
-  @override
-  LatLng get center =>
-      _ready ? _map.camera.center : (_pending ?? c.initialCenter);
-
-  @override
-  void move(LatLng point, double zoom) {
-    if (_ready) {
-      _map.move(point, zoom);
-    } else {
-      _pending = point;
-    }
-  }
-
-  @override
-  void fit(LatLngBounds bounds) {
-    if (!_ready) return;
-    _map.fitCamera(CameraFit.bounds(
-      bounds: bounds,
-      padding: const EdgeInsets.all(28),
-    ));
-  }
-
-  @override
-  void dispose() {
-    _map.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: FlutterMap(
-            mapController: _map,
-            options: MapOptions(
-              initialCenter: c.initialCenter,
-              initialZoom: c.initialZoom,
-              minZoom: c.minZoom,
-              maxZoom: c.maxZoom,
-              backgroundColor: MarketPalette.surfaceMuted,
-              cameraConstraint: c.centerBounds != null
-                  ? CameraConstraint.containCenter(bounds: c.centerBounds!)
-                  : const CameraConstraint.unconstrained(),
-              interactionOptions: InteractionOptions(
-                flags: c.interactive
-                    ? InteractiveFlag.all & ~InteractiveFlag.rotate
-                    : InteractiveFlag.none,
-              ),
-              onTap: (_, __) => c.onTap?.call(),
-              onMapReady: () {
-                _ready = true;
-                final pending = _pending;
-                if (pending != null) _map.move(pending, _map.camera.zoom);
-                c.onReady?.call(this);
-              },
-              onPositionChanged: (camera, hasGesture) =>
-                  c.onMove?.call(camera.center, hasGesture),
-              onMapEvent: (event) {
-                if (event is MapEventMoveEnd ||
-                    event is MapEventFlingAnimationEnd ||
-                    event is MapEventDoubleTapZoomEnd ||
-                    event is MapEventScrollWheelZoom) {
-                  c.onIdle?.call();
-                }
-              },
-            ),
-            children: [
-              if (MapSurface.debugShowTiles)
-                TileLayer(
-                  urlTemplate: MapSurface.tileUrl,
-                  userAgentPackageName: MapSurface.userAgentPackage,
-                  maxNativeZoom: 19,
-                ),
-              if (c.areaRings.isNotEmpty)
-                PolygonLayer(polygons: [
-                  Polygon(
-                    points: MapSurface._outer,
-                    holePointsList: c.areaRings,
-                    color: MapSurface._maskColor,
-                    borderColor: MarketPalette.green,
-                    borderStrokeWidth: 3,
-                  ),
-                ]),
-              if (c.myLocation != null)
-                CircleLayer(circles: [
-                  CircleMarker(
-                    point: c.myLocation!,
-                    radius: 9,
-                    color: MarketPalette.blue,
-                    borderColor: Colors.white,
-                    borderStrokeWidth: 3,
-                  ),
-                ]),
-            ],
-          ),
-        ),
-        Positioned(
-          left: c.attributionPadding.left,
-          bottom: c.attributionPadding.bottom,
-          child: const _OsmAttribution(),
-        ),
-      ],
-    );
-  }
-}
-
-/// OSM lisansının istediği kaynak gösterimi
-class _OsmAttribution extends StatelessWidget {
-  const _OsmAttribution();
+/// Lisans gereği kaynak gösterimi
+class _Attribution extends StatelessWidget {
+  const _Attribution();
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -238,36 +108,36 @@ class _OsmAttribution extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Text('© OpenStreetMap katkıcıları',
+          child: Text('© OpenStreetMap katkıcıları · OpenFreeMap',
               style:
                   MarketText.caption(size: 11, color: MarketPalette.inkSoft)),
         ),
       );
 }
 
-// ---------------------------------------------------------------------------
-// Google Maps
-// ---------------------------------------------------------------------------
-
-gm.LatLng _gm(LatLng p) => gm.LatLng(p.latitude, p.longitude);
-
-class _GoogleSurface extends StatefulWidget {
+class _MapLibreSurface extends StatefulWidget {
   final MapSurface config;
-  const _GoogleSurface(this.config);
+  const _MapLibreSurface(this.config);
 
   @override
-  State<_GoogleSurface> createState() => _GoogleSurfaceState();
+  State<_MapLibreSurface> createState() => _MapLibreSurfaceState();
 }
 
-class _GoogleSurfaceState extends State<_GoogleSurface>
+class _MapLibreSurfaceState extends State<_MapLibreSurface>
     implements MapSurfaceHandle {
-  gm.GoogleMapController? _controller;
+  MapLibreMapController? _controller;
+  bool _styleLoaded = false;
   late LatLng _center = widget.config.initialCenter;
 
   /// Kamera koddan taşınıyor: bu sırada gelen hareketler kullanıcının değil.
-  /// Kamera aynı yerdeyse "durdu" gelmeyebilir; bayrak kısa süre sonra düşer.
+  /// Hareket bitince (idle) ya da kısa süre sonra düşer.
   bool _programmatic = false;
   Timer? _programmaticTimer;
+
+  // Çizili katmanlar (alan, sınır, konum); veri değişince yeniden çizilir
+  Fill? _mask;
+  Line? _border;
+  Circle? _myLocation;
 
   MapSurface get c => widget.config;
 
@@ -286,20 +156,30 @@ class _GoogleSurfaceState extends State<_GoogleSurface>
   void move(LatLng point, double zoom) {
     _center = point;
     _markProgrammatic();
-    unawaited(_controller
-        ?.animateCamera(gm.CameraUpdate.newLatLngZoom(_gm(point), zoom)));
+    unawaited(
+        _controller?.animateCamera(CameraUpdate.newLatLngZoom(point, zoom)));
   }
 
   @override
   void fit(LatLngBounds bounds) {
     _markProgrammatic();
-    unawaited(_controller?.moveCamera(gm.CameraUpdate.newLatLngBounds(
-      gm.LatLngBounds(
-        southwest: _gm(bounds.southWest),
-        northeast: _gm(bounds.northEast),
-      ),
-      28,
+    unawaited(_controller?.moveCamera(CameraUpdate.newLatLngBounds(
+      bounds,
+      left: 28,
+      top: 28,
+      right: 28,
+      bottom: 28,
     )));
+  }
+
+  @override
+  void didUpdateWidget(covariant _MapLibreSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_styleLoaded) return;
+    if (c.areaRings != oldWidget.config.areaRings) unawaited(_drawArea());
+    if (c.myLocation != oldWidget.config.myLocation) {
+      unawaited(_drawMyLocation());
+    }
   }
 
   @override
@@ -308,64 +188,103 @@ class _GoogleSurfaceState extends State<_GoogleSurface>
     super.dispose();
   }
 
+  Future<void> _drawArea() async {
+    final controller = _controller;
+    if (controller == null) return;
+    if (_mask != null) await controller.removeFill(_mask!);
+    if (_border != null) await controller.removeLine(_border!);
+    _mask = null;
+    _border = null;
+    if (c.areaRings.isEmpty) return;
+    _mask = await controller.addFill(FillOptions(
+      geometry: [MapSurface._outer, ...c.areaRings],
+      fillColor: _hex(MarketPalette.greenDeep),
+      fillOpacity: .16,
+    ));
+    _border = await controller.addLine(LineOptions(
+      // Sınır çizgisi: ayrı halkalar tek çizgide birleşmesin diye yalnızca
+      // ilk halka çizilir; alan çok parçalıysa dolgu zaten dışı karartır.
+      geometry: c.areaRings.first,
+      lineColor: _hex(MarketPalette.green),
+      lineWidth: 3,
+    ));
+  }
+
+  Future<void> _drawMyLocation() async {
+    final controller = _controller;
+    if (controller == null) return;
+    if (_myLocation != null) await controller.removeCircle(_myLocation!);
+    _myLocation = null;
+    final point = c.myLocation;
+    if (point == null) return;
+    _myLocation = await controller.addCircle(CircleOptions(
+      geometry: point,
+      circleRadius: 8,
+      circleColor: _hex(MarketPalette.blue),
+      circleStrokeColor: '#ffffff',
+      circleStrokeWidth: 3,
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final bounds = c.centerBounds;
-    return gm.GoogleMap(
-      initialCameraPosition: gm.CameraPosition(
-        target: _gm(c.initialCenter),
-        zoom: c.initialZoom,
-      ),
-      minMaxZoomPreference: gm.MinMaxZoomPreference(c.minZoom, c.maxZoom),
-      cameraTargetBounds: bounds == null
-          ? gm.CameraTargetBounds.unbounded
-          : gm.CameraTargetBounds(gm.LatLngBounds(
-              southwest: _gm(bounds.southWest),
-              northeast: _gm(bounds.northEast),
-            )),
-      liteModeEnabled: !c.interactive,
-      scrollGesturesEnabled: c.interactive,
-      zoomGesturesEnabled: c.interactive,
-      rotateGesturesEnabled: false,
-      tiltGesturesEnabled: false,
-      compassEnabled: false,
-      mapToolbarEnabled: false,
-      zoomControlsEnabled: false,
-      myLocationButtonEnabled: false,
-      // Konum izni verildiyse (konum bulunduysa) Google'ın mavi noktası
-      myLocationEnabled: c.myLocation != null,
-      polygons: {
-        if (c.areaRings.isNotEmpty)
-          gm.Polygon(
-            polygonId: const gm.PolygonId('teslimat-alani'),
-            points: MapSurface._outer.map(_gm).toList(),
-            holes: [
-              for (final ring in c.areaRings) ring.map(_gm).toList(),
-            ],
-            fillColor: MapSurface._maskColor,
-            strokeColor: MarketPalette.green,
-            strokeWidth: 3,
-            consumeTapEvents: false,
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: MapLibreMap(
+            styleString: MapSurface.styleUrl,
+            initialCameraPosition: CameraPosition(
+              target: c.initialCenter,
+              zoom: c.initialZoom,
+            ),
+            minMaxZoomPreference: MinMaxZoomPreference(c.minZoom, c.maxZoom),
+            cameraTargetBounds: bounds == null
+                ? CameraTargetBounds.unbounded
+                : CameraTargetBounds(bounds),
+            trackCameraPosition: true,
+            scrollGesturesEnabled: c.interactive,
+            zoomGesturesEnabled: c.interactive,
+            dragEnabled: c.interactive,
+            rotateGesturesEnabled: false,
+            tiltGesturesEnabled: false,
+            compassEnabled: false,
+            // Kaynak gösterimi alttaki kendi satırımızda
+            attributionButtonPosition: AttributionButtonPosition.topRight,
+            attributionButtonMargins: const Point(-100, -100),
+            onMapCreated: (controller) {
+              _controller = controller;
+            },
+            onStyleLoadedCallback: () {
+              _styleLoaded = true;
+              unawaited(_drawArea());
+              unawaited(_drawMyLocation());
+              c.onReady?.call(this);
+            },
+            onCameraMove: (position) {
+              _center = position.target;
+              c.onMove?.call(_center, !_programmatic);
+            },
+            onCameraIdle: () {
+              _programmatic = false;
+              final position = _controller?.cameraPosition;
+              if (position != null) _center = position.target;
+              c.onIdle?.call();
+            },
+            onMapClick: (_, __) => c.onTap?.call(),
           ),
-      },
-      onMapCreated: (controller) {
-        _controller = controller;
-        c.onReady?.call(this);
-      },
-      onCameraMove: (position) {
-        _center = LatLng(position.target.latitude, position.target.longitude);
-        c.onMove?.call(_center, !_programmatic);
-      },
-      onCameraIdle: () {
-        _programmatic = false;
-        c.onIdle?.call();
-      },
-      onTap: (_) => c.onTap?.call(),
+        ),
+        Positioned(
+          left: c.attributionPadding.left,
+          bottom: c.attributionPadding.bottom,
+          child: const _Attribution(),
+        ),
+      ],
     );
   }
 }
 
-/// Google seçiliyken testlerde platform görünümü yerine düz yüzey.
+/// Testlerde platform görünümü yerine düz yüzey.
 class _PlainSurface extends StatefulWidget {
   final MapSurface config;
   const _PlainSurface(this.config);
@@ -385,7 +304,10 @@ class _PlainSurfaceState extends State<_PlainSurface>
   void move(LatLng point, double zoom) => _center = point;
 
   @override
-  void fit(LatLngBounds bounds) => _center = bounds.center;
+  void fit(LatLngBounds bounds) => _center = LatLng(
+        (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
+        (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
+      );
 
   @override
   void initState() {
@@ -396,8 +318,19 @@ class _PlainSurfaceState extends State<_PlainSurface>
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: widget.config.onTap,
-        child: const ColoredBox(color: MarketPalette.surfaceMuted),
+  Widget build(BuildContext context) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: widget.config.onTap,
+              child: const ColoredBox(color: MarketPalette.surfaceMuted),
+            ),
+          ),
+          Positioned(
+            left: widget.config.attributionPadding.left,
+            bottom: widget.config.attributionPadding.bottom,
+            child: const _Attribution(),
+          ),
+        ],
       );
 }

@@ -400,10 +400,10 @@ void main() {
       ),
     ];
 
+    /// Yazarken öneri gelir ("Ara"ya basmadan)
     Future<void> search(WidgetTester tester, String query) async {
       await tester.enterText(
           find.widgetWithText(TextField, 'Sokak, cadde ya da yer ara'), query);
-      await tester.testTextInput.receiveAction(TextInputAction.search);
       await settle(tester);
     }
 

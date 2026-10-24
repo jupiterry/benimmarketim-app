@@ -26,11 +26,6 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         tools:targetApi="31">
-        <!-- Google Maps anahtarı derlemede --dart-define=MAPS_API_KEY ile
-             verilir (build.gradle.kts); repoda tutulmaz. -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="${MAPS_API_KEY}" />
         <!-- Meta (Facebook) App Events. Kullanıcı izni olmadan otomatik olay
              kaydı ve reklam kimliği toplama kapalıdır; izin uygulama içinden
              verilince MetaAppEventsService bunları açar. -->

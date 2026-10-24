@@ -19,7 +19,6 @@ import 'viewmodels/banner_viewmodel.dart';
 import 'viewmodels/referral_viewmodel.dart';
 import 'viewmodels/chat_viewmodel.dart';
 import 'viewmodels/delivery_viewmodel.dart';
-import 'services/maps_config.dart';
 import 'services/theme_service.dart';
 import 'services/token_manager.dart';
 import 'services/notification_service.dart';
@@ -63,9 +62,6 @@ void main() async {
     AppLogger.debug('Stack trace: $stackTrace');
     // Kritik hata olsa bile uygulamayı başlat
   }
-
-  // Google Maps (anahtar derlemede verildiyse; iOS'ta SDK'ya iletilir)
-  await MapsConfig.initialize();
 
   // Meta uygulama olayları: kayıtlı izni okur, izin varsa SDK'yı hazırlar.
   // İzin yoksa Meta'ya olay gönderilmez. Açılışı bekletmez.

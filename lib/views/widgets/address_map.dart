@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
-import 'package:latlong2/latlong.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' show LatLng, LatLngBounds;
 
 import '../../models/delivery.dart';
 import '../../services/geocoding_service.dart';
@@ -10,7 +10,7 @@ import '../../services/location_service.dart';
 import 'map_surface.dart';
 import 'market_ui.dart';
 
-/// Adres haritası (Google Maps; anahtar yoksa OpenStreetMap). Kullanıcı haritayı kaydırıp ortadaki
+/// Adres haritası (MapLibre, OpenFreeMap karoları). Kullanıcı haritayı kaydırıp ortadaki
 /// iğneyi kapısının üstüne getirir; seçilen nokta adresle birlikte
 /// `location: {lat, lng}` olarak kaydedilir. Teslimat alanı (Devrek sınırı)
 /// yüklüyse haritada çizilir ve dışındaki nokta seçilemez.
@@ -20,8 +20,8 @@ abstract final class AddressMap {
 
   /// Devrek'i kapsayan alan. Harita merkezi bu alanın dışına çıkamaz.
   static final LatLngBounds devrekBounds = LatLngBounds(
-    const LatLng(41.03, 31.72),
-    const LatLng(41.40, 32.18),
+    southwest: const LatLng(41.03, 31.72),
+    northeast: const LatLng(41.40, 32.18),
   );
 
   static const double townZoom = 13;
@@ -31,22 +31,33 @@ abstract final class AddressMap {
   static set debugShowTiles(bool value) => MapSurface.debugShowTiles = value;
 
   static LatLng toLatLng(GeoPoint point) => LatLng(point.lat, point.lng);
-  static GeoPoint toGeoPoint(LatLng point) =>
-      GeoPoint(point.latitude, point.longitude);
+  /// Sunucuyla aynı duyarlık (6 ondalık ≈ 10 cm); LatLng'nin boylam
+  /// normalleştirmesinden gelen kayan nokta artığı atılır.
+  static GeoPoint toGeoPoint(LatLng point) => GeoPoint(
+        _round6(point.latitude),
+        _round6(point.longitude),
+      );
+
+  static double _round6(double v) => (v * 1e6).roundToDouble() / 1e6;
 
   static bool isInDevrek(GeoPoint point) =>
       devrekBounds.contains(toLatLng(point));
 
   static LatLngBounds boundsOf(DeliveryArea area) {
     final (sw, ne) = area.bounds;
-    return LatLngBounds(toLatLng(sw), toLatLng(ne));
+    return LatLngBounds(southwest: toLatLng(sw), northeast: toLatLng(ne));
   }
 
   /// Arama kutusu: Devrek alanı ve (varsa) teslimat alanının birleşimi
   static (GeoPoint, GeoPoint) searchBox(DeliveryArea? area) {
-    final bounds = LatLngBounds(devrekBounds.southWest, devrekBounds.northEast);
-    if (area != null) bounds.extendBounds(boundsOf(area));
-    return (toGeoPoint(bounds.southWest), toGeoPoint(bounds.northEast));
+    var sw = toGeoPoint(devrekBounds.southwest);
+    var ne = toGeoPoint(devrekBounds.northeast);
+    if (area != null) {
+      final (asw, ane) = area.bounds;
+      sw = GeoPoint(min(sw.lat, asw.lat), min(sw.lng, asw.lng));
+      ne = GeoPoint(max(ne.lat, ane.lat), max(ne.lng, ane.lng));
+    }
+    return (sw, ne);
   }
 }
 
@@ -163,9 +174,6 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   bool _searchFailed = false;
   int _searchSeq = 0;
   Timer? _searchTimer;
-
-  /// Seçilen önerinin konumu soruluyor (Google)
-  bool _resolving = false;
 
   @override
   void initState() {
@@ -342,7 +350,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     });
   }
 
-  /// Google'da yazarken öneri gelir (en az 3 harf, 350 ms bekleyerek).
+  /// Yazarken öneri gelir (en az 3 harf, 350 ms bekleyerek).
   void _onQueryChanged(String value) {
     setState(() {});
     final geocoding = widget.geocoding;
@@ -373,24 +381,11 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     });
   }
 
-  Future<void> _pickResult(PlaceSearchResult result) async {
+  void _pickResult(PlaceSearchResult result) {
     FocusManager.instance.primaryFocus?.unfocus();
     _searchTimer?.cancel();
-    var point = result.point;
-    if (point == null) {
-      final geocoding = widget.geocoding;
-      if (geocoding == null || _resolving) return;
-      setState(() => _resolving = true);
-      point = await geocoding.resolve(result);
-      if (!mounted) return;
-      setState(() => _resolving = false);
-      if (point == null) {
-        setState(() => _searchFailed = true);
-        return;
-      }
-    }
     setState(() => _results = null);
-    _moveTo(AddressMap.toLatLng(point), AddressMap.streetZoom);
+    _moveTo(AddressMap.toLatLng(result.point), AddressMap.streetZoom);
   }
 
   void _closeResults() {
@@ -602,7 +597,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
           ),
           prefixIcon:
               const Icon(Icons.search_rounded, color: MarketPalette.muted),
-          suffixIcon: _searching || _resolving
+          suffixIcon: _searching
               ? const Padding(
                   padding: EdgeInsets.all(14),
                   child: SizedBox(

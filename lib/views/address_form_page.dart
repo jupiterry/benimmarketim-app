@@ -123,7 +123,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
     _location = fields.location;
     _zoneId = initial?.zoneId ?? widget.initialZoneId;
     _makeDefault = initial?.isDefault ?? false;
-    _geocoding = widget.geocoding ?? GeocodingService.forApp();
+    _geocoding = widget.geocoding ?? GeocodingService();
     final label = _label.text.trim();
     _customLabel = label.isNotEmpty && !_labelPresets.contains(label);
 
