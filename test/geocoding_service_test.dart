@@ -40,6 +40,38 @@ void main() {
         isTrue);
   });
 
+  test('ada-parsel numarası mahalle ya da sokak sayılmaz', () {
+    final place = PlaceInfo.fromNominatim({
+      'address': {
+        'neighbourhood': '63-57',
+        'road': '67-31',
+        'house_number': '12',
+        'suburb': 'Dedeoğlu Mahallesi',
+        'town': 'Devrek',
+      },
+    });
+    expect(place.area, 'Dedeoğlu Mahallesi');
+    expect(place.road, '');
+    expect(place.houseNumber, '12');
+
+    // "Mahallesi" geçen ad, sıradaki küçük yer adının önüne geçer
+    final named = PlaceInfo.fromNominatim({
+      'address': {
+        'neighbourhood': 'Gül Sitesi',
+        'suburb': 'Cumhuriyet Mahallesi',
+        'road': 'Mahalle',
+      },
+    });
+    expect(named.area, 'Cumhuriyet Mahallesi');
+    expect(named.road, '');
+
+    expect(PlaceInfo.isPlaceName('Dedeoğlu'), isTrue);
+    expect(PlaceInfo.isPlaceName('63-57'), isFalse);
+    expect(PlaceInfo.isPlaceName('67/31'), isFalse);
+    expect(PlaceInfo.isPlaceName('Sokak'), isFalse);
+    expect(PlaceInfo.isPlaceName('1. Sokak'), isTrue);
+  });
+
   test('köyde village alanı kullanılır', () {
     final place = PlaceInfo.fromNominatim({
       'address': {'village': 'Bostanlar', 'county': 'Devrek'},

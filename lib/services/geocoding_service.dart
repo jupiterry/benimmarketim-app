@@ -29,25 +29,61 @@ class PlaceInfo {
         ].where((s) => s.isNotEmpty).join(' '),
       ].where((s) => s.isNotEmpty).join(' · ');
 
-  /// Nominatim `address` nesnesinden. Mahalle için sırayla neighbourhood,
-  /// quarter, suburb, village, hamlet denenir.
+  /// Nominatim `address` nesnesinden. Mahalle için neighbourhood, quarter,
+  /// suburb, village, hamlet denenir; adında "Mahallesi" geçen öne alınır.
+  /// Ad olmayan değerler ("63-57" gibi ada-parsel numaraları) atlanır.
   factory PlaceInfo.fromNominatim(Map<String, dynamic> json) {
     final address = json['address'];
     if (address is! Map) return const PlaceInfo();
-    String pick(List<String> keys) {
-      for (final key in keys) {
-        final value = address[key];
-        if (value is String && value.trim().isNotEmpty) return value.trim();
-      }
-      return '';
-    }
+    List<String> candidates(List<String> keys) => [
+          for (final key in keys)
+            if (address[key] is String && isPlaceName(address[key] as String))
+              (address[key] as String).trim(),
+        ];
+    String first(List<String> values) => values.isEmpty ? '' : values.first;
 
+    final areas =
+        candidates(['neighbourhood', 'quarter', 'suburb', 'village', 'hamlet']);
+    final houseNumber = address['house_number'];
     return PlaceInfo(
-      area: pick(['neighbourhood', 'quarter', 'suburb', 'village', 'hamlet']),
-      road: pick(['road', 'pedestrian', 'residential', 'footway']),
-      houseNumber: pick(['house_number']),
-      town: pick(['town', 'city', 'county']),
+      area: first([
+        ...areas.where((a) => _mahalle.hasMatch(a)),
+        ...areas,
+      ]),
+      road: first(candidates(['road', 'pedestrian', 'residential', 'footway'])),
+      houseNumber: houseNumber is String ? houseNumber.trim() : '',
+      town: first(candidates(['town', 'city', 'county'])),
     );
+  }
+
+  static final _mahalle =
+      RegExp(r'\b(mahallesi|mahalle|mah\.?)$', caseSensitive: false);
+  static final _letter = RegExp(r'[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]');
+  static const _generic = {
+    'mahalle',
+    'mahallesi',
+    'mah',
+    'mah.',
+    'sokak',
+    'sokağı',
+    'sk',
+    'sk.',
+    'cadde',
+    'caddesi',
+    'cd',
+    'cd.',
+    'yol',
+    'yolu',
+    'köy',
+    'köyü',
+  };
+
+  /// Gerçek bir yer adı mı? Harf içermeyen kodlar ("63-57", "67/31", "12")
+  /// ve tek başına "Mahalle", "Sokak" gibi genel sözcükler ad sayılmaz.
+  static bool isPlaceName(String value) {
+    final text = value.trim();
+    if (text.isEmpty || !_letter.hasMatch(text)) return false;
+    return !_generic.contains(text.toLowerCase());
   }
 }
 
@@ -82,7 +118,10 @@ class PlaceSearchResult {
     if (props is! Map) return null;
     String prop(String key) {
       final v = props[key];
-      return v is String ? v.trim() : '';
+      if (v is! String) return '';
+      // Numara alanı dışında ad olmayan değerler (ada-parsel kodları) atlanır
+      if (key != 'housenumber' && !PlaceInfo.isPlaceName(v)) return '';
+      return v.trim();
     }
 
     final name = prop('name');
