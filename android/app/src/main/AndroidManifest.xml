@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- İnternet erişimi için gerekli izinler -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -21,7 +22,10 @@
         android:label="Benim Marketim"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:targetApi="31">
         <!-- Meta (Facebook) App Events. Kullanıcı izni olmadan otomatik olay
              kaydı ve reklam kimliği toplama kapalıdır; izin uygulama içinden
              verilince MetaAppEventsService bunları açar. -->

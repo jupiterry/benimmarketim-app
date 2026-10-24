@@ -115,10 +115,16 @@ class ApiService {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          // Token varsa header'a ekle
-          final token = await _getStoredToken();
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
+          // Token varsa header'a ekle. Dio, async interceptor içinde
+          // fırlatılan hatayı yakalamaz: handler çağrılmazsa istek sonsuza
+          // kadar bekler. Token okunamazsa istek oturumsuz gider.
+          try {
+            final token = await _getStoredToken();
+            if (token != null) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+          } catch (e) {
+            AppLogger.debug('Token okunamadı, istek oturumsuz gidiyor: $e');
           }
           handler.next(options);
         },

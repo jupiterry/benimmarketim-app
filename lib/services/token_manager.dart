@@ -1,13 +1,58 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'app_logger.dart';
 
+/// Oturum token'ları (Secure Storage).
+///
+/// Okumalar hiçbir zaman hata fırlatmaz: Android otomatik yedeği şifreli
+/// kaydı geri getirip Keystore anahtarını getirmezse kayıt çözülemez ve her
+/// okuma [PlatformException] verir. Bu durumda bozuk token kayıtları silinir
+/// ve null döner (kullanıcı bir kez yeniden giriş yapar). Depo yanıt
+/// vermezse [readTimeout] sonunda null döner (kayıt silinmez). Böylece token
+/// okuyan hiçbir istek askıda kalmaz.
 class TokenManager {
   static const String _accessTokenKey = 'access_token';
   static const String _refreshTokenKey = 'refresh_token';
   static const String _tokenSavedDateKey = 'token_saved_date';
 
+  static const _keys = [_accessTokenKey, _refreshTokenKey, _tokenSavedDateKey];
+
   // Secure Storage instance
   static const _secureStorage = FlutterSecureStorage();
+
+  /// Depo bu sürede yanıt vermezse okuma null döner.
+  static Duration readTimeout = const Duration(seconds: 5);
+
+  static Future<String?> _read(String key) async {
+    try {
+      return await _secureStorage.read(key: key).timeout(readTimeout);
+    } on TimeoutException {
+      AppLogger.debug('Secure Storage okuması zaman aşımına uğradı ($key)');
+      return null;
+    } on PlatformException catch (e) {
+      // Çözülemeyen (bozuk) kayıt: silinir, kullanıcı yeniden giriş yapar.
+      AppLogger.debug(
+          'Secure Storage okunamadı ($key), token\'lar siliniyor: $e');
+      await _deleteKeys();
+      return null;
+    } catch (e) {
+      AppLogger.debug('Secure Storage okunamadı ($key): $e');
+      return null;
+    }
+  }
+
+  /// Bu sınıfın yazdığı anahtarları siler; hata fırlatmaz.
+  static Future<void> _deleteKeys() async {
+    for (final key in _keys) {
+      try {
+        await _secureStorage.delete(key: key).timeout(readTimeout);
+      } catch (e) {
+        AppLogger.debug('Secure Storage kaydı silinemedi ($key): $e');
+      }
+    }
+  }
 
   // SharedPreferences'ı başlat (Artık kullanılmıyor ama uyumluluk için boş bırakıyoruz)
   static Future<void> init() async {
@@ -29,9 +74,7 @@ class TokenManager {
   }
 
   // Access token alma (Secure Storage)
-  static Future<String?> getAccessToken() async {
-    return await _secureStorage.read(key: _accessTokenKey);
-  }
+  static Future<String?> getAccessToken() => _read(_accessTokenKey);
 
   // Refresh token kaydetme (Secure Storage)
   static Future<void> saveRefreshToken(String token) async {
@@ -39,13 +82,11 @@ class TokenManager {
   }
 
   // Refresh token alma (Secure Storage)
-  static Future<String?> getRefreshToken() async {
-    return await _secureStorage.read(key: _refreshTokenKey);
-  }
+  static Future<String?> getRefreshToken() => _read(_refreshTokenKey);
 
   // Token kayıt tarihini alma
   static Future<DateTime?> getTokenSavedDate() async {
-    final dateString = await _secureStorage.read(key: _tokenSavedDateKey);
+    final dateString = await _read(_tokenSavedDateKey);
     if (dateString != null) {
       try {
         return DateTime.parse(dateString);
@@ -64,12 +105,10 @@ class TokenManager {
     return token != null && token.isNotEmpty;
   }
 
-  // Tüm token'ları temizle
+  // Tüm token'ları temizle (hata fırlatmaz)
   static Future<void> clearAllTokens() async {
     // Yalnızca bu sınıfın yazdığı anahtarları sil.
-    await _secureStorage.delete(key: _accessTokenKey);
-    await _secureStorage.delete(key: _refreshTokenKey);
-    await _secureStorage.delete(key: _tokenSavedDateKey);
+    await _deleteKeys();
     AppLogger.debug('Tüm token\'lar Secure Storage\'dan temizlendi');
   }
 
@@ -82,8 +121,8 @@ class TokenManager {
   // Debug: Token durumunu göster
   static Future<void> debugTokens() async {
     final savedDate = await getTokenSavedDate();
-    final hasAccess = await _secureStorage.containsKey(key: _accessTokenKey);
-    final hasRefresh = await _secureStorage.containsKey(key: _refreshTokenKey);
+    final hasAccess = await getAccessToken() != null;
+    final hasRefresh = await getRefreshToken() != null;
 
     AppLogger.debug('=== Token Debug (Secure Storage) ===');
     AppLogger.debug('Access Token: ${hasAccess ? "Var" : "Yok"}');

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 ve altı otomatik yedek. Token'lar flutter_secure_storage ile
+     şifreli saklanır; şifre anahtarı Android Keystore'dadır ve yedeklenmez.
+     Şifreli kayıt geri yüklenirse çözülemez, bu yüzden yedeğe girmez.
+     Diğer veriler yedeklenmeye devam eder. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
+</full-backup-content>

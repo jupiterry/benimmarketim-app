@@ -22,10 +22,13 @@ class ChatService {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await TokenManager.getAccessToken();
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
-          }
+          // Token okunamazsa istek oturumsuz gider; handler her zaman çağrılır.
+          try {
+            final token = await TokenManager.getAccessToken();
+            if (token != null) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+          } catch (_) {}
           handler.next(options);
         },
       ),
