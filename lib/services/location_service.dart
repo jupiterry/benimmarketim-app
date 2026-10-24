@@ -6,9 +6,8 @@ import 'app_logger.dart';
 /// "Konumumu kullan" sonucu.
 enum LocationOutcome { found, denied, deniedForever, serviceOff, failed }
 
-/// Tek seferlik konum. Yalnızca kullanıcı butona bastığında, uygulama açıkken
-/// çağrılır; arka planda konum alınmaz. İzin verilmezse adres konumsuz
-/// kaydedilir.
+/// Tek seferlik konum: adres haritası açılınca ve "Konumuma git" ile,
+/// uygulama açıkken. Arka planda konum alınmaz.
 class LocationService {
   const LocationService();
 
@@ -41,6 +40,24 @@ class LocationService {
     } catch (e) {
       AppLogger.debug('Konum alınamadı: $e');
       return (outcome: LocationOutcome.failed, point: null);
+    }
+  }
+
+  /// Telefonun bildiği son konum (anında gelir, GPS beklemez). İzin
+  /// daha önce verilmediyse sormaz, null döner.
+  Future<GeoPoint?> lastKnownPoint() async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return null;
+      }
+      final position = await Geolocator.getLastKnownPosition();
+      if (position == null) return null;
+      return GeoPoint(position.latitude, position.longitude);
+    } catch (e) {
+      AppLogger.debug('Son konum alınamadı: $e');
+      return null;
     }
   }
 

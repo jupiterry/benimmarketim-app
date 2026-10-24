@@ -76,6 +76,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
     'neighborhood',
     'street',
     'buildingNo',
+    'floor',
+    'apartment',
   ];
   final Map<String, GlobalKey> _fieldKeys = {
     for (final key in _errorOrder) key: GlobalKey(),
@@ -824,9 +826,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
                     controller: _buildingNo,
                     label:
                         withNeighborhood ? 'Bina no' : 'Bina no (isteğe bağlı)',
-                    hint: 'Örn. 5',
+                    hint: 'Örn. 5, 12A',
                     maxLength: AddressFields.buildingNoMax,
                     error: errors['buildingNo'],
+                    upperCase: true,
                   ),
                 ),
               ),
@@ -848,20 +851,30 @@ class _AddressFormPageState extends State<AddressFormPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: _AddressTextField(
-                  controller: _floor,
-                  label: 'Kat',
-                  hint: 'Örn. 2',
-                  maxLength: AddressFields.floorMax,
+                child: KeyedSubtree(
+                  key: _fieldKeys['floor'],
+                  child: _AddressTextField(
+                    controller: _floor,
+                    label: 'Kat',
+                    hint: 'Örn. 2, Zemin',
+                    maxLength: AddressFields.floorMax,
+                    error: errors['floor'],
+                    capitalize: true,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _AddressTextField(
-                  controller: _apartment,
-                  label: 'Daire',
-                  hint: 'Örn. 4',
-                  maxLength: AddressFields.apartmentMax,
+                child: KeyedSubtree(
+                  key: _fieldKeys['apartment'],
+                  child: _AddressTextField(
+                    controller: _apartment,
+                    label: 'Daire',
+                    hint: 'Örn. 4',
+                    maxLength: AddressFields.apartmentMax,
+                    error: errors['apartment'],
+                    upperCase: true,
+                  ),
                 ),
               ),
             ],
@@ -1129,6 +1142,9 @@ class _AddressTextField extends StatelessWidget {
   final bool multiline;
   final bool capitalize;
 
+  /// Harfler büyük yazılır (bina no "12a" → "12A")
+  final bool upperCase;
+
   const _AddressTextField({
     required this.controller,
     this.focusNode,
@@ -1139,6 +1155,7 @@ class _AddressTextField extends StatelessWidget {
     this.showCounter = false,
     this.multiline = false,
     this.capitalize = false,
+    this.upperCase = false,
   });
 
   @override
@@ -1152,11 +1169,13 @@ class _AddressTextField extends StatelessWidget {
       keyboardType: multiline ? TextInputType.multiline : TextInputType.text,
       textInputAction:
           multiline ? TextInputAction.newline : TextInputAction.next,
-      textCapitalization: capitalize
-          ? TextCapitalization.words
-          : multiline
-              ? TextCapitalization.sentences
-              : TextCapitalization.none,
+      textCapitalization: upperCase
+          ? TextCapitalization.characters
+          : capitalize
+              ? TextCapitalization.words
+              : multiline
+                  ? TextCapitalization.sentences
+                  : TextCapitalization.none,
       style: MarketText.body(size: 15),
       decoration: InputDecoration(
         labelText: label,

@@ -18,7 +18,13 @@ class _FakeLocation extends LocationService {
   final LocationOutcome outcome;
   int calls = 0;
 
-  _FakeLocation(this.outcome);
+  /// Telefonun bildiği son konum (null: yok)
+  final GeoPoint? lastKnown;
+
+  _FakeLocation(this.outcome, {this.lastKnown});
+
+  @override
+  Future<GeoPoint?> lastKnownPoint() async => lastKnown;
 
   @override
   Future<({LocationOutcome outcome, GeoPoint? point})> currentPoint() async {
@@ -191,6 +197,49 @@ void main() {
   setUpAll(() => AddressMap.debugShowTiles = false);
 
   group('Devrek adresi', () {
+    testWidgets('anlamsız bina no, kat ve daire kabul edilmez', (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(_devrekApi());
+        await h.open(tester);
+        await tester.enterText(_field('Mahalle'), 'Cumhuriyet');
+        await tester.enterText(_field('Sokak / cadde'), 'Atatürk Cd.');
+        await tester.enterText(_field('Bina no'), 'test');
+        await tester.enterText(_field('Kat'), 'abc');
+        await tester.enterText(_field('Daire'), 'xyz');
+        await _tapSave(tester);
+        expect(find.text('Rakamla yaz (örn. 5, 12A, 15/2)'), findsOneWidget);
+        expect(find.text('Örn. 2, Zemin, Bodrum'), findsOneWidget);
+        expect(find.text('Örn. 4, 4B'), findsOneWidget);
+        expect(h.api.calls, isNot(contains('POST /addresses')));
+
+        await tester.enterText(_field('Bina no'), '12A');
+        await tester.enterText(_field('Kat'), 'Zemin');
+        await tester.enterText(_field('Daire'), '4');
+        await tester.pump();
+        await _tapSave(tester);
+        expect(h.api.lastCreateBody!['buildingNo'], '12A');
+        expect(h.api.lastCreateBody!['floor'], 'Zemin');
+        expect(h.popped, isTrue);
+      });
+    });
+
+    testWidgets(
+        'telefonun bildiği son konum Devrek\'teyse harita oradan açılır',
+        (tester) async {
+      await withoutFontErrors(() async {
+        final h = _FormHarness(_devrekApi());
+        // GPS sonuç vermiyor; son bilinen konum yine de kullanılır
+        await h.open(tester,
+            location: _FakeLocation(LocationOutcome.failed,
+                lastKnown: const GeoPoint(41.2301, 31.9512)));
+        await _fillRequired(tester);
+        await _tapSave(tester);
+        final sent = h.api.lastCreateBody!['location'] as Map;
+        expect(sent['lat'], closeTo(41.2301, 1e-6));
+        expect(sent['lng'], closeTo(31.9512, 1e-6));
+      });
+    });
+
     testWidgets('bölge kendiliğinden Devrek; mahalle, sokak, bina no zorunlu',
         (tester) async {
       await withoutFontErrors(() async {

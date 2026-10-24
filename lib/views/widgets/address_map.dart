@@ -165,6 +165,10 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   /// arama sonucu seçti): alan yüklenince harita artık oynatılmaz.
   bool _cameraSettled = false;
 
+  /// Kullanıcı haritayı kendisi kaydırdı ya da arama sonucu seçti: konum
+  /// gelince harita artık kendiliğinden oynatılmaz.
+  bool _userMoved = false;
+
   // Teslimat alanı
   DeliveryArea? _area;
   bool _areaLoading = false;
@@ -201,6 +205,8 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     }
     // Yeni adreste harita açılır açılmaz kullanıcının konumu gösterilir.
     if (initial == null) {
+      // Önce telefonun bildiği son konum (anında), sonra güncel konum
+      unawaited(_goToLastKnown());
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_goToMyLocation(auto: true));
       });
@@ -271,6 +277,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     _center = center;
     if (gesture) {
       _cameraSettled = true;
+      _userMoved = true;
       if (!_dragging) setState(() => _dragging = true);
     }
   }
@@ -315,6 +322,16 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     });
   }
 
+  /// Telefonun bildiği son konum Devrek'teyse harita hemen oraya gider;
+  /// GPS'ten güncel konum gelince [_goToMyLocation] düzeltir.
+  Future<void> _goToLastKnown() async {
+    final point = await widget.locationService.lastKnownPoint();
+    if (!mounted || point == null || _userMoved || _myLocation != null) return;
+    if (!AddressMap.isInDevrek(point)) return;
+    setState(() => _myLocation = AddressMap.toLatLng(point));
+    _moveTo(AddressMap.toLatLng(point), AddressMap.streetZoom);
+  }
+
   /// [auto]: harita açılırken kendiliğinden; kullanıcı bu arada haritayı
   /// kaydırdıysa konumuna zıplatılmaz.
   Future<void> _goToMyLocation({bool auto = false}) async {
@@ -344,7 +361,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     if (result.outcome != LocationOutcome.found || point == null) return;
     // Devrek dışındaysa harita Devrek'te kalır (not gösterilir)
     if (!AddressMap.isInDevrek(point)) return;
-    if (auto && _cameraSettled) return;
+    if (auto && _userMoved) return;
     _moveTo(AddressMap.toLatLng(point), AddressMap.streetZoom);
   }
 
@@ -429,6 +446,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
       _results = null;
       _searching = false;
     });
+    _userMoved = true;
     _moveTo(AddressMap.toLatLng(result.point), AddressMap.streetZoom);
   }
 

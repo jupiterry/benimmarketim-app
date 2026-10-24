@@ -354,23 +354,126 @@ class AddressFields {
     ].where((s) => s.isNotEmpty).join(' · ');
   }
 
-  /// Bölge tipine göre zorunlu alanlar (sunucunun kurallarıyla aynı). Hata
-  /// yoksa boş; varsa alan → mesaj. Devrek'teki konum zorunluluğunu ve sınır
-  /// denetimini form ayrıca yapar.
+  // Biçim kuralları (Türkiye adres düzeni)
+  static const _harf = 'A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû';
+
+  /// Bina no: rakamla başlar; sonda harf ve "/" ya da "-" ile ikinci numara
+  /// olabilir. "5", "12A", "12 B", "15/2", "23-25", "7/A".
+  static final _buildingNoPattern = RegExp(
+      '^\\d{1,4}\\s?[$_harf]?(\\s?[/-]\\s?(\\d{1,4}\\s?[$_harf]?|[$_harf]))?\$');
+
+  /// Daire: numara, isteğe bağlı tek harf. "4", "4B", "B4", "12".
+  static final _apartmentPattern =
+      RegExp('^([$_harf]\\s?)?\\d{1,4}\\s?[$_harf]?\$');
+
+  /// Kat: sayı (eksi = bodrum) ya da bilinen kat adı. "2", "-1", "2.",
+  /// "Zemin", "Bodrum", "Yüksek giriş", "B1".
+  static final _floorNumber = RegExp(r'^-?\d{1,2}\.?$');
+  static final _floorCode = RegExp(r'^[bk]\s?-?\d$');
+  static const _floorWords = {
+    'zemin',
+    'bodrum',
+    'bahce',
+    'giris',
+    'yuksek giris',
+    'duz giris',
+    'cati',
+    'asma',
+    'kot',
+    'teras',
+    'catı',
+  };
+
+  static String _fold(String value) {
+    const map = {
+      'ç': 'c',
+      'ğ': 'g',
+      'ı': 'i',
+      'ö': 'o',
+      'ş': 's',
+      'ü': 'u',
+      'â': 'a',
+      'î': 'i',
+      'û': 'u',
+    };
+    final lower = value.replaceAll('İ', 'i').replaceAll('I', 'ı').toLowerCase();
+    return lower.split('').map((c) => map[c] ?? c).join();
+  }
+
+  static bool isValidBuildingNo(String value) =>
+      _buildingNoPattern.hasMatch(value.trim());
+
+  static bool isValidApartment(String value) =>
+      _apartmentPattern.hasMatch(value.trim());
+
+  static bool isValidFloor(String value) {
+    var text = _fold(value.trim()).replaceAll(RegExp(r'\s+'), ' ');
+    text = text.replaceAll(RegExp(r'\s?(kat|kati)$'), '').trim();
+    if (text.isEmpty) return false;
+    return _floorNumber.hasMatch(text) ||
+        _floorCode.hasMatch(text) ||
+        _floorWords.contains(text);
+  }
+
+  /// Mahalle adı: en az iki harf; rakam ya da yalnızca "Mahalle" olamaz.
+  static bool isValidNeighborhood(String value) {
+    final text = value.trim();
+    if (RegExp(r'\d').hasMatch(text)) return false;
+    final letters = RegExp('[$_harf]').allMatches(text).length;
+    if (letters < 2) return false;
+    final bare = _fold(text).replaceAll(RegExp(r'[.\s]'), '');
+    return !{'mahalle', 'mahallesi', 'mah'}.contains(bare);
+  }
+
+  /// Sokak / cadde: en az iki karakter, harf ya da rakam içermeli
+  /// ("Atatürk Cd.", "1. Sokak", "5021 Sokak").
+  static bool isValidStreet(String value) {
+    final text = value.trim();
+    if (text.length < 2) return false;
+    final bare = _fold(text).replaceAll(RegExp(r'[.\s]'), '');
+    if ({'sokak', 'sk', 'cadde', 'cd', 'caddesi', 'sokagi'}.contains(bare)) {
+      return false;
+    }
+    return RegExp('[$_harf\\d]').hasMatch(text);
+  }
+
+  /// Bölge tipine göre zorunlu alanlar ve biçim kuralları. Hata yoksa boş;
+  /// varsa alan → mesaj. Devrek'teki konum zorunluluğunu ve sınır denetimini
+  /// form ayrıca yapar.
   Map<String, String> validate(DeliveryZoneType type) {
     final errors = <String, String>{};
-    switch (type) {
-      case DeliveryZoneType.ilce:
-        if (neighborhood.trim().isEmpty) {
-          errors['neighborhood'] = 'Mahalleni yaz';
-        }
-        if (street.trim().isEmpty) errors['street'] = 'Sokak / cadde yaz';
-        if (buildingNo.trim().isEmpty) errors['buildingNo'] = 'Bina no yaz';
-      case DeliveryZoneType.mahalle:
-      case DeliveryZoneType.koy:
-        if (street.trim().isEmpty) errors['street'] = 'Sokak / cadde yaz';
-      case DeliveryZoneType.yurt:
-        break;
+    if (type == DeliveryZoneType.yurt) return errors;
+    final requireAll = type == DeliveryZoneType.ilce;
+
+    final n = neighborhood.trim();
+    if (requireAll && n.isEmpty) {
+      errors['neighborhood'] = 'Mahalleni yaz';
+    } else if (n.isNotEmpty && !isValidNeighborhood(n)) {
+      errors['neighborhood'] = 'Mahalle adını yaz (örn. Cumhuriyet Mahallesi)';
+    }
+
+    final st = street.trim();
+    if (st.isEmpty) {
+      errors['street'] = 'Sokak / cadde yaz';
+    } else if (!isValidStreet(st)) {
+      errors['street'] = 'Sokak ya da cadde adını yaz (örn. Atatürk Caddesi)';
+    }
+
+    final b = buildingNo.trim();
+    if (requireAll && b.isEmpty) {
+      errors['buildingNo'] = 'Bina no yaz';
+    } else if (b.isNotEmpty && !isValidBuildingNo(b)) {
+      errors['buildingNo'] = 'Rakamla yaz (örn. 5, 12A, 15/2)';
+    }
+
+    final f = floor.trim();
+    if (f.isNotEmpty && !isValidFloor(f)) {
+      errors['floor'] = 'Örn. 2, Zemin, Bodrum';
+    }
+
+    final a = apartment.trim();
+    if (a.isNotEmpty && !isValidApartment(a)) {
+      errors['apartment'] = 'Örn. 4, 4B';
     }
     return errors;
   }

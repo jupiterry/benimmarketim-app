@@ -60,8 +60,8 @@ Map<String, dynamic> _addressJson(String id, String zoneId,
 
 /// Ağ yerine sabit yanıtlar veren ApiService.
 class _FakeApi extends ApiService {
-  DeliveryAccess access = const DeliveryAccess(
-      addressOrdering: 'public', canOrderToAddress: true);
+  DeliveryAccess access =
+      const DeliveryAccess(addressOrdering: 'public', canOrderToAddress: true);
   bool accessFails = false;
   int accessCalls = 0;
   int quoteCalls = 0;
@@ -103,8 +103,8 @@ class _FakeApi extends ApiService {
     quoteCalls++;
     quoteRequests.add({'zoneId': zoneId, 'products': products});
     if (quoteFailure != null) throw quoteFailure!;
-    final subtotal = products.fold<double>(
-        0, (sum, p) => sum + 10 * (p['quantity'] as int));
+    final subtotal =
+        products.fold<double>(0, (sum, p) => sum + 10 * (p['quantity'] as int));
     return DeliveryQuote(
       zoneId: zoneId,
       subtotal: subtotal,
@@ -176,6 +176,52 @@ void main() {
       expect(full.validate(DeliveryZoneType.ilce), isEmpty);
     });
 
+    test('bina no, kat, daire, mahalle ve sokak biçimi', () {
+      for (final ok in ['5', '12A', '12 b', '15/2', '23-25', '7/A', '1234']) {
+        expect(AddressFields.isValidBuildingNo(ok), isTrue, reason: ok);
+      }
+      for (final bad in ['test', 'A', '', 'no 5', '5 5 5', '12AB', '-3']) {
+        expect(AddressFields.isValidBuildingNo(bad), isFalse, reason: bad);
+      }
+      for (final ok in [
+        '2',
+        '-1',
+        '2.',
+        'Zemin',
+        'zemin kat',
+        'Bodrum',
+        'Yüksek giriş',
+        'Bahçe katı',
+        'B1',
+        'Çatı'
+      ]) {
+        expect(AddressFields.isValidFloor(ok), isTrue, reason: ok);
+      }
+      for (final bad in ['abc', 'test', '123', 'kat']) {
+        expect(AddressFields.isValidFloor(bad), isFalse, reason: bad);
+      }
+      for (final ok in ['4', '4B', 'B4', '12']) {
+        expect(AddressFields.isValidApartment(ok), isTrue, reason: ok);
+      }
+      for (final bad in ['xyz', 'daire', 'AB4']) {
+        expect(AddressFields.isValidApartment(bad), isFalse, reason: bad);
+      }
+      expect(AddressFields.isValidNeighborhood('Dedeoğlu'), isTrue);
+      expect(AddressFields.isValidNeighborhood('63-57'), isFalse);
+      expect(AddressFields.isValidNeighborhood('Mahalle'), isFalse);
+      expect(AddressFields.isValidStreet('5021 Sokak'), isTrue);
+      expect(AddressFields.isValidStreet('1. Sokak'), isTrue);
+      expect(AddressFields.isValidStreet('Sokak'), isFalse);
+      expect(AddressFields.isValidStreet('.'), isFalse);
+
+      const bad = AddressFields(
+        neighborhood: 'Cumhuriyet',
+        street: 'Atatürk Cd.',
+        buildingNo: 'test',
+      );
+      expect(bad.validate(DeliveryZoneType.ilce).keys, ['buildingNo']);
+    });
+
     test('Devrek bölgesi ve mahalle', () {
       final zone = DeliveryZone.fromJson({
         'id': 'devrek',
@@ -213,7 +259,8 @@ void main() {
     test('adres özeti', () {
       final address = DeliveryAddress.fromJson(_addressJson('a1', 'mah-1'));
       expect(address.fields.summary, 'Atatürk Cd. No:5 · Kat 2 · Daire 4');
-      expect(address.summary, 'Bölge mah-1 · Atatürk Cd. No:5 · Kat 2 · Daire 4');
+      expect(
+          address.summary, 'Bölge mah-1 · Atatürk Cd. No:5 · Kat 2 · Daire 4');
     });
   });
 
@@ -230,7 +277,8 @@ void main() {
           totalAmount: 20,
           city: 'Zonguldak',
           phone: '05321234567',
-          deliveryPoint: addressId == null && address == null ? 'girlsDorm' : '',
+          deliveryPoint:
+              addressId == null && address == null ? 'girlsDorm' : '',
           deliveryPointName: 'Kız KYK Yurdu',
           note: '',
           paymentMethod: PaymentMethod.cash,
@@ -286,7 +334,11 @@ void main() {
         '_id': 'o2',
         'totalAmount': 180,
         'deliveryType': 'address',
-        'deliveryZone': {'id': 'mah-1', 'name': 'Cumhuriyet', 'type': 'mahalle'},
+        'deliveryZone': {
+          'id': 'mah-1',
+          'name': 'Cumhuriyet',
+          'type': 'mahalle'
+        },
         'deliveryAddress': {'street': 'Atatürk Cd.', 'buildingNo': '5'},
         'deliveryFee': 40,
         'productTotal': 140,
@@ -310,7 +362,8 @@ void main() {
       vm.dispose();
     });
 
-    test('açılınca bölgeler ve adresler yüklenir, varsayılan seçilir', () async {
+    test('açılınca bölgeler ve adresler yüklenir, varsayılan seçilir',
+        () async {
       final api = _FakeApi();
       final vm = await _signedIn(api);
       expect(vm.canOrderToAddress, isTrue);
