@@ -73,10 +73,14 @@ dependencies:
   # lib/services/meta_app_events_service.dart
   facebook_app_events: ^0.31.0
 
-  # Adres formundaki isteğe bağlı "Konumumu kullan" (yalnızca butona basınca,
-  # tek seferlik; arka planda konum yok)
+  # Adres haritasında kullanıcının konumu (harita açılınca ve "Konumuma git"
+  # ile, tek seferlik; arka planda konum yok)
   geolocator: ^14.0.2
+
+  # Adres haritası: MapLibre + OpenFreeMap vektör karoları (anahtarsız).
+  # Android derlemesi JDK 21 ister.
   maplibre_gl: ^0.27.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -4,6 +4,7 @@ import 'dart:math' show Point;
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
+import '../../models/delivery.dart';
 import 'market_ui.dart';
 
 /// Haritayı koddan taşımak için ([MapSurface.onReady] ile gelir).
@@ -15,8 +16,12 @@ abstract class MapSurfaceHandle {
 }
 
 /// Adres haritasının çizildiği yüzey: MapLibre (vektör harita, OpenFreeMap
-/// karoları; anahtar gerekmez). Teslimat alanı ([areaRings]) verilirse
-/// alanın dışı hafifçe karartılır ve sınırı yeşil çizilir.
+/// karoları; anahtar gerekmez). Teslimat alanı ([area]) verilirse alanın
+/// dışı hafifçe karartılır ve sınırı yeşil çizilir.
+///
+/// Alan, sınır ve konum noktası stil yüklenince bir kez eklenen GeoJSON
+/// katmanlarıdır; değişince yalnızca verileri güncellenir (yanıp sönmez,
+/// üst üste binmez). Katmanlar dokunmayı yutmaz, [onTap] her yerde gelir.
 class MapSurface extends StatefulWidget {
   final LatLng initialCenter;
   final double initialZoom;
@@ -26,8 +31,8 @@ class MapSurface extends StatefulWidget {
   /// Harita merkezi bu alanın dışına çıkamaz
   final LatLngBounds? centerBounds;
 
-  /// Teslimat alanının dış sınırları
-  final List<List<LatLng>> areaRings;
+  /// Teslimat alanı (aynı nesne geldikçe yeniden çizilmez)
+  final DeliveryArea? area;
 
   /// Kullanıcının konumu (mavi nokta)
   final LatLng? myLocation;
@@ -35,12 +40,14 @@ class MapSurface extends StatefulWidget {
   /// false: dokunulmaz önizleme
   final bool interactive;
 
-  /// Kaynak gösteriminin kenar boşluğu
+  /// MapLibre kaynak düğmesinin (ⓘ) sol alt köşeden uzaklığı
   final EdgeInsets attributionPadding;
 
+  /// Harita stili yüklendi, taşınabilir
   final ValueChanged<MapSurfaceHandle>? onReady;
 
-  /// Merkez değişti; [gesture]: kullanıcı kaydırdı
+  /// Merkez değişti; [gesture]: kullanıcı kaydırdı. Harita durunca son
+  /// konum `gesture: false` ile bir kez daha gelir.
   final void Function(LatLng center, bool gesture)? onMove;
 
   /// Harita durdu
@@ -54,7 +61,7 @@ class MapSurface extends StatefulWidget {
     this.minZoom = 11,
     this.maxZoom = 19,
     this.centerBounds,
-    this.areaRings = const [],
+    this.area,
     this.myLocation,
     this.interactive = true,
     this.attributionPadding = const EdgeInsets.all(12),
@@ -71,15 +78,6 @@ class MapSurface extends StatefulWidget {
   /// sağlayıcıya (ör. MapTiler) geçmek için yalnızca bu satır değişir.
   static const String styleUrl = MapLibreStyles.openfreemapLiberty;
 
-  /// Alanın dışını kaplayan çerçeve (alanın dış sınırları bunda delik)
-  static const _outer = [
-    LatLng(36, 26),
-    LatLng(36, 38),
-    LatLng(44, 38),
-    LatLng(44, 26),
-    LatLng(36, 26),
-  ];
-
   @override
   State<MapSurface> createState() => _MapSurfaceState();
 }
@@ -92,28 +90,68 @@ class _MapSurfaceState extends State<MapSurface> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// GeoJSON (koordinatlar [boylam, enlem])
+// ---------------------------------------------------------------------------
+
+/// Alanın dışını kaplayan çerçeve (alanın dış sınırları bunda delik)
+const _outerRing = [
+  [26.0, 36.0],
+  [38.0, 36.0],
+  [38.0, 44.0],
+  [26.0, 44.0],
+  [26.0, 36.0],
+];
+
+List<List<double>> _ring(List<GeoPoint> ring) => [
+      for (final p in ring) [p.lng, p.lat],
+    ];
+
+Map<String, dynamic> _collection(List<Map<String, dynamic>> features) => {
+      'type': 'FeatureCollection',
+      'features': features,
+    };
+
+Map<String, dynamic> _feature(String type, Object coordinates) => {
+      'type': 'Feature',
+      'properties': <String, dynamic>{},
+      'geometry': {'type': type, 'coordinates': coordinates},
+    };
+
+/// Karartma: çerçeve eksi teslimat alanları; alanların içindeki delikler
+/// (teslimat yok) ayrıca karartılır.
+Map<String, dynamic> _maskData(DeliveryArea? area) {
+  if (area == null) return _collection(const []);
+  return _collection([
+    _feature('Polygon', [
+      _outerRing,
+      for (final rings in area.polygons) _ring(rings.first),
+    ]),
+    for (final rings in area.polygons)
+      for (final hole in rings.skip(1)) _feature('Polygon', [_ring(hole)]),
+  ]);
+}
+
+/// Sınır: tüm halkalar (çok parçalı alan ve delikler dahil)
+Map<String, dynamic> _borderData(DeliveryArea? area) {
+  if (area == null) return _collection(const []);
+  return _collection([
+    for (final rings in area.polygons)
+      for (final ring in rings) _feature('LineString', _ring(ring)),
+  ]);
+}
+
+Map<String, dynamic> _pointData(LatLng? point) => _collection([
+      if (point != null) _feature('Point', [point.longitude, point.latitude]),
+    ]);
+
 /// MapLibre renkleri "#RRGGBB" ister
 String _hex(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
-/// Lisans gereği kaynak gösterimi
-class _Attribution extends StatelessWidget {
-  const _Attribution();
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .82),
-          borderRadius: BorderRadius.circular(MarketRadius.xs),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Text('© OpenStreetMap katkıcıları · OpenFreeMap',
-              style:
-                  MarketText.caption(size: 11, color: MarketPalette.inkSoft)),
-        ),
-      );
-}
+// ---------------------------------------------------------------------------
+// MapLibre
+// ---------------------------------------------------------------------------
 
 class _MapLibreSurface extends StatefulWidget {
   final MapSurface config;
@@ -125,19 +163,21 @@ class _MapLibreSurface extends StatefulWidget {
 
 class _MapLibreSurfaceState extends State<_MapLibreSurface>
     implements MapSurfaceHandle {
+  static const _maskSource = 'teslimat-maske';
+  static const _borderSource = 'teslimat-sinir';
+  static const _locationSource = 'konumum';
+
   MapLibreMapController? _controller;
-  bool _styleLoaded = false;
+  bool _layersReady = false;
   late LatLng _center = widget.config.initialCenter;
 
   /// Kamera koddan taşınıyor: bu sırada gelen hareketler kullanıcının değil.
-  /// Hareket bitince (idle) ya da kısa süre sonra düşer.
+  /// Harita durunca (idle) ya da kısa süre sonra düşer.
   bool _programmatic = false;
   Timer? _programmaticTimer;
 
-  // Çizili katmanlar (alan, sınır, konum); veri değişince yeniden çizilir
-  Fill? _mask;
-  Line? _border;
-  Circle? _myLocation;
+  /// Katman güncellemeleri sırayla gider
+  Future<void> _jobs = Future.value();
 
   MapSurface get c => widget.config;
 
@@ -172,13 +212,75 @@ class _MapLibreSurfaceState extends State<_MapLibreSurface>
     )));
   }
 
+  void _queue(Future<void> Function(MapLibreMapController controller) job) {
+    _jobs = _jobs.then((_) async {
+      final controller = _controller;
+      if (!mounted || controller == null) return;
+      try {
+        await job(controller);
+      } catch (e) {
+        debugPrint('Harita katmanı güncellenemedi: $e');
+      }
+    });
+  }
+
+  /// Stil yüklenince kaynaklar ve katmanlar bir kez eklenir.
+  void _addLayers() {
+    _queue((map) async {
+      await map.addGeoJsonSource(_maskSource, _maskData(c.area));
+      await map.addGeoJsonSource(_borderSource, _borderData(c.area));
+      await map.addGeoJsonSource(_locationSource, _pointData(c.myLocation));
+      await map.addFillLayer(
+        _maskSource,
+        '$_maskSource-katman',
+        FillLayerProperties(
+          fillColor: _hex(MarketPalette.greenDeep),
+          fillOpacity: .16,
+        ),
+        enableInteraction: false,
+      );
+      await map.addLineLayer(
+        _borderSource,
+        '$_borderSource-katman',
+        LineLayerProperties(
+          lineColor: _hex(MarketPalette.green),
+          lineWidth: 3,
+          lineJoin: 'round',
+        ),
+        enableInteraction: false,
+      );
+      await map.addCircleLayer(
+        _locationSource,
+        '$_locationSource-katman',
+        CircleLayerProperties(
+          circleRadius: 8,
+          circleColor: _hex(MarketPalette.blue),
+          circleStrokeColor: '#ffffff',
+          circleStrokeWidth: 3,
+        ),
+        enableInteraction: false,
+      );
+      _layersReady = true;
+    });
+  }
+
   @override
   void didUpdateWidget(covariant _MapLibreSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_styleLoaded) return;
-    if (c.areaRings != oldWidget.config.areaRings) unawaited(_drawArea());
-    if (c.myLocation != oldWidget.config.myLocation) {
-      unawaited(_drawMyLocation());
+    final area = c.area;
+    if (!identical(area, oldWidget.config.area)) {
+      _queue((map) async {
+        if (!_layersReady) return;
+        await map.setGeoJsonSource(_maskSource, _maskData(area));
+        await map.setGeoJsonSource(_borderSource, _borderData(area));
+      });
+    }
+    final location = c.myLocation;
+    if (location != oldWidget.config.myLocation) {
+      _queue((map) async {
+        if (!_layersReady) return;
+        await map.setGeoJsonSource(_locationSource, _pointData(location));
+      });
     }
   }
 
@@ -188,103 +290,68 @@ class _MapLibreSurfaceState extends State<_MapLibreSurface>
     super.dispose();
   }
 
-  Future<void> _drawArea() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (_mask != null) await controller.removeFill(_mask!);
-    if (_border != null) await controller.removeLine(_border!);
-    _mask = null;
-    _border = null;
-    if (c.areaRings.isEmpty) return;
-    _mask = await controller.addFill(FillOptions(
-      geometry: [MapSurface._outer, ...c.areaRings],
-      fillColor: _hex(MarketPalette.greenDeep),
-      fillOpacity: .16,
-    ));
-    _border = await controller.addLine(LineOptions(
-      // Sınır çizgisi: ayrı halkalar tek çizgide birleşmesin diye yalnızca
-      // ilk halka çizilir; alan çok parçalıysa dolgu zaten dışı karartır.
-      geometry: c.areaRings.first,
-      lineColor: _hex(MarketPalette.green),
-      lineWidth: 3,
-    ));
-  }
-
-  Future<void> _drawMyLocation() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (_myLocation != null) await controller.removeCircle(_myLocation!);
-    _myLocation = null;
-    final point = c.myLocation;
-    if (point == null) return;
-    _myLocation = await controller.addCircle(CircleOptions(
-      geometry: point,
-      circleRadius: 8,
-      circleColor: _hex(MarketPalette.blue),
-      circleStrokeColor: '#ffffff',
-      circleStrokeWidth: 3,
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
     final bounds = c.centerBounds;
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: MapLibreMap(
-            styleString: MapSurface.styleUrl,
-            initialCameraPosition: CameraPosition(
-              target: c.initialCenter,
-              zoom: c.initialZoom,
-            ),
-            minMaxZoomPreference: MinMaxZoomPreference(c.minZoom, c.maxZoom),
-            cameraTargetBounds: bounds == null
-                ? CameraTargetBounds.unbounded
-                : CameraTargetBounds(bounds),
-            trackCameraPosition: true,
-            scrollGesturesEnabled: c.interactive,
-            zoomGesturesEnabled: c.interactive,
-            dragEnabled: c.interactive,
-            rotateGesturesEnabled: false,
-            tiltGesturesEnabled: false,
-            compassEnabled: false,
-            // Kaynak gösterimi alttaki kendi satırımızda
-            attributionButtonPosition: AttributionButtonPosition.topRight,
-            attributionButtonMargins: const Point(-100, -100),
-            onMapCreated: (controller) {
-              _controller = controller;
-            },
-            onStyleLoadedCallback: () {
-              _styleLoaded = true;
-              unawaited(_drawArea());
-              unawaited(_drawMyLocation());
-              c.onReady?.call(this);
-            },
-            onCameraMove: (position) {
-              _center = position.target;
-              c.onMove?.call(_center, !_programmatic);
-            },
-            onCameraIdle: () {
-              _programmatic = false;
-              final position = _controller?.cameraPosition;
-              if (position != null) _center = position.target;
-              c.onIdle?.call();
-            },
-            onMapClick: (_, __) => c.onTap?.call(),
-          ),
-        ),
-        Positioned(
-          left: c.attributionPadding.left,
-          bottom: c.attributionPadding.bottom,
-          child: const _Attribution(),
-        ),
-      ],
+    return MapLibreMap(
+      styleString: MapSurface.styleUrl,
+      initialCameraPosition: CameraPosition(
+        target: c.initialCenter,
+        zoom: c.initialZoom,
+      ),
+      minMaxZoomPreference: MinMaxZoomPreference(c.minZoom, c.maxZoom),
+      cameraTargetBounds: bounds == null
+          ? CameraTargetBounds.unbounded
+          : CameraTargetBounds(bounds),
+      trackCameraPosition: true,
+      scrollGesturesEnabled: c.interactive,
+      zoomGesturesEnabled: c.interactive,
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      compassEnabled: false,
+      // Nesne sürükleme yok (Android'de her kaydırmada sorgu yapmasın)
+      dragEnabled: false,
+      // Hazır nesne (annotation) katmanı kullanılmıyor; dokunmalar haritaya
+      // gelir (liste en az bir öğe ister, sembol hiç eklenmez).
+      annotationOrder: const [],
+      annotationConsumeTapEvents: const [AnnotationType.symbol],
+      // Kaynak bilgisi: MapLibre'nin kendi (ⓘ) düğmesi, sol altta
+      attributionButtonPosition: AttributionButtonPosition.bottomLeft,
+      attributionButtonMargins: Point(
+        c.attributionPadding.left,
+        c.attributionPadding.bottom,
+      ),
+      onMapCreated: (controller) => _controller = controller,
+      onStyleLoadedCallback: () {
+        _addLayers();
+        c.onReady?.call(this);
+      },
+      onCameraMove: (position) {
+        _center = position.target;
+        c.onMove?.call(_center, !_programmatic);
+      },
+      onCameraIdle: () {
+        _programmatic = false;
+        // Son konum yalnızca durunca kesinleşir (iOS'ta animasyonsuz
+        // taşımada hareket bildirimi hiç gelmez)
+        final position = _controller?.cameraPosition;
+        if (position != null) {
+          _center = position.target;
+          c.onMove?.call(_center, false);
+        }
+        c.onIdle?.call();
+      },
+      onMapClick: (_, __) => c.onTap?.call(),
     );
   }
 }
 
-/// Testlerde platform görünümü yerine düz yüzey.
+// ---------------------------------------------------------------------------
+// Testler için düz yüzey
+// ---------------------------------------------------------------------------
+
+/// Testlerde platform görünümü yerine düz yüzey. Taşıma, gerçek harita gibi
+/// bir sonraki adımda "hareket + durdu" olarak bildirilir.
 class _PlainSurface extends StatefulWidget {
   final MapSurface config;
   const _PlainSurface(this.config);
@@ -300,14 +367,23 @@ class _PlainSurfaceState extends State<_PlainSurface>
   @override
   LatLng get center => _center;
 
-  @override
-  void move(LatLng point, double zoom) => _center = point;
+  void _settle(LatLng point) {
+    _center = point;
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      widget.config.onMove?.call(_center, false);
+      widget.config.onIdle?.call();
+    });
+  }
 
   @override
-  void fit(LatLngBounds bounds) => _center = LatLng(
+  void move(LatLng point, double zoom) => _settle(point);
+
+  @override
+  void fit(LatLngBounds bounds) => _settle(LatLng(
         (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
         (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
-      );
+      ));
 
   @override
   void initState() {
@@ -318,19 +394,8 @@ class _PlainSurfaceState extends State<_PlainSurface>
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: widget.config.onTap,
-              child: const ColoredBox(color: MarketPalette.surfaceMuted),
-            ),
-          ),
-          Positioned(
-            left: widget.config.attributionPadding.left,
-            bottom: widget.config.attributionPadding.bottom,
-            child: const _Attribution(),
-          ),
-        ],
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: widget.config.onTap,
+        child: const ColoredBox(color: MarketPalette.surfaceMuted),
       );
 }

@@ -137,7 +137,8 @@ Future<void> settle(WidgetTester tester) async {
 
 Finder _field(String label) => find.widgetWithText(TextField, label);
 
-Future<void> _tapSave(WidgetTester tester, [String text = 'Adresi kaydet']) async {
+Future<void> _tapSave(WidgetTester tester,
+    [String text = 'Adresi kaydet']) async {
   await tester.tap(find.text(text));
   await settle(tester);
 }
@@ -250,7 +251,8 @@ void main() {
         // Kullanıcının yazdığı alan korunur; otomatik dolanlar yeni konuma
         // göre yenilenir.
         await tester.enterText(_field('Sokak / cadde'), 'Kendi Sokağım');
-        geocoding.place = const PlaceInfo(area: 'Özbağ Mahallesi', road: 'Gül Sk.');
+        geocoding.place =
+            const PlaceInfo(area: 'Özbağ Mahallesi', road: 'Gül Sk.');
         await tester.tap(find.text('Konumu değiştir'));
         await settle(tester);
         await tester.tap(find.text('Bu konumu kullan'));
@@ -338,8 +340,8 @@ void main() {
         await h.open(tester,
             location: _PointLocation(const GeoPoint(41.30, 32.10)),
             confirmMap: false);
-        expect(find.textContaining('teslimat alanımızın dışında'),
-            findsOneWidget);
+        expect(
+            find.textContaining('teslimat alanımızın dışında'), findsOneWidget);
         final confirm = find.widgetWithText(FilledButton, 'Bu konumu kullan');
         expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
       });
@@ -349,7 +351,8 @@ void main() {
       await withoutFontErrors(() async {
         final h = _FormHarness(_devrekApi());
         await h.open(tester, confirmMap: false);
-        expect(find.textContaining('teslimat alanımızın dışında'), findsNothing);
+        expect(
+            find.textContaining('teslimat alanımızın dışında'), findsNothing);
         final confirm = find.widgetWithText(FilledButton, 'Bu konumu kullan');
         expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
       });
@@ -361,7 +364,8 @@ void main() {
         await h.open(tester,
             location: _PointLocation(const GeoPoint(41.30, 32.10)),
             confirmMap: false);
-        expect(find.textContaining('teslimat alanımızın dışında'), findsNothing);
+        expect(
+            find.textContaining('teslimat alanımızın dışında'), findsNothing);
         await tester.tap(find.text('Bu konumu kullan'));
         await settle(tester);
         expect(find.text('Teslimat konumu'), findsOneWidget);
@@ -439,7 +443,8 @@ void main() {
         await h.open(tester, geocoding: geocoding, confirmMap: false);
 
         await search(tester, 'xyz');
-        expect(find.textContaining("Devrek'te sonuç bulamadık"), findsOneWidget);
+        expect(
+            find.textContaining("Devrek'te sonuç bulamadık"), findsOneWidget);
 
         geocoding.searchFails = true;
         await search(tester, 'gül');
@@ -737,8 +742,7 @@ void main() {
       await withoutFontErrors(() async {
         final h = _FormHarness(_devrekApi(withArea: false));
         await h.open(tester,
-            location: _FakeLocation(LocationOutcome.denied),
-            confirmMap: false);
+            location: _FakeLocation(LocationOutcome.denied), confirmMap: false);
         expect(find.textContaining('Konum izni verilmedi'), findsOneWidget);
         await tester.tap(find.text('Bu konumu kullan'));
         await settle(tester);
@@ -781,8 +785,8 @@ void main() {
         await h.open(tester,
             location: _PointLocation(const GeoPoint(39.92, 32.85)),
             confirmMap: false);
-        expect(find.textContaining('Devrek dışında görünüyorsun'),
-            findsOneWidget);
+        expect(
+            find.textContaining('Devrek dışında görünüyorsun'), findsOneWidget);
       });
     });
   });

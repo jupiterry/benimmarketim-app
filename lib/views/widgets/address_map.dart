@@ -31,6 +31,7 @@ abstract final class AddressMap {
   static set debugShowTiles(bool value) => MapSurface.debugShowTiles = value;
 
   static LatLng toLatLng(GeoPoint point) => LatLng(point.lat, point.lng);
+
   /// Sunucuyla aynı duyarlık (6 ondalık ≈ 10 cm); LatLng'nin boylam
   /// normalleştirmesinden gelen kayan nokta artığı atılır.
   static GeoPoint toGeoPoint(LatLng point) => GeoPoint(
@@ -146,6 +147,15 @@ class AddressMapPickerPage extends StatefulWidget {
 class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   MapSurfaceHandle? _handle;
   late LatLng _center;
+
+  /// Harita stili yüklendi; yüklenmeden iğne onaylanamaz. [_mapLoadTimeout]
+  /// içinde yüklenmezse (ör. internet yok) "Tekrar dene" gösterilir.
+  static const _mapLoadTimeout = Duration(seconds: 15);
+  bool _mapReady = false;
+  bool _mapFailed = false;
+  Timer? _mapTimer;
+  int _mapGeneration = 0;
+
   LatLng? _myLocation;
   bool _locating = false;
   bool _dragging = false;
@@ -183,6 +193,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
         ? AddressMap.toLatLng(initial)
         : AddressMap.devrekCenter;
     _cameraSettled = initial != null;
+    _mapTimer = Timer(_mapLoadTimeout, _onMapTimeout);
     final area = widget.area;
     if (area != null) {
       _areaLoading = true;
@@ -202,6 +213,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   void dispose() {
     _placeTimer?.cancel();
     _searchTimer?.cancel();
+    _mapTimer?.cancel();
     _query.dispose();
     _queryFocus.dispose();
     super.dispose();
@@ -214,16 +226,39 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
       _areaLoading = false;
       _outside = _isOutside(_center);
     });
-    // Konum yoksa harita tüm teslimat alanını gösterecek şekilde açılır
+    // Konum yoksa harita tüm teslimat alanını gösterecek şekilde açılır;
+    // yeni merkez harita durunca (onMove + onIdle) gelir.
     final handle = _handle;
     if (area != null && !_cameraSettled && handle != null) {
       handle.fit(AddressMap.boundsOf(area));
-      _center = handle.center;
     }
+  }
+
+  void _onMapTimeout() {
+    if (!mounted || _mapReady) return;
+    setState(() => _mapFailed = true);
+  }
+
+  /// Harita yüklenemedi: haritayı baştan kurar.
+  void _retryMap() {
+    _mapTimer?.cancel();
+    _mapTimer = Timer(_mapLoadTimeout, _onMapTimeout);
+    setState(() {
+      _mapFailed = false;
+      _handle = null;
+      _mapGeneration++;
+    });
   }
 
   void _onMapReady(MapSurfaceHandle handle) {
     _handle = handle;
+    _mapTimer?.cancel();
+    if (!_mapReady || _mapFailed) {
+      setState(() {
+        _mapReady = true;
+        _mapFailed = false;
+      });
+    }
     // Konum ya da alan harita hazır olmadan geldiyse şimdi uygulanır
     if (_cameraSettled && _center != handle.center) {
       handle.move(_center, AddressMap.streetZoom);
@@ -317,7 +352,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
       _myLocation != null &&
       !AddressMap.isInDevrek(AddressMap.toGeoPoint(_myLocation!));
 
-  bool get _canConfirm => !_areaLoading && !_outside && !_dragging;
+  bool get _canConfirm => _mapReady && !_areaLoading && !_outside && !_dragging;
 
   void _confirm() => Navigator.of(context).pop(AddressMap.toGeoPoint(_center));
 
@@ -354,7 +389,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
   void _onQueryChanged(String value) {
     setState(() {});
     final geocoding = widget.geocoding;
-    if (geocoding == null || !geocoding.autocomplete) return;
+    if (geocoding == null) return;
     _searchTimer?.cancel();
     if (value.trim().length < 3) {
       _searchSeq++;
@@ -381,19 +416,30 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     });
   }
 
+  /// Yoldaki (eski) arama yanıtı listeyi yeniden açmasın
+  void _dropPendingSearch() {
+    _searchTimer?.cancel();
+    _searchSeq++;
+  }
+
   void _pickResult(PlaceSearchResult result) {
     FocusManager.instance.primaryFocus?.unfocus();
-    _searchTimer?.cancel();
-    setState(() => _results = null);
+    _dropPendingSearch();
+    setState(() {
+      _results = null;
+      _searching = false;
+    });
     _moveTo(AddressMap.toLatLng(result.point), AddressMap.streetZoom);
   }
 
   void _closeResults() {
     FocusManager.instance.primaryFocus?.unfocus();
-    if (_results != null || _searchFailed) {
+    if (_results != null || _searchFailed || _searching) {
+      _dropPendingSearch();
       setState(() {
         _results = null;
         _searchFailed = false;
+        _searching = false;
       });
     }
   }
@@ -407,7 +453,6 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
     final initialZoom =
         widget.initial != null ? AddressMap.streetZoom : AddressMap.townZoom;
     final topInset = MediaQuery.paddingOf(context).top;
-    final area = _area;
 
     return Scaffold(
       backgroundColor: MarketPalette.surfaceMuted,
@@ -419,14 +464,12 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
               label: 'Teslimat konumu haritası. İğneyi kapına getirmek için '
                   'haritayı kaydır.',
               child: MapSurface(
+                // "Tekrar dene" haritayı baştan kurar
+                key: ValueKey(_mapGeneration),
                 initialCenter: _center,
                 initialZoom: initialZoom,
                 centerBounds: AddressMap.devrekBounds,
-                areaRings: [
-                  if (area != null)
-                    for (final rings in area.polygons)
-                      rings.first.map(AddressMap.toLatLng).toList(),
-                ],
+                area: _area,
                 myLocation: _myLocation,
                 onReady: _onMapReady,
                 onMove: _onMapMove,
@@ -436,6 +479,12 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
             ),
           ),
           _CenterPin(lifted: _dragging, outside: _outside && !_dragging),
+          if (!_mapReady)
+            Positioned.fill(
+              child: Center(
+                child: _MapStatus(failed: _mapFailed, onRetry: _retryMap),
+              ),
+            ),
           // Üst: geri düğmesi ve adres arama
           Positioned(
             top: topInset + 10,
@@ -497,7 +546,7 @@ class _AddressMapPickerPageState extends State<AddressMapPickerPage> {
               const SizedBox(height: 4),
             ],
             Text(
-              area != null
+              _area != null
                   ? 'Yeşil çizgi teslimat alanımız. Haritayı kaydırarak iğneyi '
                       'binanın üstüne getir.'
                   : 'Haritayı kaydırarak iğneyi binanın üstüne getir. Mahalle '
@@ -790,6 +839,69 @@ class _PlaceLine extends StatelessWidget {
   }
 }
 
+/// Harita yükleniyor / yüklenemedi kartı (iğnenin üstünde)
+class _MapStatus extends StatelessWidget {
+  final bool failed;
+  final VoidCallback onRetry;
+
+  const _MapStatus({required this.failed, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      decoration: BoxDecoration(
+        color: MarketPalette.surface,
+        borderRadius: BorderRadius.circular(MarketRadius.lg),
+        boxShadow: [
+          BoxShadow(
+            color: MarketPalette.greenDeep.withValues(alpha: .14),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Semantics(
+        liveRegion: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: failed
+              ? [
+                  const Icon(Icons.cloud_off_rounded,
+                      color: MarketPalette.muted, size: 28),
+                  const SizedBox(height: 8),
+                  Text('Harita yüklenemedi',
+                      style: MarketText.heading(size: 15)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'İnternet bağlantını kontrol edip tekrar dene.',
+                    textAlign: TextAlign.center,
+                    style: MarketText.caption(size: 13),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.tonalIcon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Tekrar dene'),
+                  ),
+                ]
+              : [
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.6, color: MarketPalette.green),
+                  ),
+                  const SizedBox(height: 10),
+                  Text('Harita yükleniyor…', style: MarketText.label(size: 14)),
+                ],
+        ),
+      ),
+    );
+  }
+}
+
 class _RoundMapButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -829,18 +941,31 @@ class _RoundMapButton extends StatelessWidget {
 }
 
 /// Formdaki küçük, dokunulmaz harita önizlemesi.
-class AddressMapPreview extends StatelessWidget {
+/// Formdaki küçük, dokunulmaz harita önizlemesi. Form kaydırılınca harita
+/// yok edilip yeniden kurulmasın diye canlı tutulur.
+class AddressMapPreview extends StatefulWidget {
   final GeoPoint point;
   final double height;
 
   const AddressMapPreview({super.key, required this.point, this.height = 150});
 
   @override
+  State<AddressMapPreview> createState() => _AddressMapPreviewState();
+}
+
+class _AddressMapPreviewState extends State<AddressMapPreview>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
+    final point = widget.point;
     return ClipRRect(
       borderRadius: BorderRadius.circular(MarketRadius.md),
       child: SizedBox(
-        height: height,
+        height: widget.height,
         child: Stack(
           children: [
             Positioned.fill(

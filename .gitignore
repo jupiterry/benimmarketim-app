@@ -51,3 +51,6 @@ app.*.map.json
 *.ipa
 *.aab
 *.apk
+
+# Yerel gizli değerler (eski Google Maps denemesi); repoya girmesin
+secrets.json

@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show protected;
 
 import '../models/delivery.dart';
 import 'app_logger.dart';
@@ -145,22 +144,12 @@ class GeocodingService {
   static String _key(GeoPoint p) =>
       '${p.lat.toStringAsFixed(5)},${p.lng.toStringAsFixed(5)}';
 
-  /// Yazarken öneri getirilebilir mi? Photon'da evet.
-  bool get autocomplete => true;
-
-  /// Noktanın adresi (önbellekli). Bulunamazsa ya da hata olursa null.
+  /// Noktanın adresi. Bulunamazsa ya da hata olursa null. Yalnızca
+  /// sunucunun gerçek yanıtı önbelleğe girer; bağlantı hatasında aynı nokta
+  /// sonra yeniden sorulur.
   Future<PlaceInfo?> reverse(GeoPoint point) async {
     final key = _key(point);
     if (_cache.containsKey(key)) return _cache[key];
-    final result = await lookup(point);
-    _cache[key] = result;
-    return result;
-  }
-
-  /// Sağlayıcıya sorar; hata fırlatmaz.
-  @protected
-  Future<PlaceInfo?> lookup(GeoPoint point) async {
-    PlaceInfo? result;
     try {
       final response = await _dio.get('/reverse', queryParameters: {
         'format': 'jsonv2',
@@ -170,14 +159,17 @@ class GeocodingService {
         'addressdetails': 1,
       });
       final data = response.data;
+      PlaceInfo? result;
       if (data is Map) {
         result = PlaceInfo.fromNominatim(Map<String, dynamic>.from(data));
         if (result.isEmpty) result = null;
       }
+      _cache[key] = result;
+      return result;
     } catch (e) {
       AppLogger.debug('Adres bulunamadı: $e');
+      return null;
     }
-    return result;
   }
 
   /// Devrek içinde adres/yer arar (en fazla [limit] sonuç). Bağlantı hatası

@@ -96,6 +96,9 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       flutter: 3.47.2
+      # maplibre_gl Android derlemesi JDK 21 ister (JDK 17 ile
+      # "invalid source release: 21" hatası verir)
+      java: 21
       groups:
         # Codemagic'te oluşturulacak environment group. İçinde:
         #   CM_KEYSTORE          (base64 kodlu .jks)

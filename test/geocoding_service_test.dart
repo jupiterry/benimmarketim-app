@@ -121,7 +121,29 @@ void main() {
     expect(uri.path, '/api/');
     expect(uri.queryParameters['q'], 'atatürk');
     expect(uri.queryParameters['bbox'], '31.72,41.03,32.18,41.4');
-    expect(GeocodingService(dio: dio).autocomplete, isTrue);
+  });
+
+  test(
+      'konumdan adres: bağlantı hatası önbelleğe girmez, sonra yeniden sorulur',
+      () async {
+    var fail = true;
+    var calls = 0;
+    final dio = Dio()
+      ..httpClientAdapter = _Adapter((_) {
+        calls++;
+        if (fail) throw StateError('ağ yok');
+        return {
+          'address': {'road': 'Gül Sokak', 'suburb': 'Özbağ Mahallesi'},
+        };
+      });
+    final service = GeocodingService(dio: dio);
+    const point = GeoPoint(41.2, 31.9);
+    expect(await service.reverse(point), isNull);
+    fail = false;
+    expect((await service.reverse(point))?.road, 'Gül Sokak');
+    // Başarılı yanıt önbellekte: üçüncü kez sorulmaz
+    expect((await service.reverse(point))?.area, 'Özbağ Mahallesi');
+    expect(calls, 2);
   });
 
   test('arama hatası GeocodingException fırlatır, konumdan adres null döner',
