@@ -179,6 +179,17 @@ class _MapLibreSurfaceState extends State<_MapLibreSurface>
   /// Katman güncellemeleri sırayla gider
   Future<void> _jobs = Future.value();
 
+  @override
+  void initState() {
+    super.initState();
+    // Android: harita TextureView'a çizilir ve Flutter katmanı olarak
+    // birleştirilir. Varsayılan GLSurfaceView + "virtual display" modu,
+    // üstüne Flutter içeriği binen (iğne, arama, kart), kırpılan (önizleme)
+    // ve aynı anda iki tane açık kalan haritalarda kırılgandır; emülatörde
+    // uygulamayı kapatabiliyor. İlk harita kurulmadan ayarlanmalı.
+    MapLibreMap.useHybridComposition = true;
+  }
+
   MapSurface get c => widget.config;
 
   @override
