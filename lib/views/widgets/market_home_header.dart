@@ -11,6 +11,7 @@ import '../../viewmodels/chat_viewmodel.dart';
 import '../../viewmodels/delivery_viewmodel.dart';
 import '../../viewmodels/home_page_viewmodel.dart';
 import '../../viewmodels/settings_viewmodel.dart';
+import 'delivery_offer.dart';
 import 'home_quick_carts.dart';
 import 'market_discovery_section.dart';
 import 'market_mascot.dart';
@@ -198,14 +199,15 @@ class _StoreStatusRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = context.select<CartViewModel, double>((c) => c.totalPrice);
+    final offer = DeliveryOffer.of(context.watch<DeliveryViewModel?>(), total);
     return Consumer<SettingsViewModel>(
       builder: (context, settings, _) => _MinuteTicker(
-        builder: (context) => _build(settings, total),
+        builder: (context) => _build(settings, total, offer),
       ),
     );
   }
 
-  Widget _build(SettingsViewModel settings, double total) {
+  Widget _build(SettingsViewModel settings, double total, DeliveryOffer offer) {
     final status = HomeStoreStatus.of(settings);
     final minimum = settings.minimumOrderAmount;
 
@@ -263,10 +265,23 @@ class _StoreStatusRow extends StatelessWidget {
       );
     }
 
+    // Teslimat ücreti: ücretsizse yeşil vurgulu, ücretliyse tutar ve eşik
+    final deliveryChip = _HeaderChip(
+      leading: Icon(
+        Icons.local_shipping_rounded,
+        size: 14,
+        color: offer.free
+            ? MarketPalette.lime
+            : Colors.white.withValues(alpha: .85),
+      ),
+      label: offer.chipLabel,
+      background: offer.free ? MarketPalette.lime.withValues(alpha: .18) : null,
+    );
+
     return Wrap(
       spacing: MarketSpace.sm,
       runSpacing: MarketSpace.sm,
-      children: [statusChip, basketChip],
+      children: [deliveryChip, statusChip, basketChip],
     );
   }
 }

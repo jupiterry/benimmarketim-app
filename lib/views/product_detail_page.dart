@@ -26,6 +26,7 @@ import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
 import 'widgets/category_presentation.dart';
 import 'widgets/custom_dialog.dart';
+import 'widgets/delivery_offer.dart';
 import 'widgets/flash_sale_widgets.dart';
 import 'widgets/market_product_card.dart';
 import 'widgets/market_system_frame.dart';
@@ -1421,7 +1422,29 @@ class _DeliveryInfoCard extends StatelessWidget {
         : '${_clock(settings.orderStartHour, settings.orderStartMinute)}–'
             '${_clock(settings.orderEndHour, settings.orderEndMinute)}';
 
+    final offer = watchDeliveryOffer(context);
+    final offerDetail = offer.detail;
+    final offerProgress = offer.progress;
     final rows = <Widget>[
+      // Teslimat ücreti en üstte: ücretsizse yeşil, ücretliyse tutar ve eşik
+      _InfoRow(
+        icon: Icons.local_shipping_rounded,
+        iconColor: offer.free ? MarketPalette.green : MarketPalette.muted,
+        title: offer.title,
+        titleColor: offer.free ? MarketPalette.greenDark : MarketPalette.ink,
+        detail: offerDetail,
+        footer: offerProgress == null
+            ? null
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(MarketRadius.pill),
+                child: LinearProgressIndicator(
+                  value: offerProgress,
+                  minHeight: 4,
+                  color: MarketPalette.green,
+                  backgroundColor: MarketPalette.line,
+                ),
+              ),
+      ),
       if (minimum > 0)
         remaining == 0
             ? const _InfoRow(
@@ -1451,7 +1474,7 @@ class _DeliveryInfoCard extends StatelessWidget {
         const _InfoRow(
           icon: Icons.location_on_outlined,
           title: 'Kapına teslim',
-          detail: 'Teslimat ücreti ve süresi bölgene göre değişir',
+          detail: 'Teslimat süresi bölgene göre değişir',
         )
       else
         points.isEmpty

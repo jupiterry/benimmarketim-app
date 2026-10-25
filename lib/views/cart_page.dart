@@ -19,9 +19,10 @@ import 'widgets/abandon_reason_sheet.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/custom_dialog.dart';
 import 'widgets/delivery_fee_summary.dart';
+import 'widgets/delivery_offer.dart';
 import 'widgets/delivery_ui.dart';
-import 'widgets/market_product_card.dart';
 import 'widgets/market_mascot.dart';
+import 'widgets/market_product_card.dart';
 import 'widgets/market_ui.dart';
 import 'widgets/save_cart_dialog.dart';
 import '../services/image_url.dart';
@@ -124,6 +125,9 @@ class _CartPageState extends State<CartPage> {
                         children: [
                           const _StoreClosedNotice(),
                           const _MinimumOrderProgress(),
+                          // Teslimat ücretsiz mi, ücretliyse ne kadar
+                          const DeliveryOfferBanner(),
+                          const SizedBox(height: MarketSpace.md),
                           // Sepetteki ürünler tek kartta, ilk bakışta görünür.
                           MarketCard(
                             padding: EdgeInsets.zero,
