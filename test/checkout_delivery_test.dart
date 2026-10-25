@@ -14,6 +14,7 @@ import 'package:benimmarketim_app/viewmodels/settings_viewmodel.dart';
 import 'package:benimmarketim_app/viewmodels/home_page_viewmodel.dart';
 import 'package:benimmarketim_app/views/cart_page.dart';
 import 'package:benimmarketim_app/views/order_page.dart';
+import 'package:benimmarketim_app/views/widgets/checkout_consent.dart';
 import 'package:benimmarketim_app/views/widgets/delivery_fee_summary.dart';
 import 'package:benimmarketim_app/views/widgets/delivery_ui.dart';
 import 'package:flutter/material.dart';
@@ -530,6 +531,10 @@ void main() {
         expect(find.text('₺140,00'), findsNWidgets(2));
         expect(find.text(addressNoteHint), findsOneWidget);
         expect(_orderButton(tester).onPressed, isNotNull);
+        // Yasal onay kutusu var, başta işaretsiz
+        expect(find.byType(CheckoutConsent), findsOneWidget);
+        expect(tester.widget<CheckoutConsent>(find.byType(CheckoutConsent))
+            .accepted, isFalse);
         await _teardown(tester);
       });
     });

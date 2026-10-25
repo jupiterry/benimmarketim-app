@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/coupon.dart';
 import '../models/delivery.dart';
+import '../models/legal_documents.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
@@ -23,6 +24,7 @@ import '../viewmodels/delivery_viewmodel.dart';
 import '../viewmodels/home_page_viewmodel.dart';
 import '../viewmodels/referral_viewmodel.dart';
 import '../viewmodels/settings_viewmodel.dart';
+import 'widgets/checkout_consent.dart';
 import 'widgets/community_campaign.dart';
 import 'widgets/custom_dialog.dart';
 import 'widgets/delivery_address_selector.dart';
@@ -69,6 +71,11 @@ class _OrderPageState extends State<OrderPage> {
   bool _phoneValid = false;
   final _contactSectionKey = GlobalKey();
   final _paymentSectionKey = GlobalKey();
+
+  /// Ön bilgilendirme formu ve mesafeli satış sözleşmesi onayı (zorunlu)
+  bool _legalAccepted = false;
+  bool _legalError = false;
+  final _legalKey = GlobalKey();
   bool _couponReminderAnswered = false; // "Kuponsuz devam et" seçildi mi
   bool _campaignAnswered = false; // Topluluk indirimi sorusu yanıtlandı mı
   bool _joiningCampaign = false;
@@ -637,6 +644,17 @@ class _OrderPageState extends State<OrderPage> {
       return;
     }
 
+    if (!_legalAccepted) {
+      setState(() => _legalError = true);
+      _scrollTo(_legalKey);
+      showMarketSnack(
+        context,
+        'Ön bilgilendirme formunu ve mesafeli satış sözleşmesini onayla',
+        error: true,
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -1060,6 +1078,19 @@ class _OrderPageState extends State<OrderPage> {
                       _buildCouponSection(cart, delivery),
                       _buildSummarySection(cart, delivery),
                       _buildCampaignCard(),
+                      const SizedBox(height: 14),
+                      KeyedSubtree(
+                        key: _legalKey,
+                        child: CheckoutConsent(
+                          accepted: _legalAccepted,
+                          error: _legalError,
+                          onChanged: (value) => setState(() {
+                            _legalAccepted = value;
+                            if (value) _legalError = false;
+                          }),
+                          data: () => _legalData(cart, settings, delivery),
+                        ),
+                      ),
                       const SizedBox(height: 14),
                       const MarketNotice(
                         icon: Icons.verified_user_rounded,
@@ -1836,6 +1867,62 @@ class _OrderPageState extends State<OrderPage> {
         _campaignAnswered = true;
       }
     });
+  }
+
+  /// Yasal metinler için siparişin o anki bilgileri
+  LegalOrderData _legalData(
+    CartViewModel cart,
+    SettingsViewModel settings,
+    DeliveryViewModel? delivery,
+  ) {
+    String place;
+    double? fee;
+    double payable;
+    if (delivery == null) {
+      place = switch (_selectedDeliveryPoint) {
+        'girlsDorm' => settings.girlsDormName,
+        'boysDorm' => settings.boysDormName,
+        _ => '',
+      };
+      fee = 0;
+      payable = cart.finalPrice;
+    } else {
+      final dormId = delivery.selectedDormZoneId;
+      final address = delivery.selectedAddress;
+      place = dormId != null
+          ? (delivery.zoneById(dormId)?.name ?? '')
+          : address == null
+              ? ''
+              : [address.zoneName, address.fields.summary]
+                  .where((s) => s.trim().isNotEmpty)
+                  .join(' · ');
+      final quote = _usableQuote(delivery);
+      fee = quote?.payableFee;
+      payable = checkoutPayable(
+        productsTotal: cart.totalPrice,
+        couponDiscount: cart.discountAmount,
+        quote: quote,
+      );
+    }
+    return LegalOrderData(
+      buyerName: context.read<AuthViewModel>().user?.name ?? '',
+      buyerPhone: _phoneController.text,
+      deliveryPlace: place,
+      lines: [
+        for (final item in cart.items)
+          LegalOrderLine(
+            name: productDisplayName(item.product.name),
+            quantity: item.quantity,
+            unitPrice: item.product.actualPrice,
+          ),
+      ],
+      productsTotal: cart.totalPrice,
+      couponDiscount: cart.discountAmount,
+      deliveryFee: fee,
+      payable: payable,
+      paymentMethod: _selectedPaymentMethod?.label ?? '',
+      date: DateTime.now(),
+    );
   }
 
   Widget _buildSummarySection(CartViewModel cart, DeliveryViewModel? delivery) {
