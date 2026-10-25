@@ -49,7 +49,13 @@ class _MarketTabStackState extends State<MarketTabStack>
         _controller.value = 1;
       } else {
         _slide = _slideFrom((widget.index - oldWidget.index).sign.toDouble());
-        _controller.forward(from: 0);
+        // Yeni sayfa ilk kez açılıyorsa kurulumu uzun sürer; animasyon o
+        // sırada zamanla ilerleyip ilk karede bitmiş olurdu. Geçiş başta
+        // bekletilir, sayfanın ilk karesi çizilince başlar.
+        _controller.value = 0;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _controller.forward(from: 0);
+        });
       }
     }
   }
