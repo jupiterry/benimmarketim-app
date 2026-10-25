@@ -119,8 +119,8 @@ class MarketBottomNavigation extends StatelessWidget {
                 alignment: Alignment(-1 + selectedIndex.toDouble(), 0),
                 duration: reduceMotion
                     ? Duration.zero
-                    : const Duration(milliseconds: 280),
-                curve: Curves.easeInOutCubic,
+                    : const Duration(milliseconds: 420),
+                curve: Curves.easeInOutCubicEmphasized,
                 child: FractionallySizedBox(
                   widthFactor: 1 / 3,
                   heightFactor: 1,
@@ -232,9 +232,9 @@ class _NavMascotState extends State<_NavMascot> with TickerProviderStateMixin {
     if (widget.index != old.index) {
       _from = _position;
       _to = widget.index.toDouble();
-      _play(_MascotMove.travel, const Duration(milliseconds: 520));
+      _play(_MascotMove.travel, const Duration(milliseconds: 760));
     } else if (widget.cartCount > old.cartCount) {
-      _play(_MascotMove.cheer, const Duration(milliseconds: 620));
+      _play(_MascotMove.cheer, const Duration(milliseconds: 780));
     }
   }
 
@@ -248,9 +248,22 @@ class _NavMascotState extends State<_NavMascot> with TickerProviderStateMixin {
   /// Şu anki yatay konum (sekme numarası cinsinden, kesirli)
   double get _position {
     if (_move != _MascotMove.travel || !_hop.isAnimating) return _to;
-    final t = Curves.easeInOut.transform(_hop.value);
-    return _from + (_to - _from) * t;
+    // Yatay yol yalnızca havadayken alınır (çömelme ve iniş yerinde)
+    final t = _phase(_hop.value, _flightStart, _flightEnd);
+    return _from + (_to - _from) * Curves.easeInOutCubic.transform(t);
   }
+
+  // Sıçramanın evreleri (0-1): çömelme → uçuş → iniş/toparlanma
+  static const _flightStart = .18;
+  static const _flightEnd = .78;
+
+  /// [a]-[b] aralığını 0-1'e açar
+  static double _phase(double t, double a, double b) =>
+      ((t - a) / (b - a)).clamp(0.0, 1.0);
+
+  /// İnişten sonra sönen yaylanma (basılma ↔ uzama)
+  static double _settle(double t) =>
+      math.sin(t * math.pi * 3) * (1 - t) * (1 - t);
 
   void _play(_MascotMove move, Duration duration) {
     _idleTimer?.cancel();
@@ -279,7 +292,7 @@ class _NavMascotState extends State<_NavMascot> with TickerProviderStateMixin {
         _scheduleIdle();
         return;
       }
-      _play(_MascotMove.idle, const Duration(milliseconds: 900));
+      _play(_MascotMove.idle, const Duration(milliseconds: 1100));
     });
   }
 
@@ -301,17 +314,46 @@ class _NavMascotState extends State<_NavMascot> with TickerProviderStateMixin {
           var squash = 0.0;
           switch (_move) {
             case _MascotMove.travel:
-              lift = arc * 20;
-              tilt = (_to - _from).sign * .22 * arc;
-              // İnişte kısa basılma
-              squash = t > .85 ? (1 - t) / .15 * .08 : 0;
+              final dir = (_to - _from).sign;
+              final crouch = _phase(t, 0, _flightStart);
+              final flight = _phase(t, _flightStart, _flightEnd);
+              final land = _phase(t, _flightEnd, 1);
+              if (t < _flightStart) {
+                // Hazırlık: çömelip gidilecek yöne hafif yaslanır
+                final c = Curves.easeOut.transform(crouch);
+                squash = .12 * c;
+                tilt = -dir * .08 * c;
+              } else if (t < _flightEnd) {
+                // Uçuş: parabol; kalkışta uzar, tepe noktasında dengelenir
+                final f = flight;
+                lift = math.sin(math.pi * f) * 26;
+                squash = -.10 * math.sin(math.pi * f) * (1 - f);
+                tilt = dir * .26 * math.sin(math.pi * f);
+              } else {
+                // İniş: basılır, sonra yaylanarak toparlanır
+                squash = .14 * (1 - land) + _settle(land) * .06;
+                tilt = dir * .06 * (1 - land) * math.cos(land * math.pi * 2);
+              }
             case _MascotMove.cheer:
-              // İki kısa zıplama ve sağa sola sallanma
-              lift = math.sin(math.pi * 2 * t).abs() * 16;
-              tilt = math.sin(math.pi * 4 * t) * .16;
+              // Çömel, iki sıçrama, yaylanarak dur
+              if (t < .12) {
+                squash = .12 * Curves.easeOut.transform(t / .12);
+              } else if (t < .82) {
+                final f = (t - .12) / .70;
+                final hop = math.sin(math.pi * 2 * f).abs();
+                lift = hop * 18 * (f < .5 ? 1 : .75);
+                squash = -.08 * hop;
+                tilt = math.sin(math.pi * 4 * f) * .18;
+              } else {
+                final l = (t - .82) / .18;
+                squash = .12 * (1 - l) + _settle(l) * .05;
+              }
             case _MascotMove.idle:
-              lift = arc * 4;
-              tilt = math.sin(math.pi * 2 * t) * .12;
+              // Yumuşak kafa sallama ve ufak bir nefes
+              final e = Curves.easeInOut.transform(t);
+              lift = math.sin(math.pi * e) * 3;
+              tilt = math.sin(math.pi * 2 * e) * .10;
+              squash = -math.sin(math.pi * e) * .03;
           }
           // Seçili sekmenin sağ üst köşesi: simge ve sepet rozetini örtmez
           final x = tabWidth * (_position + 1) - size - 6;

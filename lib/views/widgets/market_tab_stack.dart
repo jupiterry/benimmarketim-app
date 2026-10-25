@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
 /// Lazily mounts tabs and retains their state across navigation.
+///
+/// Sekme değişince yeni sayfa, gidilen yönden hafifçe kayarak ve solarak
+/// gelir (sağdaki sekmeye geçerken sağdan, soldakine dönerken soldan).
+/// Kayma küçüktür (ekranın ~%4'ü); içerik yer değiştirmiş gibi değil,
+/// yerine oturmuş gibi hissettirir. Hareket azaltma açıksa anında geçer.
 class MarketTabStack extends StatefulWidget {
   const MarketTabStack(
       {super.key, required this.index, required this.children});
@@ -16,13 +21,25 @@ class _MarketTabStackState extends State<MarketTabStack>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 200),
+    duration: const Duration(milliseconds: 380),
     value: 1,
   );
-  late final Animation<double> _opacity = Tween<double>(begin: .85, end: 1)
-      .animate(
-          CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+  late final CurvedAnimation _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeInOutCubicEmphasized,
+  );
+  late final Animation<double> _opacity =
+      Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(
+    parent: _controller,
+    // Solma kaymadan önce biter; sayfa hâlâ yerine otururken net görünür
+    curve: const Interval(0, .6, curve: Curves.easeOut),
+  ));
+  late Animation<Offset> _slide = _slideFrom(0);
   final Set<int> _visited = {};
+
+  Animation<Offset> _slideFrom(double direction) =>
+      Tween<Offset>(begin: Offset(.04 * direction, 0), end: Offset.zero)
+          .animate(_curve);
 
   @override
   void didUpdateWidget(covariant MarketTabStack oldWidget) {
@@ -31,6 +48,7 @@ class _MarketTabStackState extends State<MarketTabStack>
       if (MediaQuery.disableAnimationsOf(context)) {
         _controller.value = 1;
       } else {
+        _slide = _slideFrom((widget.index - oldWidget.index).sign.toDouble());
         _controller.forward(from: 0);
       }
     }
@@ -38,6 +56,7 @@ class _MarketTabStackState extends State<MarketTabStack>
 
   @override
   void dispose() {
+    _curve.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -47,24 +66,27 @@ class _MarketTabStackState extends State<MarketTabStack>
     _visited.add(widget.index);
     return FadeTransition(
       opacity: _opacity,
-      child: IndexedStack(
-        index: widget.index,
-        sizing: StackFit.expand,
-        children: [
-          for (var i = 0; i < widget.children.length; i++)
-            TickerMode(
-              enabled: i == widget.index,
-              // Gizli sekmelerdeki ürün görselleri Hero geçişine katılmaz;
-              // aynı ürün hem ana sayfada hem sepet önerilerinde olunca
-              // "aynı etiketli birden fazla Hero" hatası oluşuyordu.
-              child: HeroMode(
+      child: SlideTransition(
+        position: _slide,
+        child: IndexedStack(
+          index: widget.index,
+          sizing: StackFit.expand,
+          children: [
+            for (var i = 0; i < widget.children.length; i++)
+              TickerMode(
                 enabled: i == widget.index,
-                child: _visited.contains(i)
-                    ? RepaintBoundary(child: widget.children[i])
-                    : const SizedBox.shrink(),
+                // Gizli sekmelerdeki ürün görselleri Hero geçişine katılmaz;
+                // aynı ürün hem ana sayfada hem sepet önerilerinde olunca
+                // "aynı etiketli birden fazla Hero" hatası oluşuyordu.
+                child: HeroMode(
+                  enabled: i == widget.index,
+                  child: _visited.contains(i)
+                      ? RepaintBoundary(child: widget.children[i])
+                      : const SizedBox.shrink(),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
