@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -298,103 +299,115 @@ class _NavMascotState extends State<_NavMascot> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final inside = widget.inside;
-    final size = inside ? widget.size * .8 : widget.size;
     return LayoutBuilder(builder: (context, constraints) {
       final tabWidth = constraints.maxWidth / 3;
-      // Ayakların bastığı çizgi: menünün üst kenarı ya da içte alt kısım
-      final ground = inside ? (constraints.maxHeight + size) / 2 : size * .14;
-      return AnimatedBuilder(
-        animation: _hop,
-        builder: (context, child) {
-          final t = _hop.isAnimating ? _hop.value : 0.0;
-          final arc = math.sin(math.pi * t);
-          var lift = 0.0;
-          var tilt = 0.0;
-          var squash = 0.0;
-          switch (_move) {
-            case _MascotMove.travel:
-              final dir = (_to - _from).sign;
-              final crouch = _phase(t, 0, _flightStart);
-              final flight = _phase(t, _flightStart, _flightEnd);
-              final land = _phase(t, _flightEnd, 1);
-              if (t < _flightStart) {
-                // Hazırlık: çömelip gidilecek yöne hafif yaslanır
-                final c = Curves.easeOut.transform(crouch);
-                squash = .12 * c;
-                tilt = -dir * .08 * c;
-              } else if (t < _flightEnd) {
-                // Uçuş: parabol; kalkışta uzar, tepe noktasında dengelenir
-                final f = flight;
-                lift = math.sin(math.pi * f) * 26;
-                squash = -.10 * math.sin(math.pi * f) * (1 - f);
-                tilt = dir * .26 * math.sin(math.pi * f);
-              } else {
-                // İniş: basılır, sonra yaylanarak toparlanır
-                squash = .14 * (1 - land) + _settle(land) * .06;
-                tilt = dir * .06 * (1 - land) * math.cos(land * math.pi * 2);
-              }
-            case _MascotMove.cheer:
-              // Çömel, iki sıçrama, yaylanarak dur
-              if (t < .12) {
-                squash = .12 * Curves.easeOut.transform(t / .12);
-              } else if (t < .82) {
-                final f = (t - .12) / .70;
-                final hop = math.sin(math.pi * 2 * f).abs();
-                lift = hop * 18 * (f < .5 ? 1 : .75);
-                squash = -.08 * hop;
-                tilt = math.sin(math.pi * 4 * f) * .18;
-              } else {
-                final l = (t - .82) / .18;
-                squash = .12 * (1 - l) + _settle(l) * .05;
-              }
-            case _MascotMove.idle:
-              // Yumuşak kafa sallama ve ufak bir nefes
-              final e = Curves.easeInOut.transform(t);
-              lift = math.sin(math.pi * e) * 3;
-              tilt = math.sin(math.pi * 2 * e) * .10;
-              squash = -math.sin(math.pi * e) * .03;
-          }
-          // Seçili sekmenin sağ üst köşesi: simge ve sepet rozetini örtmez
-          final x = tabWidth * (_position + 1) - size - 6;
-          final y = ground - size - lift;
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // Gölge: zıplarken küçülür
-              Positioned(
-                left: x + size * .2,
-                top: ground - size * .14 - 3,
-                width: size * .6,
-                height: 5,
-                child: Opacity(
-                  opacity: .18 * (1 - (lift / 24).clamp(0.0, .8)),
-                  child: const DecoratedBox(
-                    decoration: ShapeDecoration(
-                      shape: StadiumBorder(),
-                      color: MarketPalette.greenDeep,
+      // "Üstte" ↔ "içte" geçişi anında değil, zıplamayla aynı sürede: maskot
+      // menünün üstünden kalkıp kavisle içine iner (ya da tersi).
+      return TweenAnimationBuilder<double>(
+        tween: Tween(end: widget.inside ? 1.0 : 0.0),
+        duration:
+            _reduceMotion ? Duration.zero : const Duration(milliseconds: 760),
+        curve: Curves.easeInOutCubic,
+        builder: (context, insideT, mascot) => AnimatedBuilder(
+          animation: _hop,
+          child: mascot,
+          builder: (context, child) {
+            final size = widget.size * (1 - .2 * insideT);
+            // Ayakların bastığı çizgi: menünün üst kenarı ya da içte alt kısım
+            final ground = lerpDouble(
+              size * .14,
+              (constraints.maxHeight + size) / 2,
+              insideT,
+            )!;
+            final t = _hop.isAnimating ? _hop.value : 0.0;
+            final arc = math.sin(math.pi * t);
+            var lift = 0.0;
+            var tilt = 0.0;
+            var squash = 0.0;
+            switch (_move) {
+              case _MascotMove.travel:
+                final dir = (_to - _from).sign;
+                final crouch = _phase(t, 0, _flightStart);
+                final flight = _phase(t, _flightStart, _flightEnd);
+                final land = _phase(t, _flightEnd, 1);
+                if (t < _flightStart) {
+                  // Hazırlık: çömelip gidilecek yöne hafif yaslanır
+                  final c = Curves.easeOut.transform(crouch);
+                  squash = .12 * c;
+                  tilt = -dir * .08 * c;
+                } else if (t < _flightEnd) {
+                  // Uçuş: parabol; kalkışta uzar, tepe noktasında dengelenir
+                  final f = flight;
+                  lift = math.sin(math.pi * f) * 26;
+                  squash = -.10 * math.sin(math.pi * f) * (1 - f);
+                  tilt = dir * .26 * math.sin(math.pi * f);
+                } else {
+                  // İniş: basılır, sonra yaylanarak toparlanır
+                  squash = .14 * (1 - land) + _settle(land) * .06;
+                  tilt = dir * .06 * (1 - land) * math.cos(land * math.pi * 2);
+                }
+              case _MascotMove.cheer:
+                // Çömel, iki sıçrama, yaylanarak dur
+                if (t < .12) {
+                  squash = .12 * Curves.easeOut.transform(t / .12);
+                } else if (t < .82) {
+                  final f = (t - .12) / .70;
+                  final hop = math.sin(math.pi * 2 * f).abs();
+                  lift = hop * 18 * (f < .5 ? 1 : .75);
+                  squash = -.08 * hop;
+                  tilt = math.sin(math.pi * 4 * f) * .18;
+                } else {
+                  final l = (t - .82) / .18;
+                  squash = .12 * (1 - l) + _settle(l) * .05;
+                }
+              case _MascotMove.idle:
+                // Yumuşak kafa sallama ve ufak bir nefes
+                final e = Curves.easeInOut.transform(t);
+                lift = math.sin(math.pi * e) * 3;
+                tilt = math.sin(math.pi * 2 * e) * .10;
+                squash = -math.sin(math.pi * e) * .03;
+            }
+            // Seçili sekmenin sağ üst köşesi: simge ve sepet rozetini örtmez
+            final x = tabWidth * (_position + 1) - size - 6;
+            final y = ground - size - lift;
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Gölge: zıplarken küçülür
+                Positioned(
+                  left: x + size * .2,
+                  top: ground - size * .14 - 3,
+                  width: size * .6,
+                  height: 5,
+                  child: Opacity(
+                    opacity: .18 * (1 - (lift / 24).clamp(0.0, .8)),
+                    child: const DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: StadiumBorder(),
+                        color: MarketPalette.greenDeep,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: x,
-                top: y,
-                width: size,
-                height: size,
-                child: Transform(
-                  alignment: Alignment.bottomCenter,
-                  transform: Matrix4.identity()
-                    ..rotateZ(tilt)
-                    ..scaleByDouble(1 + squash, 1 - squash, 1, 1),
-                  child: child,
+                Positioned(
+                  left: x,
+                  top: y,
+                  width: size,
+                  height: size,
+                  child: Transform(
+                    alignment: Alignment.bottomCenter,
+                    transform: Matrix4.identity()
+                      ..rotateZ(tilt)
+                      ..scaleByDouble(1 + squash, 1 - squash, 1, 1),
+                    child: child,
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
         child: ExcludeSemantics(
-          child: RepaintBoundary(child: MarketMascot(size: size)),
+          child: RepaintBoundary(child: MarketMascot(size: widget.size)),
         ),
       );
     });
