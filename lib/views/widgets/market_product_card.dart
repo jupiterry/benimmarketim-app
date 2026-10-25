@@ -169,7 +169,8 @@ class MarketProductCard extends StatelessWidget {
     return Selector<FlashSaleViewModel, _FlashState>(
       selector: (_, flash) => (
         product: flash.latest(product),
-        sale: flash.saleFor(product.id),
+        // Rozet ve geri sayım ürünün kendi flashSale özetinden
+        sale: flash.saleOf(product),
       ),
       shouldRebuild: _flashStateChanged,
       builder: (context, flashState, _) {
@@ -194,7 +195,9 @@ class MarketProductCard extends StatelessWidget {
     required FlashSale? sale,
     required int quantity,
   }) {
-    final discount = product.isDiscounted ? product.discountPercentage : 0.0;
+    // Flash sale'de yüzde sunucunun kampanya özetinden gelir
+    final discount = sale?.discountPercentage ??
+        (product.isDiscounted ? product.discountPercentage : 0.0);
     final showOld = product.isDiscounted && product.price > product.actualPrice;
     final inCart = quantity > 0 && !product.isOutOfStock;
     final scaler = MediaQuery.textScalerOf(context);
@@ -245,11 +248,7 @@ class MarketProductCard extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (sale != null)
-                                  FlashBadge(
-                                    discountPercentage: discount > 0
-                                        ? discount
-                                        : sale.discountPercentage,
-                                  )
+                                  FlashBadge(discountPercentage: discount)
                                 else
                                   MarketDiscountBadge(percentage: discount),
                                 if (sale != null &&

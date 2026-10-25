@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import '../models/cart_item.dart';
@@ -9,10 +9,36 @@ import '../services/api_service.dart';
 import '../services/token_manager.dart';
 import '../services/meta_app_events_service.dart';
 
-class CartViewModel extends ChangeNotifier {
+/// Sepet telefonda (sqflite) tutulur.
+///
+/// Kayıtlı fiyat eskiyebilir (ör. uygulama kapalıyken flash sale bitti ya da
+/// iptal edildi). Bu yüzden kalemler uygulama açılışında, ön plana gelişte
+/// ve sipariş özetinden önce sunucudan yeniden fiyatlanır ([refreshPrices]);
+/// fiyatı değişen kalem varsa [priceUpdates] yayınlanır ve kullanıcıya kısa
+/// bir bilgi gösterilir.
+class CartViewModel extends ChangeNotifier with WidgetsBindingObserver {
+  CartViewModel({
+    ApiService? apiService,
+    DatabaseService? databaseService,
+    Future<bool> Function()? hasToken,
+  })  : _apiService = apiService ?? ApiService(),
+        _databaseService = databaseService ?? DatabaseService(),
+        _hasToken = hasToken ?? TokenManager.hasToken {
+    _loadCart();
+  }
+
   final List<CartItem> _cartItems = [];
-  final DatabaseService _databaseService = DatabaseService();
-  final ApiService _apiService = ApiService();
+  final DatabaseService _databaseService;
+  final ApiService _apiService;
+  final Future<bool> Function() _hasToken;
+
+  /// Fiyatı değişen kalem bulununca yayınlanır (bilgi çubuğu için).
+  final StreamController<void> _priceUpdates =
+      StreamController<void>.broadcast();
+  Future<bool>? _repricing;
+  bool _observing = false;
+  bool _wentBackground = false;
+  bool _disposed = false;
 
   // Kupon bilgileri
   String? _appliedCouponCode;
@@ -36,12 +62,9 @@ class CartViewModel extends ChangeNotifier {
   /// o zaman istekler bugünkü gibi bölgesiz gider.
   String? _deliveryZone;
 
-  CartViewModel() {
-    _loadCart();
-  }
-
   Future<void> _loadCart() async {
     final items = await _databaseService.getCartItems();
+    if (_disposed) return;
     _cartItems.addAll(items);
 
     // Uygulama açılışında sepet durumunu güncelle (OneSignal)
@@ -50,30 +73,70 @@ class CartViewModel extends ChangeNotifier {
     notifyListeners();
     _scheduleCouponSync();
 
-    if (_cartItems.isEmpty) return;
+    // Kayıtlı fiyat eski olabilir (uygulama kapalıyken flash sale bitmiş
+    // ya da iptal edilmiş olabilir): sunucudan yeniden fiyatlanır.
+    await refreshPrices();
+  }
 
-    // Sunucudan güncel fiyat/stok çekilir. Bu sırada kullanıcı sepete
-    // dokunmuş olabilir; bu yüzden liste baştan yazılmaz, ürün kimliğine
-    // göre birleştirilir: hâlâ sepette olan kalemlerin ürün bilgisi
-    // güncellenir, bu arada eklenenler korunur, yalnızca sunucuda artık
-    // bulunmayan (404) ürünler sepetten düşer.
-    final snapshot = List<CartItem>.of(_cartItems);
+  /// Fiyatı değişen kalem bulununca yayınlanır; uygulama kısa bir bilgi
+  /// gösterir ("Sepetindeki bazı ürünlerin fiyatı güncellendi.").
+  Stream<void> get priceUpdates => _priceUpdates.stream;
+
+  /// Sepet kalemlerini sunucudaki güncel fiyat ve stokla yeniler. Fiyatı
+  /// değişen kalem olduysa true döner ve [priceUpdates] yayınlanır.
+  ///
+  /// Giriş yapılmışsa tek istekle sunucudaki sepetin fiyatları
+  /// (`GET /cart`) kullanılır; orada olmayan (henüz eşitlenmemiş) kalemler ve
+  /// misafir sepeti ürün başına `/products/:id` ile alınır. Aynı anda tek
+  /// yenileme çalışır; ikinci çağrı ilkini bekler.
+  Future<bool> refreshPrices() {
+    final inFlight = _repricing;
+    if (inFlight != null) return inFlight;
+    final future = _reprice().whenComplete(() => _repricing = null);
+    _repricing = future;
+    return future;
+  }
+
+  Future<bool> _reprice() async {
+    if (_cartItems.isEmpty || _disposed) return false;
+
+    // Bu sırada kullanıcı sepete dokunmuş olabilir; bu yüzden liste baştan
+    // yazılmaz, ürün kimliğine göre birleştirilir: hâlâ sepette olan
+    // kalemlerin ürün bilgisi güncellenir, bu arada eklenenler korunur,
+    // yalnızca sunucuda artık bulunmayan (404) ürünler sepetten düşer.
+    final ids = {for (final item in _cartItems) item.product.id};
     final fresh = <String, Product>{};
     final gone = <String>{};
+
+    var loggedIn = false;
+    try {
+      loggedIn = await _hasToken();
+    } catch (_) {}
+    if (loggedIn) {
+      final server = await _apiService.getCartProducts();
+      if (server != null) {
+        for (final id in ids) {
+          final product = server[id];
+          if (product != null) fresh[id] = product;
+        }
+      }
+    }
+
     await Future.wait(
-      snapshot.map((item) async {
+      ids.where((id) => !fresh.containsKey(id)).map((id) async {
         try {
-          fresh[item.product.id] =
-              await _apiService.getProductById(item.product.id);
+          fresh[id] = await _apiService.getProductById(id);
         } on ApiException catch (e) {
-          if (e.statusCode == 404) gone.add(item.product.id);
+          if (e.statusCode == 404) gone.add(id);
         } catch (_) {
           // Ağ hatası: eldeki bilgiyle devam
         }
       }),
     );
+    if (_disposed) return false;
 
     var changed = false;
+    var priceChanged = false;
     for (var index = _cartItems.length - 1; index >= 0; index--) {
       final item = _cartItems[index];
       final id = item.product.id;
@@ -85,15 +148,48 @@ class CartViewModel extends ChangeNotifier {
       }
       final product = fresh[id];
       if (product == null) continue;
+      if (!_samePrice(item.product.actualPrice, product.actualPrice)) {
+        priceChanged = true;
+      }
       final updated = item.copyWith(product: product);
       _cartItems[index] = updated;
       unawaited(_databaseService.saveCartItem(updated));
       changed = true;
     }
-    if (!changed) return;
+    if (!changed) return false;
     NotificationService.instance.updateCartTag(_cartItems.isNotEmpty);
     notifyListeners();
     _scheduleCouponSync();
+    if (priceChanged) _priceUpdates.add(null);
+    return priceChanged;
+  }
+
+  static bool _samePrice(double a, double b) => (a - b).abs() < 0.005;
+
+  /// Uygulama arka plandan öne gelince sepet yeniden fiyatlanır (main.dart'ta
+  /// bir kez çağrılır).
+  void startAutoReprice() {
+    if (_observing || _disposed) return;
+    _observing = true;
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        _wentBackground = true;
+      case AppLifecycleState.resumed:
+        // Yalnızca gerçekten arka plana gidip gelince (bildirim perdesi gibi
+        // kısa kesintilerde değil)
+        if (!_wentBackground) return;
+        _wentBackground = false;
+        unawaited(refreshPrices());
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
   }
 
   // Getters
@@ -496,8 +592,11 @@ class CartViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    if (_observing) WidgetsBinding.instance.removeObserver(this);
     _couponSyncTimer?.cancel();
     _cartSyncTimer?.cancel();
+    _priceUpdates.close();
     super.dispose();
   }
 

@@ -25,6 +25,7 @@ import 'services/notification_service.dart';
 import 'services/review_service.dart';
 import 'services/meta_app_events_service.dart';
 import 'router/app_router.dart';
+import 'views/widgets/cart_price_notice.dart';
 import 'views/widgets/market_scroll.dart';
 import 'views/widgets/market_system_frame.dart';
 import 'views/widgets/market_ui.dart' show MarketPalette, MarketText;
@@ -171,15 +172,23 @@ class _MyAppState extends State<MyApp> {
               try {
                 if (context.mounted) {
                   context.read<AuthViewModel>().checkAuthStatus();
+                  final cart = context.read<CartViewModel>();
+                  final home = context.read<HomePageViewModel>();
+                  final categories = context.read<CategoryProductsViewModel>();
                   // Flash sale'ler: rozet/geri sayım ve kampanya başlayıp
-                  // bitince sepetteki fiyatın güncellenmesi.
+                  // bitince sepetteki fiyatın ve ürün listelerinin
+                  // (ana sayfa rafları, kategori önbelleği) güncellenmesi.
                   final flashSales = context.read<FlashSaleViewModel>();
-                  flashSales.addProductRefreshListener(
-                    context.read<CartViewModel>().applyFreshProducts,
-                  );
+                  flashSales.addProductRefreshListener(cart.applyFreshProducts);
+                  flashSales.addCatalogChangeListener(() {
+                    categories.clearMemoryCache();
+                    unawaited(home.refreshProducts());
+                  });
                   flashSales.start();
-                  // Uzun süre arka planda kalınca ana sayfa rafları tazelenir
-                  context.read<HomePageViewModel>().startAutoRefresh();
+                  // Arka planda kalınca ana sayfa rafları tazelenir
+                  home.startAutoRefresh();
+                  // Öne gelince sepet sunucudan yeniden fiyatlanır
+                  cart.startAutoReprice();
                 }
               } catch (e) {
                 AppLogger.debug('Auth check failed: $e');
@@ -211,7 +220,10 @@ class _MyAppState extends State<MyApp> {
                     FocusManager.instance.primaryFocus?.unfocus();
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   },
-                  child: MarketSystemFrame(child: child!),
+                  // Sepet yeniden fiyatlanıp fiyat değişince kısa bilgi
+                  child: CartPriceNotice(
+                    child: MarketSystemFrame(child: child!),
+                  ),
                 ),
               );
             },

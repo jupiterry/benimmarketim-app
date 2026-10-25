@@ -1,4 +1,14 @@
+import '../services/server_clock.dart';
 import 'product.dart';
+
+/// `/flash-sales/active` yanıtı: süren kampanyalar ve yanıtın üretildiği
+/// sunucu saati (eski sunucuda yoksa null).
+class ActiveFlashSales {
+  final List<FlashSale> sales;
+  final DateTime? serverTime;
+
+  const ActiveFlashSales(this.sales, {this.serverTime});
+}
 
 class FlashSale {
   final String id;
@@ -44,6 +54,22 @@ class FlashSale {
     );
   }
 
+  /// Ürün yanıtındaki `flashSale` özetinden kampanya (rozet ve geri sayım
+  /// için; `/flash-sales/active` listesine bakmadan).
+  factory FlashSale.fromProduct(Product product, ProductFlashSale info) {
+    return FlashSale(
+      id: info.id,
+      productId: product.id,
+      name: '',
+      discountPercentage: info.discountPercentage,
+      // Başlangıç gelmediyse kampanya şimdi başlamış sayılır
+      startDate: info.startDate ?? ServerClock.instance.now(),
+      endDate: info.endDate,
+      isActive: true,
+      product: product,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       '_id': id,
@@ -57,44 +83,40 @@ class FlashSale {
     };
   }
 
-  // Kalan süre hesaplama
+  // Kalan süre (sunucu saatine göre; telefonun saati yanlış olabilir)
   Duration get remainingTime {
-    final now = DateTime.now();
+    final now = ServerClock.instance.now();
     if (now.isAfter(endDate)) return Duration.zero;
     return endDate.difference(now);
   }
 
-  // Aktif mi kontrolü
-  bool get isCurrentlyActive => isLiveAt(DateTime.now());
+  // Aktif mi kontrolü (sunucu saatine göre)
+  bool get isCurrentlyActive => isLiveAt(ServerClock.instance.now());
 
   /// Sunucudaki `isLive` ile aynı: başlamış, bitmemiş ve kapatılmamış.
+  /// [now] sunucu saati olmalı ([ServerClock.now]).
   bool isLiveAt(DateTime now) =>
       isActive && !startDate.isAfter(now) && endDate.isAfter(now);
 
-  /// Kampanya fiyatı. Sunucu indirimi ürüne uyguladıysa ürünün güncel
-  /// fiyatı esas alınır; uygulanmadıysa sunucudaki formülle hesaplanır.
-  double get flashPrice => product.isDiscounted
-      ? product.actualPrice
-      : (product.price * (1 - discountPercentage / 100) * 100).roundToDouble() /
-          100;
+  /// Kampanya fiyatı: siparişte alınacak fiyat, yani ürünün `actualPrice`
+  /// değeri (sunucu indirimi ürüne uygulayıp bu alanı hesaplar).
+  double get flashPrice => product.actualPrice;
 
-  // İndirimli fiyat hesaplama
-  double get discountedPrice {
-    return product.price * (1 - discountPercentage / 100);
-  }
+  // İndirimli fiyat (eski ad; [flashPrice] ile aynı)
+  double get discountedPrice => flashPrice;
 
   // Kalan süre string formatı
   String get remainingTimeString {
     final remaining = remainingTime;
-    
+
     if (remaining.isNegative) {
       return 'Süresi Doldu';
     }
-    
+
     final hours = remaining.inHours;
     final minutes = remaining.inMinutes % 60;
     final seconds = remaining.inSeconds % 60;
-    
+
     return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 }
