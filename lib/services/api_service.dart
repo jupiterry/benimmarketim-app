@@ -111,6 +111,12 @@ class ApiService {
 
     // Sertifika doğrulaması platformun varsayılan CA zinciriyle yapılır.
 
+    // HTTP önbelleği yok (Dio yanıt saklamaz); her istek sunucuya gider.
+    // İleride önbellek katmanı eklenirse sunucunun başlıklarına uyulmalı:
+    // `Cache-Control: no-cache` (/products, /products/featured) her istekte
+    // yeniden doğrulanır, `no-store` (/flash-sales/active) hiç saklanmaz.
+    // Aksi halde flash sale fiyatı ve rozeti gecikmeli görünür.
+
     // Interceptor ekle (token için)
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -1137,14 +1143,18 @@ class ApiService {
 
   // Eski arama metodu kaldırıldı - yeni gelişmiş arama kullanılıyor
 
-  /// Şu an süren flash sale'ler (herkese açık; web sitesiyle aynı uç nokta).
-  /// İstek başarısızsa null döner; çağıran son bilinen listeyi korur.
-  Future<List<FlashSale>?> getActiveFlashSales() async {
+  /// Şu an süren flash sale'ler (herkese açık; web sitesiyle aynı uç nokta)
+  /// ve yanıttaki sunucu saati (`serverTime`). İstek başarısızsa null döner;
+  /// çağıran son bilinen listeyi korur.
+  Future<ActiveFlashSales?> getActiveFlashSales() async {
     try {
       final response = await _dio.get('/flash-sales/active');
       final data = response.data;
       final list = data is Map ? data['flashSales'] : data;
       if (list is! List) return null;
+      final serverTime = data is Map
+          ? DateTime.tryParse('${data['serverTime'] ?? ''}')
+          : null;
       final sales = <FlashSale>[];
       for (final json in list) {
         if (json is! Map) continue;
@@ -1155,7 +1165,7 @@ class ApiService {
           AppLogger.debug('Flash sale okunamadı: $e');
         }
       }
-      return sales;
+      return ActiveFlashSales(sales, serverTime: serverTime);
     } catch (e) {
       AppLogger.debug('Active Flash Sales API Error: $e');
       return null;
@@ -1543,6 +1553,43 @@ class ApiService {
       return response.data is Map && response.data['success'] == true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Sunucudaki sepetin ürünleri, siparişte alınacak fiyatlarıyla
+  /// (`GET /cart`, oturum gerekir). Ürün kimliğine göre döner; istek
+  /// başarısızsa null.
+  ///
+  /// Bu uç noktada `price` siparişte alınacak fiyattır, liste fiyatı
+  /// `originalPrice`'tadır; uygulamanın ürün modeline uysun diye yer
+  /// değiştirilir. Ham `flashSale` alanı (süresi/geçerliliği süzülmemiş)
+  /// alınmaz.
+  Future<Map<String, Product>?> getCartProducts() async {
+    try {
+      final response = await _dio.get('/cart');
+      final data = response.data;
+      final list = data is Map ? data['cartItems'] ?? data['items'] : data;
+      if (list is! List) return null;
+      final products = <String, Product>{};
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        try {
+          final json = Map<String, dynamic>.from(raw)..remove('flashSale');
+          final listPrice = json['originalPrice'];
+          if (listPrice is num) {
+            json['actualPrice'] ??= json['price'];
+            json['price'] = listPrice;
+          }
+          final product = Product.fromJson(json);
+          if (product.id.isNotEmpty) products[product.id] = product;
+        } catch (e) {
+          AppLogger.debug('Sepet ürünü okunamadı: $e');
+        }
+      }
+      return products;
+    } catch (e) {
+      AppLogger.debug('Sepet fiyatları alınamadı: $e');
+      return null;
     }
   }
 

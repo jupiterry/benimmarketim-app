@@ -100,12 +100,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     super.dispose();
   }
 
-  /// Listedeki ürün bilgisi eski olabilir (flash sale başlamış/bitmiş, stok
-  /// değişmiş, ürün kaldırılmış). Sayfa açılınca güncel hali sunucudan alınır.
+  /// Listedeki ürün bilgisi eski olabilir (3 günlük disk önbelleği, flash
+  /// sale başlamış/bitmiş, stok değişmiş, ürün kaldırılmış). Sayfa açılınca
+  /// güncel hali sunucudan alınır; fiyat ve rozet buna göre gösterilir.
+  /// Listelerdeki kartlar ve sepet de güncel hali görsün diye bildirilir.
   Future<void> _refreshProduct() async {
     try {
       final fresh = await ApiService().getProductById(widget.product.id);
       if (!mounted || fresh.id != widget.product.id) return;
+      context.read<FlashSaleViewModel>().rememberProduct(fresh);
+      context.read<CartViewModel>().applyFreshProducts([fresh]);
       setState(() {
         _product = fresh;
         _unavailable = fresh.isHidden;
@@ -183,7 +187,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   Widget build(BuildContext context) {
     final flash = context.watch<FlashSaleViewModel>();
     final product = flash.latest(_product);
-    final sale = flash.saleFor(product.id);
+    // Rozet ve geri sayım ürünün kendi flashSale özetinden (sayfa açılınca
+    // ürün sunucudan yeniden alınır; liste disk önbelleğinden gelmiş olabilir)
+    final sale = flash.saleOf(product);
     final cartQuantity = context.select<CartViewModel, int>(
       (cart) => cart.getProductQuantity(product.id),
     );
@@ -743,11 +749,7 @@ class _ShowcaseState extends State<_Showcase> {
               top: _topBarHeight + MarketSpace.xs,
               child: ExcludeSemantics(
                 child: sale != null
-                    ? FlashBadge(
-                        discountPercentage: discount > 0
-                            ? discount.toDouble()
-                            : sale.discountPercentage,
-                      )
+                    ? FlashBadge(discountPercentage: sale.discountPercentage)
                     : _DiscountStamp(percent: discount),
               ),
             ),

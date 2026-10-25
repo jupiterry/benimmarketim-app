@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../models/flash_sale.dart';
 import '../../models/product.dart';
 import '../../services/image_url.dart';
+import '../../services/server_clock.dart';
 import '../../viewmodels/flash_sale_viewmodel.dart';
 import 'category_presentation.dart';
 import 'market_product_card.dart';
@@ -33,6 +34,8 @@ String formatFlashRemaining(Duration remaining) {
 }
 
 /// [endDate]'e kadar saniyede bir yeniden çizilir; süre bitince durur.
+/// Kalan süre sunucu saatine göre hesaplanır ([ServerClock]); sunucu saati
+/// sonradan öğrenilip fark değişirse sayaç yeniden başlar.
 class FlashCountdown extends StatefulWidget {
   final DateTime endDate;
   final Widget Function(BuildContext context, Duration remaining) builder;
@@ -51,14 +54,20 @@ class _FlashCountdownState extends State<FlashCountdown> {
   Timer? _timer;
 
   Duration get _remaining {
-    final value = widget.endDate.difference(DateTime.now());
+    final value = widget.endDate.difference(ServerClock.instance.now());
     return value.isNegative ? Duration.zero : value;
   }
 
   @override
   void initState() {
     super.initState();
+    ServerClock.instance.addListener(_onClockChanged);
     _start();
+  }
+
+  void _onClockChanged() {
+    if (!mounted) return;
+    setState(_start);
   }
 
   @override
@@ -79,6 +88,7 @@ class _FlashCountdownState extends State<FlashCountdown> {
 
   @override
   void dispose() {
+    ServerClock.instance.removeListener(_onClockChanged);
     _timer?.cancel();
     super.dispose();
   }
@@ -482,7 +492,7 @@ class _FlashHeader extends StatelessWidget {
       builder: (context, constraints) {
         // Geri sayım başlığın yanına sığmıyorsa (dar ekran, büyük yazı, gün
         // süren kampanya) alt başlığın altına iner; "Flash Sale" kesilmez.
-        final remaining = endsAt.difference(DateTime.now());
+        final remaining = endsAt.difference(ServerClock.instance.now());
         final chipWidth = _chipChrome +
             textWidth(
               formatFlashRemaining(remaining),
@@ -562,9 +572,9 @@ class _FlashSpotlightTile extends StatelessWidget {
     final imageSize = narrow ? 96.0 : 112.0;
     final showOld = product.price > product.actualPrice;
     final savings = product.price - product.actualPrice;
-    final discount = product.isDiscounted
-        ? product.discountPercentage
-        : sale.discountPercentage;
+    // Rozet yüzdesi ürünün kendi flash sale özetinden (yoksa kampanyadan)
+    final discount =
+        product.flashSale?.discountPercentage ?? sale.discountPercentage;
     final name = productDisplayName(product.name);
 
     final label = StringBuffer('$name, ${formatTl(product.actualPrice)}');

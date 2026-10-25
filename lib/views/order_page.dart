@@ -116,6 +116,8 @@ class _OrderPageState extends State<OrderPage> {
         items: List.of(cart.items),
         amount: cart.finalPrice,
       ));
+      // Özetten önce fiyatlar sunucudan (flash sale bitmiş olabilir)
+      unawaited(cart.refreshPrices());
       final referral = context.read<ReferralViewModel>();
       _startDeliverySync(cart, referral);
       referral.loadCoupons();

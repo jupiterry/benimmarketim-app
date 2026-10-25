@@ -116,6 +116,21 @@ class CategoryProductsViewModel extends ChangeNotifier {
     await _fetchAll(categoryId, _request);
   }
 
+  /// Flash sale başlayınca/bitince çağrılır: bellekteki listeler eski fiyatı
+  /// taşır, silinir (tekrar girilen kategori sunucudan yenilenir). Açık bir
+  /// kategori varsa liste ekranda kalır, güncel hali arka planda gelir.
+  void clearMemoryCache() {
+    _memory.clear();
+    final categoryId = _currentCategoryId;
+    if (categoryId == null ||
+        _products.isEmpty ||
+        _isLoading ||
+        _isLoadingMore) {
+      return;
+    }
+    unawaited(_fetchAll(categoryId, _request));
+  }
+
   Future<void> _fetchAll(String categoryId, int request) async {
     try {
       final all = await _apiService.getProducts(

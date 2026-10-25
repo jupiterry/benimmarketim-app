@@ -300,13 +300,13 @@ class _CategoryProductsPageState extends State<CategoryProductsPage> {
               viewModel.error == null;
           final ids = {for (final p in all) p.id};
           final flashCount =
-              ids.where((id) => flash.saleFor(id) != null).length;
+              all.where((p) => flash.saleOf(p) != null).length;
           // Flash sale rafında olanlar indirim rafında tekrar görünmez.
           final deals = all
               .where((p) =>
                   p.isDiscounted &&
                   !p.isOutOfStock &&
-                  flash.saleFor(p.id) == null)
+                  flash.saleOf(p) == null)
               .toList()
             ..sort(
               (a, b) => b.discountPercentage.compareTo(a.discountPercentage),
@@ -996,7 +996,8 @@ class _ProductRow extends StatelessWidget {
     return Consumer<FlashSaleViewModel>(
       builder: (context, flash, _) {
         final item = flash.latest(product);
-        final sale = flash.saleFor(item.id);
+        // Rozet ve geri sayım ürünün kendi flashSale özetinden
+        final sale = flash.saleOf(item);
         final hasSavings = item.price > item.actualPrice;
         final outOfStock = item.isOutOfStock;
         final name = productDisplayName(item.name);
@@ -1110,9 +1111,7 @@ class _ProductRow extends StatelessWidget {
                             dimmed: outOfStock,
                             badge: sale != null
                                 ? FlashBadge(
-                                    discountPercentage: hasSavings
-                                        ? item.discountPercentage
-                                        : sale.discountPercentage,
+                                    discountPercentage: sale.discountPercentage,
                                   )
                                 : hasSavings
                                     ? MarketDiscountBadge(

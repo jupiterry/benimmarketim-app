@@ -45,11 +45,17 @@ FlashSale sale(
 
 class FakeFlashApi extends ApiService {
   List<FlashSale>? active = [];
+  DateTime? serverTime;
   final Map<String, Product> products = {};
   int productRequests = 0;
 
   @override
-  Future<List<FlashSale>?> getActiveFlashSales() async => active;
+  Future<ActiveFlashSales?> getActiveFlashSales() async {
+    final sales = active;
+    return sales == null
+        ? null
+        : ActiveFlashSales(sales, serverTime: serverTime);
+  }
 
   @override
   Future<Product> getProductById(String id) async {

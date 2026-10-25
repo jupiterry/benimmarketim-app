@@ -22,16 +22,26 @@ const lastDeliveryPointPrefsKey = 'last_delivery_point';
 /// - Sunucu destekliyorsa tüm raflar tek istekte gelir (`/products/home-feed`);
 ///   desteklemiyorsa eski uç noktalar kullanılır ama tüm katalog (~1500
 ///   ürün) yerine yalnızca ilk sayfa istenir.
-/// - Uygulama uzun süre arka planda kaldıysa öne gelince raflar tazelenir.
+/// - Uygulama 1 dk'dan uzun arka planda kaldıysa ya da raflar 2 dk'dan
+///   eskiyse öne gelince raflar tazelenir; flash sale başlayıp bitince de
+///   [refreshProducts] çağrılır (main.dart).
 class HomePageViewModel extends ChangeNotifier with WidgetsBindingObserver {
-  HomePageViewModel({ApiService? apiService})
-      : _apiService = apiService ?? ApiService();
+  HomePageViewModel({ApiService? apiService, DateTime Function()? clock})
+      : _apiService = apiService ?? ApiService(),
+        _clock = clock ?? DateTime.now;
 
   final ApiService _apiService;
+  final DateTime Function() _clock;
 
   static const String _cacheKey = 'home_feed_v1';
   static const Duration _cacheMaxAge = Duration(days: 3);
-  static const Duration _staleAfter = Duration(minutes: 10);
+  // Flash sale fiyatları dakikalar içinde değişebilir; raflar kısa sürede
+  // eskimiş sayılır.
+  static const Duration _staleAfter = Duration(minutes: 2);
+
+  /// Uygulama bundan uzun süre arka planda kaldıysa öne gelince raflar
+  /// (son yüklemenin yaşına bakılmadan) yenilenir.
+  static const Duration _backgroundRefreshAfter = Duration(minutes: 1);
   static const int _legacyPageSize = 60;
 
   List<Product> _products = [];
@@ -44,6 +54,7 @@ class HomePageViewModel extends ChangeNotifier with WidgetsBindingObserver {
   Future<void>? _fetching;
   bool _observing = false;
   bool _disposed = false;
+  DateTime? _backgroundSince;
 
   /// Genel ürün listesi (popüler + öneriler); sepet önerileri ve yedek
   /// gösterimler bunu kullanır.
@@ -91,13 +102,20 @@ class HomePageViewModel extends ChangeNotifier with WidgetsBindingObserver {
     await _fetch();
   }
 
-  /// Aşağı çekip yenileme: mevcut raflar ekranda kalır.
-  Future<void> refreshProducts() => _fetch();
+  /// Aşağı çekip yenileme: mevcut raflar ekranda kalır. Flash sale başlayıp
+  /// bitince de çağrılır. Süren bir istek varsa o değişiklikten önce
+  /// başlamış olabilir; bitince bir kez daha istenir.
+  Future<void> refreshProducts() async {
+    final inFlight = _fetching;
+    if (inFlight != null) await inFlight;
+    if (_disposed) return;
+    await _fetch();
+  }
 
   /// Son yüklemeden bu yana [_staleAfter] geçtiyse arka planda tazeler.
   Future<void> refreshIfStale() async {
     final fetchedAt = _fetchedAt;
-    if (fetchedAt == null || DateTime.now().difference(fetchedAt) < _staleAfter) {
+    if (fetchedAt == null || _clock().difference(fetchedAt) < _staleAfter) {
       return;
     }
     await _fetch();
@@ -112,7 +130,24 @@ class HomePageViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(refreshIfStale());
+    switch (state) {
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        _backgroundSince ??= _clock();
+      case AppLifecycleState.resumed:
+        final since = _backgroundSince;
+        _backgroundSince = null;
+        if (since != null &&
+            _clock().difference(since) > _backgroundRefreshAfter &&
+            _hasData) {
+          unawaited(refreshProducts());
+        } else {
+          unawaited(refreshIfStale());
+        }
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
   }
 
   Future<bool> _restoreFromCache() async {
@@ -149,7 +184,7 @@ class HomePageViewModel extends ChangeNotifier with WidgetsBindingObserver {
       if (feed.isEmpty && _hasData) return; // boş yanıt eldekini silmesin
       _apply(feed);
       _error = null;
-      _fetchedAt = DateTime.now();
+      _fetchedAt = _clock();
       unawaited(JsonFileCache.write(_cacheKey, feed.toJson()));
       AppLogger.debug(
         'HomePageViewModel: ${_featuredProducts.length} deals, '
