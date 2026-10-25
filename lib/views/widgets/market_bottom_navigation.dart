@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../viewmodels/cart_viewmodel.dart';
+import 'market_mascot.dart';
 import 'market_ui.dart';
 
 /// Ana sayfa / Sepet / Hesabım alt menüsü.
@@ -87,8 +89,7 @@ class MarketBottomNavigation extends StatelessWidget {
           decoration: BoxDecoration(
             color: MarketPalette.surface,
             border: attached ? null : Border.all(color: MarketPalette.line),
-            borderRadius:
-                BorderRadius.circular(attached ? 0 : MarketRadius.lg),
+            borderRadius: BorderRadius.circular(attached ? 0 : MarketRadius.lg),
             boxShadow: [
               BoxShadow(
                 color: MarketPalette.greenDeep
@@ -155,11 +156,206 @@ class MarketBottomNavigation extends StatelessWidget {
                   onTap: () => onSelected(2),
                 ),
               ]),
+              // Maskot: seçili sekmenin üst kenarında oturur, sekme
+              // değişince oraya zıplar, sepete ürün eklenince sevinir.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: _NavMascot(
+                    index: selectedIndex,
+                    cartCount: cartCount,
+                    size: small ? 34 : 40,
+                    // Ödeme çubuğuna yapışıkken üstte yer yok: menünün içinde
+                    inside: attached,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ],
     );
+  }
+}
+
+/// Alt menünün üstünde duran hareketli maskot.
+///
+/// * Sekme değişince yeni sekmeye kavisli bir zıplamayla gider, giderken
+///   gittiği yöne eğilir; yere inerken hafifçe basılır.
+/// * Sepete ürün eklenince (sepet adedi artınca) yerinde sevinçle zıplar.
+/// * Boşta birkaç saniyede bir kısa bir "kafa sallama" yapar; arada hiç
+///   kare çizilmez (pil dostu).
+/// * Hareket azaltma açıksa sabit durur, sekme değişince doğrudan yerine
+///   geçer.
+class _NavMascot extends StatefulWidget {
+  final int index;
+  final int cartCount;
+  final double size;
+
+  /// Menünün üst kenarı yerine içinde, sekmenin sağında durur
+  final bool inside;
+
+  const _NavMascot({
+    required this.index,
+    required this.cartCount,
+    required this.size,
+    this.inside = false,
+  });
+
+  @override
+  State<_NavMascot> createState() => _NavMascotState();
+}
+
+enum _MascotMove { travel, cheer, idle }
+
+class _NavMascotState extends State<_NavMascot> with TickerProviderStateMixin {
+  static const _idleEvery = Duration(seconds: 6);
+
+  late final AnimationController _hop = AnimationController(vsync: this);
+  Timer? _idleTimer;
+  _MascotMove _move = _MascotMove.idle;
+
+  /// Zıplamanın başladığı ve gittiği sekme (konum ikisi arasında)
+  late double _from = widget.index.toDouble();
+  late double _to = widget.index.toDouble();
+
+  bool get _reduceMotion => MediaQuery.disableAnimationsOf(context);
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleIdle();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NavMascot old) {
+    super.didUpdateWidget(old);
+    if (widget.index != old.index) {
+      _from = _position;
+      _to = widget.index.toDouble();
+      _play(_MascotMove.travel, const Duration(milliseconds: 520));
+    } else if (widget.cartCount > old.cartCount) {
+      _play(_MascotMove.cheer, const Duration(milliseconds: 620));
+    }
+  }
+
+  @override
+  void dispose() {
+    _idleTimer?.cancel();
+    _hop.dispose();
+    super.dispose();
+  }
+
+  /// Şu anki yatay konum (sekme numarası cinsinden, kesirli)
+  double get _position {
+    if (_move != _MascotMove.travel || !_hop.isAnimating) return _to;
+    final t = Curves.easeInOut.transform(_hop.value);
+    return _from + (_to - _from) * t;
+  }
+
+  void _play(_MascotMove move, Duration duration) {
+    _idleTimer?.cancel();
+    if (_reduceMotion) {
+      _from = _to;
+      _hop.value = 0;
+      _scheduleIdle();
+      return;
+    }
+    setState(() => _move = move);
+    _hop
+      ..duration = duration
+      ..forward(from: 0).whenCompleteOrCancel(() {
+        if (!mounted) return;
+        _from = _to;
+        _scheduleIdle();
+      });
+  }
+
+  void _scheduleIdle() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleEvery, () {
+      if (!mounted) return;
+      // Sekme görünmüyorsa (TickerMode kapalı) beklemeye devam
+      if (!TickerMode.valuesOf(context).enabled || _reduceMotion) {
+        _scheduleIdle();
+        return;
+      }
+      _play(_MascotMove.idle, const Duration(milliseconds: 900));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inside = widget.inside;
+    final size = inside ? widget.size * .8 : widget.size;
+    return LayoutBuilder(builder: (context, constraints) {
+      final tabWidth = constraints.maxWidth / 3;
+      // Ayakların bastığı çizgi: menünün üst kenarı ya da içte alt kısım
+      final ground = inside ? (constraints.maxHeight + size) / 2 : size * .14;
+      return AnimatedBuilder(
+        animation: _hop,
+        builder: (context, child) {
+          final t = _hop.isAnimating ? _hop.value : 0.0;
+          final arc = math.sin(math.pi * t);
+          var lift = 0.0;
+          var tilt = 0.0;
+          var squash = 0.0;
+          switch (_move) {
+            case _MascotMove.travel:
+              lift = arc * 20;
+              tilt = (_to - _from).sign * .22 * arc;
+              // İnişte kısa basılma
+              squash = t > .85 ? (1 - t) / .15 * .08 : 0;
+            case _MascotMove.cheer:
+              // İki kısa zıplama ve sağa sola sallanma
+              lift = math.sin(math.pi * 2 * t).abs() * 16;
+              tilt = math.sin(math.pi * 4 * t) * .16;
+            case _MascotMove.idle:
+              lift = arc * 4;
+              tilt = math.sin(math.pi * 2 * t) * .12;
+          }
+          // Seçili sekmenin sağ üst köşesi: simge ve sepet rozetini örtmez
+          final x = tabWidth * (_position + 1) - size - 6;
+          final y = ground - size - lift;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Gölge: zıplarken küçülür
+              Positioned(
+                left: x + size * .2,
+                top: ground - size * .14 - 3,
+                width: size * .6,
+                height: 5,
+                child: Opacity(
+                  opacity: .18 * (1 - (lift / 24).clamp(0.0, .8)),
+                  child: const DecoratedBox(
+                    decoration: ShapeDecoration(
+                      shape: StadiumBorder(),
+                      color: MarketPalette.greenDeep,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: x,
+                top: y,
+                width: size,
+                height: size,
+                child: Transform(
+                  alignment: Alignment.bottomCenter,
+                  transform: Matrix4.identity()
+                    ..rotateZ(tilt)
+                    ..scaleByDouble(1 + squash, 1 - squash, 1, 1),
+                  child: child,
+                ),
+              ),
+            ],
+          );
+        },
+        child: ExcludeSemantics(
+          child: RepaintBoundary(child: MarketMascot(size: size)),
+        ),
+      );
+    });
   }
 }
 
